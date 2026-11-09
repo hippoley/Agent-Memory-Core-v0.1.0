@@ -1,123 +1,199 @@
-"""Local-only REST gateway. Server-side tenant credential is mandatory.
-
-This is not production-ready authentication: no TLS, RLS, rate limits, identity
-federation or fine-grained authorization. Bind only to loopback.
-"""
+"""Local-first REST gateway. Bind to loopback unless deployed behind a hardened gateway."""
 from __future__ import annotations
-from datetime import datetime
-import os
+
 import hmac
-from .contracts import CONTRACT_VERSION,capabilities,aware_iso
-from pydantic import BaseModel, Field, ConfigDict
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, Field
+
+from .contracts import CONTRACT_VERSION, aware_iso, capabilities
+
 
 class Claim(BaseModel):
-    model_config=ConfigDict(extra="forbid")
-    subject_id: str=Field(min_length=1,max_length=255)
-    predicate: str=Field(min_length=1,max_length=255)
-    value: dict
-    source_id: str=Field(min_length=1,max_length=255)
-    valid_from: str
-    valid_to: str|None=None
-    replaces_id: str|None=None
-    object_sha256: str|None=None
+    model_config = ConfigDict(extra="forbid")
+    subject_id: str = Field(min_length=1, max_length=255, description="Stable entity or subject identifier.")
+    predicate: str = Field(min_length=1, max_length=255, description="Fact type, e.g. preference, has_window, or device_state.")
+    value: dict = Field(description="Structured JSON fact payload.")
+    source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier, e.g. user utterance, sensor event, or document.")
+    valid_from: str = Field(description="Timezone-aware ISO-8601 timestamp; inclusive real-world validity start.")
+    valid_to: str | None = Field(default=None, description="Timezone-aware ISO-8601 exclusive validity end.")
+    replaces_id: str | None = Field(default=None, description="Existing claim UUID to correct; subject and predicate must match.")
+    object_sha256: str | None = Field(default=None, description="Optional SHA-256 reference to separately stored evidence object.")
+
 
 class SearchRequest(BaseModel):
-    model_config=ConfigDict(extra="forbid")
-    query: str=Field(min_length=1,max_length=2000)
-    embedding: list[float]|None=None
-    model_id: str|None=None
-    anchor_entity: str|None=None
-    limit: int=Field(default=10,ge=1,le=100)
-    valid_at: str|None=None
-    known_at: str|None=None
+    model_config = ConfigDict(extra="forbid")
+    query: str = Field(min_length=1, max_length=2000)
+    embedding: list[float] | None = Field(default=None, description="Caller-generated query embedding. Supported dimensions depend on configured model profile.")
+    model_id: str | None = Field(default=None, description="Required when embedding is supplied.")
+    anchor_entity: str | None = Field(default=None, description="Optional graph entity identifier for AGE neighborhood expansion.")
+    limit: int = Field(default=10, ge=1, le=100)
+    valid_at: str | None = Field(default=None, description="Timezone-aware ISO-8601 world-time filter.")
+    known_at: str | None = Field(default=None, description="Timezone-aware ISO-8601 knowledge-time filter.")
 
 
-
-def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_factory=None, capability_flags=None):
-    from fastapi import FastAPI, HTTPException, Depends
-
-    key=api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
-    tenant=tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
-    if not key or len(key)<24 or not tenant:
+def create_app(*, api_key=None, tenant_id=None, store_factory=None,
+               search_factory=None, capability_flags=None):
+    """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
+    key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
+    tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
+    if not key or len(key) < 24 or not tenant:
         raise RuntimeError("MEMORY_API_KEY (24+ chars) and MEMORY_TENANT_ID required")
+
     if store_factory is None:
         def store_factory():
             from .postgres import PostgresMemory
             return PostgresMemory(os.environ["MEMORY_DSN"])
-    app=FastAPI(title="Agent Memory Core",version=CONTRACT_VERSION,\n                description="Local-first, evidence-aware agent memory API. PostgreSQL is canonical; vector and graph are optional retrieval indexes; Temporal is an optional workflow adapter.",\n                docs_url="/docs",redoc_url="/redoc",openapi_url="/openapi.json",\n                openapi_tags=[{"name":"System","description":"Health and runtime capability discovery."},{"name":"Memory","description":"Canonical claim write and bitemporal recall."},{"name":"Retrieval","description":"Optional SQL + vector + graph hybrid search."}])
 
-    def auth(authorization: str | None = Header(default=None)):
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401,detail="Bearer token required")
-        if not hmac.compare_digest(authorization[7:],key):
-            raise HTTPException(status_code=403,detail="Invalid credential")
+    app = FastAPI(
+        title="Agent Memory Core API",
+        version=CONTRACT_VERSION,
+        description=(
+            "Local-first, evidence-aware Agent memory. PostgreSQL is the canonical "
+            "record; pgvector and Apache AGE are optional retrieval indexes; object "
+            "storage and Temporal are independent optional adapters. The currently "
+            "implemented HTTP surface is claims, recall, capability discovery and "
+            "configured hybrid search. Unimplemented adapters are not implied by this API."
+        ),
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        openapi_tags=[
+            {"name": "System", "description": "Health and runtime capability discovery."},
+            {"name": "Memory", "description": "Canonical claim write and bitemporal recall."},
+            {"name": "Retrieval", "description": "Optional SQL + vector + graph hybrid search."},
+        ],
+    )
+    bearer = HTTPBearer(
+        auto_error=False,
+        description="API key issued by the service operator. Send: Authorization: Bearer <key>.",
+    )
+
+    def auth(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        if credentials is None or credentials.scheme.lower() != "bearer":
+            raise HTTPException(
+                status_code=401, detail="Bearer token required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not hmac.compare_digest(credentials.credentials, key):
+            raise HTTPException(status_code=403, detail="Invalid credential")
         return tenant
 
-
-
-    @app.get("/v1/health",tags=["System"],summary="Health check",description="Unauthenticated liveness check. Does not prove PostgreSQL, AGE, pgvector or Temporal are healthy.")
+    @app.get(
+        "/v1/health", tags=["System"], summary="Health check",
+        description="Unauthenticated liveness only. Does not prove database, graph, vector or Temporal readiness.",
+    )
     def health():
-        return {"status":"alive","contract_version":CONTRACT_VERSION}
+        return {"status": "alive", "contract_version": CONTRACT_VERSION}
 
-    @app.get("/v1/capabilities",tags=["System"],summary="Discover enabled capabilities",description="Returns runtime capability flags. A capability marked unavailable must not be assumed usable.")
-    def get_capabilities(t: str=Depends(auth)):
-        return {"contract_version":CONTRACT_VERSION,"tenant_id":t,
-                "capabilities":capabilities(**(capability_flags or {}))}
+    @app.get(
+        "/v1/capabilities", tags=["System"], summary="Discover enabled capabilities",
+        description="Returns configured capability flags. Treat unavailable capabilities as unsupported on this instance.",
+    )
+    def get_capabilities(t: str = Depends(auth)):
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "tenant_id": t,
+            "capabilities": capabilities(**(capability_flags or {})),
+        }
 
-    @app.post("/v1/memories",status_code=201,tags=["Memory"],summary="Store a memory claim",description="Writes a provenance-aware claim to the canonical store. valid_from/valid_to describe real-world validity; valid_to is exclusive. To correct a claim, pass replaces_id for a claim with the same tenant, subject and predicate.")
-    def add_claim(item: Claim,t: str=Depends(auth)):
+    @app.post(
+        "/v1/memories", status_code=201, tags=["Memory"], summary="Store a memory claim",
+        description=(
+            "Writes a provenance-aware claim to the canonical store. valid_from/valid_to "
+            "describe real-world validity; valid_to is exclusive. To correct a claim, "
+            "supply replaces_id for an active claim with the same subject and predicate. "
+            "Tenant identity is derived from the API credential, never from request JSON."
+        ),
+    )
+    def add_claim(item: Claim, t: str = Depends(auth)):
         try:
-            valid_from=aware_iso(item.valid_from)
-            valid_to=aware_iso(item.valid_to)
-            db=store_factory()
+            valid_from = aware_iso(item.valid_from)
+            valid_to = aware_iso(item.valid_to)
+            db = store_factory()
             try:
-                mid=db.remember(tenant_id=t,subject_id=item.subject_id,
-                    predicate=item.predicate,value=item.value,source_id=item.source_id,
-                    valid_from=valid_from,valid_to=valid_to,
-                    replaces_id=item.replaces_id,object_sha256=item.object_sha256)
-            finally: db.close()
-            return {"id":mid,"tenant_id":t}
-        except ValueError as exc:
-            raise HTTPException(status_code=422,detail=str(exc))
-
-    @app.get("/v1/memories/{subject_id}",tags=["Memory"],summary="Recall claims for a subject",description="Returns claims valid at valid_at as known at known_at. All timestamps must include a timezone. Tenant is taken from the server credential, never from request input.")
-    def recall(subject_id: str,predicate: str|None=None,
-               valid_at: str|None=None,known_at: str|None=None,
-               t: str=Depends(auth)):
-        try:
-            va=aware_iso(valid_at)
-            ka=aware_iso(known_at)
-            db=store_factory()
-            try:
-                return {"contract_version":CONTRACT_VERSION,
-                        "items":db.recall(tenant_id=t,subject_id=subject_id,
-                            predicate=predicate,valid_at=va,known_at=ka)}
-            finally: db.close()
-        except ValueError as exc:
-            raise HTTPException(status_code=422,detail=str(exc))
-    @app.post("/v1/search",tags=["Retrieval"],summary="Hybrid memory search",description="Queries the configured search adapter. Embeddings are caller-generated; this API does not host an embedding model. Vector and AGE are optional. Returns 503 if no search adapter is configured. Optional-channel failures are reported in degraded_channels; canonical SQL failures propagate.")
-    def search_memories(item: SearchRequest,t: str=Depends(auth)):
-        if search_factory is None:
-            raise HTTPException(status_code=503,detail="Hybrid search adapter is not configured")
-        try:
-            service=search_factory()
-            try:
-                report=service.search_detailed(tenant_id=t,query=item.query,
-                    embedding=item.embedding,model_id=item.model_id,
-                    anchor_entity=item.anchor_entity,limit=item.limit,
-                    valid_at=aware_iso(item.valid_at),known_at=aware_iso(item.known_at))
-                return {"contract_version":CONTRACT_VERSION,
-                        "items":[{"memory_id":h.memory_id,"subject_id":h.subject_id,
-                                  "predicate":h.predicate,"value":h.value,
-                                  "source_id":h.source_id,"score":h.score,
-                                  "channels":list(h.channels)} for h in report.hits],
-                        "channels_used":list(report.channels_used),
-                        "degraded_channels":report.degraded_channels}
+                mid = db.remember(
+                    tenant_id=t, subject_id=item.subject_id, predicate=item.predicate,
+                    value=item.value, source_id=item.source_id, valid_from=valid_from,
+                    valid_to=valid_to, replaces_id=item.replaces_id,
+                    object_sha256=item.object_sha256,
+                )
             finally:
-                close=getattr(service,"close",None)
-                if callable(close): close()
+                db.close()
+            return {"id": mid, "tenant_id": t}
         except ValueError as exc:
-            raise HTTPException(status_code=422,detail=str(exc))
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get(
+        "/v1/memories/{subject_id}", tags=["Memory"], summary="Recall claims for a subject",
+        description=(
+            "Returns claims valid at valid_at as known at known_at. Both timestamps "
+            "must include a timezone. Omitted timestamps default to the current time."
+        ),
+    )
+    def recall(subject_id: str, predicate: str | None = None,
+               valid_at: str | None = None, known_at: str | None = None,
+               t: str = Depends(auth)):
+        try:
+            va = aware_iso(valid_at)
+            ka = aware_iso(known_at)
+            db = store_factory()
+            try:
+                return {
+                    "contract_version": CONTRACT_VERSION,
+                    "items": db.recall(
+                        tenant_id=t, subject_id=subject_id, predicate=predicate,
+                        valid_at=va, known_at=ka,
+                    ),
+                }
+            finally:
+                db.close()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.post(
+        "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",
+        description=(
+            "Queries an injected search adapter. Embeddings are generated by the caller; "
+            "this service does not host an embedding model. Vector and AGE are optional "
+            "channels. Returns 503 if no search adapter is configured. Optional-channel "
+            "failures appear in degraded_channels; canonical SQL failures propagate."
+        ),
+        responses={503: {"description": "Hybrid search adapter is not configured."}},
+    )
+    def search_memories(item: SearchRequest, t: str = Depends(auth)):
+        if search_factory is None:
+            raise HTTPException(status_code=503, detail="Hybrid search adapter is not configured")
+        try:
+            service = search_factory()
+            try:
+                report = service.search_detailed(
+                    tenant_id=t, query=item.query, embedding=item.embedding,
+                    model_id=item.model_id, anchor_entity=item.anchor_entity,
+                    limit=item.limit, valid_at=aware_iso(item.valid_at),
+                    known_at=aware_iso(item.known_at),
+                )
+                return {
+                    "contract_version": CONTRACT_VERSION,
+                    "items": [
+                        {
+                            "memory_id": h.memory_id, "subject_id": h.subject_id,
+                            "predicate": h.predicate, "value": h.value,
+                            "source_id": h.source_id, "score": h.score,
+                            "channels": list(h.channels),
+                        }
+                        for h in report.hits
+                    ],
+                    "channels_used": list(report.channels_used),
+                    "degraded_channels": report.degraded_channels,
+                }
+            finally:
+                close = getattr(service, "close", None)
+                if callable(close):
+                    close()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
     return app

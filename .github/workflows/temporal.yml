@@ -1,0 +1,30 @@
+name: temporal-memory-integration
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/**'
+      - 'sql/**'
+      - 'tests/test_temporal_integration.py'
+      - '.github/workflows/temporal.yml'
+      - 'docker/**'
+      - 'compose.yaml'
+jobs:
+  temporal-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: docker compose up --build -d --wait
+      - run: python -m pip install -e '.[dev,postgres,temporal]'
+      - name: Real Temporal and PostgreSQL execution
+        env:
+          MEMORY_TEST_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
+        run: python -m pytest -q tests/test_temporal_integration.py
+      - if: failure()
+        run: docker compose logs --tail=120
+      - if: always()
+        run: docker compose down -v

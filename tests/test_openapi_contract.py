@@ -18,6 +18,10 @@ EXPECTED={
     "/v1/observations/{device_id}":{"get"},
     "/v1/events":{"get"},
     "/v1/events/stream":{"get"},
+    "/v1/memories/{memory_id}/embedding":{"put"},
+    "/v1/entities":{"post"},
+    "/v1/entities/resolve":{"get"},
+    "/v1/edges":{"post"},
 }
 
 def spec():

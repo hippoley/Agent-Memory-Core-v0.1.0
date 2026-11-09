@@ -34,6 +34,13 @@ def test_real_postgres_pgvector_age():
         vec=[0.0]*384
         vec[0]=1.0
         db.store_embedding(tenant_id=tenant,memory_id=mid,model_id="test384",vector=vec)
+        # Simulate upgrade from a pre-registry 384-dimension database.
+        db.conn.execute(
+            "DELETE FROM memory_embedding_models WHERE tenant_id=%s AND model_id=%s",
+            (tenant,"test384"))
+        db.migrate()
+        assert db.vector_search(tenant_id=tenant,model_id="test384",vector=vec)[0][0]==mid
+
         with pytest.raises(PermissionError):
             db.store_embedding(tenant_id="wrong-"+tenant,memory_id=mid,model_id="test384",vector=vec)
         assert db.vector_search(tenant_id=tenant,model_id="test384",vector=vec)[0][0]==mid

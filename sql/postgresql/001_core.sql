@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
 );
 CREATE INDEX IF NOT EXISTS memory_embeddings_hnsw
 ON memory_embeddings USING hnsw (embedding vector_cosine_ops);
+-- Upgrade path for databases that had only 384-dimensional vectors.
+-- Preserve existing rows before the model registry starts governing queries.
+INSERT INTO memory_embedding_models(tenant_id,model_id,dimensions)
+SELECT DISTINCT c.tenant_id, e.model_id, 384
+FROM memory_embeddings e JOIN memory_claims c ON c.id=e.memory_id
+ON CONFLICT (tenant_id,model_id) DO NOTHING;
+
 -- Dimension 384 is a prototype fixed-profile contract.
 -- Changing embedding models or dimensions requires separate indexes/tables.
 

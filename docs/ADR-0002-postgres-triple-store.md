@@ -67,3 +67,11 @@ model ID cannot silently switch dimensions. Tests use fixture vectors, not
 actual model inference or retrieval-quality benchmarks.
 
 See https://huggingface.co/BAAI/bge-small-zh-v1.5 for 512-dimension model.
+
+## Legacy upgrade path
+
+Rerunning the idempotent schema loader backfills per-tenant 384-dimensional
+model profiles from existing `memory_embeddings` rows, so an upgrade does
+not make old vector data inaccessible. A regression test deliberately deletes
+a profile row, reruns migration and verifies historical 384-dimension retrieval.
+This is not a general-purpose schema migration framework.

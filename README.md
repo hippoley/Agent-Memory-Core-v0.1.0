@@ -16,6 +16,9 @@ The project separates **memory facts and provenance** from workflow execution (T
 See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sql/postgresql/README.md). CI builds a single PostgreSQL instance with pgvector and AGE and verifies SQL, vector, graph, idempotent projection, and tenant query isolation. This remains a **prototype**, not a secured production deployment.
 
 ## Current capabilities
+- Same-database PostgreSQL + pgvector + AGE integration test, verified in GitHub Actions
+- SQL / vector / graph hybrid retrieval with canonical time/tenant filtering
+- AGE restart-safe idempotent projection of immutable canonical edges
 - SQLite persistence and bitemporal-style as-of queries
 - Source identifiers, correction links, and append-oriented history
 - Event identifier deduplication and conflict checks
@@ -26,8 +29,8 @@ See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sq
 ## Not yet implemented
 - Authenticated multi-tenant access control and cryptographic protection
 - Complete bitemporal interval revision semantics
-- Apache AGE graph projection and production-ready PostgreSQL integration tests
-- Embedding, hybrid retrieval, graph queries
+- Automatic local embedding model, embedding model/version lifecycle and relevance evaluation
+- Graph deletion/rebuild, consistency reconciliation and broad Cypher query support
 - Temporal / Restate integration
 - Production-grade deletion, retention, backup, and observability
 

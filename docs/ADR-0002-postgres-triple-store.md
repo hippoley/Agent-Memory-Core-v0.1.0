@@ -13,8 +13,7 @@ The three capabilities use one PostgreSQL server/database only when AGE and
 pgvector are actually installed in the same compatible build. Supporting
 both individually does not prove the combined runtime.
 
-Do NOT represent the current SQL adjacency table as Apache AGE graph search.
-Graph projection and bounded two-hop Cypher search are implemented and CI tested. Full rebuild and projection deletion/reconciliation are still missing.
+The SQL adjacency table is canonical; the separate Apache AGE graph projection and bounded two-hop Cypher traversal are implemented and CI tested. Full rebuild and projection deletion/reconciliation are still missing.
 
 ## Evidence semantics
 

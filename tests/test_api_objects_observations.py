@@ -21,6 +21,9 @@ class FakeDB:
         pass
     def remember(self, **kwargs):
         from datetime import datetime, timezone
+        digest=kwargs.get("object_sha256")
+        if digest is not None and (kwargs["tenant_id"],digest) not in self.objects_owned:
+            raise ValueError("Evidence object is not registered to this tenant")
         old=kwargs.get("replaces_id")
         if old:
             for row in self.memories:

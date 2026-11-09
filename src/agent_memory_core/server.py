@@ -78,4 +78,4 @@ app = create_app(search_factory=search_factory,
                  object_store_factory=object_store_factory,
                  capability_flags=flags,
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
-                 temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE"))
+                 temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"))

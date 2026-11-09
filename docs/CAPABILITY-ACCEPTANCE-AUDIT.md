@@ -33,7 +33,7 @@ service integration test.
 | Mem0-inspired processing | Deterministic first stage | Yes | Structured candidate validation, confidence filtering, atomic per-fact deduplication/replacement, provenance linking, alias resolution and explicit positive/negative assertion polarity; model extractor injected by caller |
 | Local-model extraction | Optional loopback adapter | Yes, `POST /v1/memories/extract` | OpenAI-compatible local endpoint only; bounded context, JSON validation, polarity and tenant-local self subject; 12-case smoke benchmark exists but is not release-grade |
 | Memory consolidation / forgetting | Not complete | No | Summarization, consolidation scheduling, policy-based forgetting, contradiction classification and benchmark remain |
-| Third-party REST contract | Yes, broad prototype | Yes | Swagger/OpenAPI, tenant-scoped lexical route, explicit assertion polarity and Idempotency-Key claim writes; not yet hardened for untrusted multi-customer public SaaS |
+| Third-party REST contract | Yes, broad prototype | Yes | Swagger/OpenAPI, tenant-scoped lexical route, explicit assertion polarity, Idempotency-Key writes, cursor event replay and dependency-free Python SDK; not yet hardened for untrusted multi-customer public SaaS |
 
 ## Current public HTTP endpoints
 

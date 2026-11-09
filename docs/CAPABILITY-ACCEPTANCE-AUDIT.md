@@ -49,6 +49,9 @@ service integration test.
 - `POST /v1/edges`
 - `GET /v1/events`
 - `GET /v1/events/stream`
+- `POST /v1/workflows/memory-verifications`
+- `GET /v1/workflows/{workflow_id}`
+- `POST /v1/workflows/{workflow_id}/cancel`
 
 ## Important limitations and risks
 

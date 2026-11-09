@@ -587,8 +587,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             status=getattr(description.status,"name",str(description.status))
             return {"workflow_id":workflow_id,"run_id":description.run_id,
                     "status":status,"workflow_type":str(getattr(description,"workflow_type","VerifyMemoryWorkflow"))}
-        except Exception:
+        except (KeyError, LookupError):
             raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow service is unavailable")
 
     @app.post(
         "/v1/workflows/{workflow_id}/cancel", tags=["Workflows"],
@@ -603,8 +605,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             client=await temporal_client_factory()
             await client.get_workflow_handle(workflow_id).cancel()
             return {"workflow_id":workflow_id,"cancel_requested":True}
-        except Exception:
+        except (KeyError, LookupError):
             raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow service is unavailable")
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

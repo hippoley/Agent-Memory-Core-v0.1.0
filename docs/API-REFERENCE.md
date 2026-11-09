@@ -248,9 +248,26 @@ curl http://127.0.0.1:8765/v1/objects/<sha256> \
   --output floorplan.png
 ```
 
-This is local filesystem storage, not S3 or distributed object storage.
-Configure `MEMORY_OBJECT_ROOT` to select its durable data directory. Back it
-up independently of PostgreSQL.
+The default is local filesystem storage. To use an S3-compatible backend
+(AWS S3 or MinIO), install the optional dependency and configure:
+
+```bash
+python -m pip install -e '.[s3]'
+export MEMORY_OBJECT_BACKEND=s3
+export MEMORY_S3_BUCKET=agent-memory-evidence
+export MEMORY_S3_ENDPOINT_URL=https://s3.example.internal
+export MEMORY_S3_REGION=us-east-1
+export MEMORY_S3_ACCESS_KEY_ID=...
+export MEMORY_S3_SECRET_ACCESS_KEY=...
+```
+
+For AWS, omit the endpoint and credentials when the runtime role supplies
+credentials. For MinIO, set the endpoint and credentials. The adapter uses
+SHA-256 object keys and verifies content on read. Configure bucket versioning,
+encryption, IAM permissions, lifecycle and backups at the object provider.
+Set `MEMORY_OBJECT_ROOT` when using local storage and back it up independently
+of PostgreSQL. S3 network integration and provider-specific behavior still
+require deployment acceptance tests.
 
 ## 4.8 Ingest and query time-series observations
 

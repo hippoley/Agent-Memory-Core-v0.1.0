@@ -116,6 +116,15 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     memory_id=claim.json()["id"]
     assert client.get("/v1/objects/"+digest,headers=headers).content==evidence
 
+    check_db=PostgresMemory(dsn)
+    try:
+        persisted=check_db.conn.execute(
+            "SELECT id::text,tenant_id FROM memory_claims WHERE id=%s::uuid",
+            (memory_id,)).fetchone()
+        assert persisted==(memory_id,tenant), {"memory_id":memory_id,"persisted":persisted,"tenant":tenant}
+    finally:
+        check_db.close()
+
     vector=[0.0]*384
     vector[0]=1.0
     indexed=client.put("/v1/memories/"+memory_id+"/embedding",

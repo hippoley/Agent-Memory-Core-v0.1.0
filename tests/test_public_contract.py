@@ -78,3 +78,28 @@ def test_search_endpoint_reports_unconfigured_adapter():
         headers={"Authorization":"Bearer secret-token-with-more-than-24-characters"},
         json={"query":"hello"})
     assert result.status_code==503
+
+
+def test_swagger_and_openapi_are_published_with_bearer_security():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    app=create_app(
+        api_key="secret-token-with-more-than-24-characters",
+        tenant_id="home",
+    )
+    client=TestClient(app)
+    docs=client.get("/docs")
+    assert docs.status_code==200
+    assert "swagger-ui" in docs.text.lower()
+    spec=client.get("/openapi.json")
+    assert spec.status_code==200
+    body=spec.json()
+    assert body["openapi"].startswith("3.")
+    assert set(body["paths"]) >= {
+        "/v1/health","/v1/ready","/v1/capabilities",
+        "/v1/memories","/v1/memories/{subject_id}","/v1/search"
+    }
+    assert "HTTPBearer" in body["components"]["securitySchemes"]
+    assert body["paths"]["/v1/memories"]["post"]["security"] == [{"HTTPBearer": []}]
+    assert "HTTPBearer" not in body["paths"]["/v1/health"]["get"].get("security", [])

@@ -324,3 +324,25 @@ def test_object_download_requires_tenant_ownership(tmp_path):
     denied=client_b.get("/v1/objects/"+digest,
         headers={"Authorization":"Bearer "+key_b})
     assert denied.status_code==404
+
+
+def test_memory_claim_cannot_reference_another_tenants_object(tmp_path):
+    client,headers=make_client(tmp_path)
+    other_key="tenant-b-key-with-more-than-24-characters"
+    shared_db=FakeDB()
+    other_app=create_app(api_key=other_key,tenant_id="tenant-b",
+        store_factory=lambda:shared_db,
+        object_store_factory=lambda:ObjectStore(tmp_path/"objects"))
+    other=TestClient(other_app)
+    payload=b"tenant-b-private-evidence"
+    uploaded=other.put("/v1/objects",headers={"Authorization":"Bearer "+other_key},
+                       content=payload)
+    assert uploaded.status_code==201
+    digest=uploaded.json()["sha256"]
+    claim=client.post("/v1/memories",headers=headers,json={
+        "subject_id":"room-1","predicate":"layout",
+        "value":{"room":"bedroom"},"source_id":"conversation:tenant-a",
+        "valid_from":"2026-11-09T00:00:00Z","object_sha256":digest,
+    })
+    assert claim.status_code==422
+    assert shared_db.memories==[]

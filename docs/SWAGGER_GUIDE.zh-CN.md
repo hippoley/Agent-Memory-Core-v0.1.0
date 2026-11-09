@@ -272,10 +272,10 @@ curl -X POST http://127.0.0.1:8765/v1/workflows/<tenant-prefixed-workflow-id>/ca
 | S3 兼容适配器 | 已实现，模拟客户端测试；真实云/MinIO 部署待验收 |
 | 事件回放和 SSE | 已实现，API 合约测试；生产级负载待验收 |
 | Transactional Outbox | 已实现内部消费者与重试，真实 PostgreSQL 测试 |
-| Mem0 式确定性加工第一阶段 | 已实现，单元测试；真实 DB API 测试正在扩展 |
+| Mem0 式确定性加工第一阶段 | 已实现，单元测试与真实 PostgreSQL API 端到端测试 |
 | 自动 LLM 抽取/摘要整合/遗忘 | 未完成 |
-| Temporal SDK Workflow | 窄范围原型，真实本地 Temporal + PostgreSQL CI |
-| 通用 Temporal Workflow HTTP 管理 | 未完成 |
+| Temporal SDK Workflow | 已有记忆核验 REST start/status/cancel 与独立 Worker；真实 Temporal + PostgreSQL CI |
+| 通用 Temporal Workflow 定义/Signal/Update | 未完成 |
 | 多租户生产安全 | 未完成 |
 
 ## 七、CI 与验收
@@ -297,7 +297,7 @@ pytest -q -m integration
 数据库 RLS、密钥轮换/撤销、TLS、速率限制、审计、对象保留与删除、备份恢复、Outbox 死信与投影任务拆分、Temporal Worker 运行治理、记忆加工并发幂等、中文检索/抽取评测，以及 p50/p95 和故障恢复测试。
 
 
-### 9. Temporal 记忆验证工作流
+## 九、Temporal 记忆验证工作流
 
 API 与 Worker 分开运行。配置 API：
 

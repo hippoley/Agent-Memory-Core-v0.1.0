@@ -38,7 +38,7 @@ def write_memory_verification_receipt(verified: dict) -> dict:
     from .postgres import PostgresMemory
     receipt_id=uuid5(NAMESPACE_URL,
         "memory-verify:"+verified["tenant_id"]+":"+verified["memory_id"])
-    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    db=PostgresMemory(_database_dsn())
     try:
         with db.conn.transaction():
             db.conn.execute(

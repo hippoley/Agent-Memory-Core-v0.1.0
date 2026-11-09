@@ -7,6 +7,9 @@ External effects remain at-least-once and require destination-side idempotency.
 from __future__ import annotations
 
 import json
+import logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 class OutboxWorker:
@@ -82,6 +85,11 @@ class OutboxWorker:
                            WHERE event_id=%s AND processed_at IS NULL""",
                         (delay, exhausted, str(exc)[:1000], event_id),
                     )
+                LOGGER.warning(
+                    "Outbox delivery failed event_id=%s event_type=%s attempt=%s state=%s error=%s",
+                    event_id, event_type, next_attempt,
+                    "dead_letter" if exhausted else "retry", str(exc)[:500],
+                )
                 break
         return done
 

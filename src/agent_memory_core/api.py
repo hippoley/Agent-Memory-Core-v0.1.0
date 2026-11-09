@@ -190,6 +190,11 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         responses={503: {"description": "Hybrid search adapter is not configured."}},
     )
     def search_memories(item: SearchRequest, t: str = Depends(auth)):
+        flags = capability_flags or {}
+        if item.embedding is not None and not flags.get("semantic", False):
+            raise HTTPException(status_code=503, detail="Vector retrieval is disabled on this instance")
+        if item.anchor_entity is not None and not flags.get("graph", False):
+            raise HTTPException(status_code=503, detail="Graph retrieval is disabled on this instance")
         if search_factory is None:
             raise HTTPException(status_code=503, detail="Hybrid search adapter is not configured")
         try:

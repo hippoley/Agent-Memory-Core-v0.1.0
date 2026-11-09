@@ -29,6 +29,9 @@
 | POST | `/v1/edges` | 创建关系并投影 AGE |
 | GET | `/v1/events` | 事件游标回放 |
 | GET | `/v1/events/stream` | SSE 实时事件流 |
+| POST | `/v1/workflows/memory-verifications` | 启动记忆核验工作流 |
+| GET | `/v1/workflows/{workflow_id}` | 查询工作流状态 |
+| POST | `/v1/workflows/{workflow_id}/cancel` | 请求取消工作流 |
 
 Temporal 目前提供一个有限的记忆验证 Workflow REST 生命周期（启动、状态查询、取消请求）；Worker 仍需独立部署，不是通用工作流编排平台。
 
@@ -209,7 +212,54 @@ curl -N 'http://127.0.0.1:8765/v1/events/stream?max_seconds=30' \
 
 连接最长 30 秒；断线后使用最后收到的 `id:` 作为 `Last-Event-ID` 或 `after`。当前实现是基于持久事件日志的轮询式 SSE，不是消息代理；多副本扇出、背压和吞吐 SLA 尚未验证。浏览器原生 EventSource 不能设置自定义 Authorization Header，请使用 fetch streaming 或可信网关，不要把 API Key 放入 URL。
 
-## 五、能力边界
+## 五、Temporal 工作流接入
+
+当前对外开放的是一个经过真实 Temporal SDK + PostgreSQL 集成测试的窄工作流：核验某条记忆是否存在、是否仍有效，并写入可幂等重放的核验回执。
+
+API 与 Worker 是两个独立进程。先配置 API：
+
+```bash
+export MEMORY_TEMPORAL_ADDRESS=localhost:7233
+export MEMORY_TEMPORAL_NAMESPACE=default
+export MEMORY_TEMPORAL_TASK_QUEUE=agent-memory-core
+```
+
+Worker 进程需要配置数据库连接，并启动：
+
+```bash
+python -m pip install -e '.[temporal,postgres]'
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.temporal_worker
+```
+
+启动工作流：
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/workflows/memory-verifications \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"memory_id":"<existing-claim-uuid>","workflow_id":"verify-claim-001"}'
+```
+
+服务端会将 workflow ID 加上租户前缀。后续使用返回的完整 ID 查询：
+
+```bash
+curl http://127.0.0.1:8765/v1/workflows/<tenant-prefixed-workflow-id> \
+  -H "Authorization: Bearer $MEMORY_API_KEY"
+```
+
+请求取消：
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/workflows/<tenant-prefixed-workflow-id>/cancel \
+  -H "Authorization: Bearer $MEMORY_API_KEY"
+```
+
+跨租户查询/取消返回 404。Temporal 服务不可用返回 503；不能将基础设施故障误报为工作流不存在。取消是向 Temporal 发出请求，不代表已经回滚任何外部副作用。
+
+当前尚未提供通用 Workflow 定义、Signal/Update、任意任务编排、Worker 自动扩缩容或生产集群治理。
+
+## 六、能力边界
 
 | 能力 | 当前状态 |
 |---|---|
@@ -228,7 +278,7 @@ curl -N 'http://127.0.0.1:8765/v1/events/stream?max_seconds=30' \
 | 通用 Temporal Workflow HTTP 管理 | 未完成 |
 | 多租户生产安全 | 未完成 |
 
-## 六、CI 与验收
+## 七、CI 与验收
 
 本地运行：
 
@@ -242,7 +292,7 @@ pytest -q -m integration
 
 检查 GitHub Actions 时，必须确认全部相关工作流针对**同一个 commit SHA**通过。不能将不同提交上的绿灯拼成一个发布验收结果。
 
-## 七、生产部署前仍需完成
+## 八、生产部署前仍需完成
 
 数据库 RLS、密钥轮换/撤销、TLS、速率限制、审计、对象保留与删除、备份恢复、Outbox 死信与投影任务拆分、Temporal Worker 运行治理、记忆加工并发幂等、中文检索/抽取评测，以及 p50/p95 和故障恢复测试。
 

@@ -57,11 +57,13 @@ service integration test.
 
 ### Object ownership
 
-The service binds one API key to one tenant per process, but object keys are
-content hashes and the current object adapter does not maintain a separate
-tenant-to-object ownership table. For untrusted tenants, deploy isolated
-object-store roots/buckets and do not share one object namespace until object
-ownership metadata and authorization are implemented.
+The service binds one API key to one tenant per process. PostgreSQL now records
+`(tenant_id, object_sha256)` ownership on upload; object downloads and memory
+claim references both verify that ownership. A shared physical content-addressed
+store can therefore be used without granting another tenant read/reference
+access through this API. Direct bucket access, lifecycle/deletion, quotas,
+malware scanning and backup policy remain deployment concerns; keep buckets
+private and do not grant clients direct object-store credentials.
 
 ### Realtime semantics
 
@@ -88,8 +90,10 @@ Chinese evaluation corpus remain.
 ### Temporal
 
 The SDK integration demonstrates a durable workflow for verification and
-receipt writing. General-purpose workflow start/status/signal/cancel, worker
-deployment and operational recovery are not yet exposed through REST.
+receipt writing. The registered memory-verification workflow supports REST start/status/cancel
+and has a standalone worker command. General-purpose workflow authoring,
+Signal/Update, arbitrary workflow registration, worker autoscaling and
+production Temporal cluster operations are not implemented.
 
 ### Security / deployment
 
@@ -107,14 +111,14 @@ runs from different commits and call the latest main fully qualified.
 
 ## Next engineering gates
 
-1. Add object ownership metadata and isolated S3 integration tests against MinIO.
+1. Add real MinIO integration tests, object lifecycle/deletion, quota and orphan cleanup.
 2. Add outbox per-channel tasks for vector, FTS and AGE projection, plus retry
    exhaustion and dead-letter handling.
 3. Add observation retention/partition policy and sustained ingestion tests.
 4. Add processing concurrency/idempotency controls and a Chinese candidate
    extraction evaluation set.
-5. Generalize Temporal workflows and expose lifecycle APIs only after worker
-   deployment semantics are stable.
+5. Add Temporal signals/updates and generalize workflow registration only after
+   worker deployment and lifecycle semantics are stable.
 6. Add RLS, API key rotation/revocation, rate limits and audit trails.
 7. Run the complete suite against one immutable release candidate SHA and
    publish the resulting test matrix.

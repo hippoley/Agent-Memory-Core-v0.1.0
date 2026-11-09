@@ -23,7 +23,7 @@ class Claim(BaseModel):
     object_sha256: str|None=None
 
 
-def create_app(*, api_key=None, tenant_id=None, store_factory=None):
+def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_factory=None, capability_flags=None):
     from fastapi import FastAPI, HTTPException, Depends
 
     key=api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
@@ -45,6 +45,16 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None):
         return tenant
 
 
+    class SearchRequest(BaseModel):
+        model_config=ConfigDict(extra="forbid")
+        query: str=Field(min_length=1,max_length=2000)
+        embedding: list[float]|None=None
+        model_id: str|None=None
+        anchor_entity: str|None=None
+        limit: int=Field(default=10,ge=1,le=100)
+        valid_at: str|None=None
+        known_at: str|None=None
+
     @app.get("/v1/health")
     def health():
         return {"status":"alive","contract_version":CONTRACT_VERSION}
@@ -52,7 +62,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None):
     @app.get("/v1/capabilities")
     def get_capabilities(t: str=Depends(auth)):
         return {"contract_version":CONTRACT_VERSION,"tenant_id":t,
-                "capabilities":capabilities()}
+                "capabilities":capabilities(**(capability_flags or {}))}
 
     @app.post("/v1/memories",status_code=201)
     def add_claim(item: Claim,t: str=Depends(auth)):
@@ -85,4 +95,28 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None):
             finally: db.close()
         except ValueError as exc:
             raise HTTPException(status_code=422,detail=str(exc))
+    @app.post("/v1/search")
+    def search_memories(item: SearchRequest,t: str=Depends(auth)):
+        if search_factory is None:
+            raise HTTPException(status_code=503,detail="Hybrid search adapter is not configured")
+        try:
+            service=search_factory()
+            try:
+                report=service.search_detailed(tenant_id=t,query=item.query,
+                    embedding=item.embedding,model_id=item.model_id,
+                    anchor_entity=item.anchor_entity,limit=item.limit,
+                    valid_at=aware_iso(item.valid_at),known_at=aware_iso(item.known_at))
+                return {"contract_version":CONTRACT_VERSION,
+                        "items":[{"memory_id":h.memory_id,"subject_id":h.subject_id,
+                                  "predicate":h.predicate,"value":h.value,
+                                  "source_id":h.source_id,"score":h.score,
+                                  "channels":list(h.channels)} for h in report.hits],
+                        "channels_used":list(report.channels_used),
+                        "degraded_channels":report.degraded_channels}
+            finally:
+                close=getattr(service,"close",None)
+                if callable(close): close()
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
     return app

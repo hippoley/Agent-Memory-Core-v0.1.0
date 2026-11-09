@@ -300,12 +300,14 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         description="Server-Sent Events stream. Supports Last-Event-ID or after cursor for replay after reconnect. Each connection is bounded to 30 seconds; reconnect with the last received event ID.",
     )
     async def stream_events(request: Request, after: str | None = None,
-                            t: str = Depends(auth)):
+                            max_seconds: int = 30, t: str = Depends(auth)):
+        if not 1 <= max_seconds <= 30:
+            raise HTTPException(status_code=422, detail="max_seconds must be between 1 and 30")
         cursor = after or request.headers.get("last-event-id")
         async def generate():
             last_id = cursor
             loop = asyncio.get_running_loop()
-            deadline = loop.time() + 30
+            deadline = loop.time() + max_seconds
             while loop.time() < deadline and not await request.is_disconnected():
                 try:
                     db = store_factory()

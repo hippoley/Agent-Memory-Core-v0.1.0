@@ -39,6 +39,29 @@ class ObservationWrite(BaseModel):
     source_id: str = Field(min_length=1, max_length=255)
 
 
+class EmbeddingWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(min_length=1, max_length=255)
+    embedding: list[float] = Field(min_length=384, max_length=512)
+
+
+class EntityWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_id: str = Field(min_length=1, max_length=255)
+    entity_type: str
+    canonical_name: str = Field(min_length=1, max_length=500)
+    aliases: list[str] = Field(default_factory=list)
+    attributes: dict = Field(default_factory=dict)
+
+
+class EdgeWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    from_entity: str = Field(min_length=1, max_length=255)
+    predicate: str = Field(min_length=1, max_length=255)
+    to_entity: str = Field(min_length=1, max_length=255)
+    source_memory_id: str | None = None
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
@@ -83,6 +106,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             {"name": "Objects", "description": "Content-addressed evidence object upload and download."},
             {"name": "Observations", "description": "Idempotent device observations with event-time queries."},
             {"name": "Events", "description": "Durable tenant-scoped event replay with cursor pagination."},
+            {"name": "Knowledge Graph", "description": "Canonical entity registry, relation writes and vector indexing."},
         ],
     )
     bearer = HTTPBearer(
@@ -276,6 +300,81 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     "property": property, "items": items}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.put(
+        "/v1/memories/{memory_id}/embedding", tags=["Retrieval"],
+        summary="Attach a caller-generated embedding to a memory",
+    )
+    def put_embedding(memory_id: str, item: EmbeddingWrite,
+                      t: str = Depends(auth)):
+        try:
+            db = store_factory()
+            try:
+                db.store_embedding(tenant_id=t,memory_id=memory_id,
+                                   model_id=item.model_id,vector=item.embedding)
+            finally:
+                db.close()
+            return {"memory_id":memory_id,"model_id":item.model_id,
+                    "dimensions":len(item.embedding),"indexed":True}
+        except (ValueError, PermissionError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.post(
+        "/v1/entities", status_code=201, tags=["Knowledge Graph"],
+        summary="Create or update a canonical entity",
+    )
+    def put_entity(item: EntityWrite, t: str = Depends(auth)):
+        try:
+            db=store_factory()
+            try:
+                db.upsert_entity(tenant_id=t,entity_id=item.entity_id,
+                    entity_type=item.entity_type,canonical_name=item.canonical_name,
+                    aliases=item.aliases,attributes=item.attributes)
+            finally:
+                db.close()
+            return {"entity_id":item.entity_id,"canonical_name":item.canonical_name}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
+    @app.get(
+        "/v1/entities/resolve", tags=["Knowledge Graph"],
+        summary="Resolve a canonical entity name or alias",
+    )
+    def resolve_entity(name: str, t: str = Depends(auth)):
+        try:
+            db=store_factory()
+            try:
+                entity=db.resolve_entity(tenant_id=t,name=name)
+            finally:
+                db.close()
+            if entity is None:
+                raise HTTPException(status_code=404,detail="Entity not found")
+            return entity
+        except ValueError as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
+
+    @app.post(
+        "/v1/edges", status_code=201, tags=["Knowledge Graph"],
+        summary="Create an entity relationship and project it to AGE",
+    )
+    def put_edge(item: EdgeWrite, t: str = Depends(auth)):
+        try:
+            db=store_factory()
+            try:
+                edge_id=db.add_edge(tenant_id=t,from_entity=item.from_entity,
+                    predicate=item.predicate,to_entity=item.to_entity,
+                    source_memory_id=item.source_memory_id)
+                projected=0
+                if (capability_flags or {}).get("graph",False):
+                    from .age_graph import AgeProjection
+                    graph=AgeProjection(db.conn)
+                    graph.initialize()
+                    projected=graph.project_pending(tenant_id=t).projected
+            finally:
+                db.close()
+            return {"edge_id":edge_id,"projected_to_age":projected}
+        except (ValueError,PermissionError) as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
 
     @app.get(
         "/v1/events", tags=["Events"], summary="Replay durable memory events",

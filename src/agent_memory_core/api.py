@@ -554,10 +554,9 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         try:
             memory_id=str(UUID(item.memory_id))
             client=await temporal_client_factory()
-            from .temporal_adapter import VerifyMemoryWorkflow
             workflow_id=t+":"+(item.workflow_id or "memory-verify-"+str(uuid4()))
             handle=await client.start_workflow(
-                VerifyMemoryWorkflow.run,
+                "VerifyMemoryWorkflow",
                 {"tenant_id":t,"memory_id":memory_id},
                 id=workflow_id,task_queue=temporal_task_queue,
             )

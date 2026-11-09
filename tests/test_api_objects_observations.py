@@ -11,6 +11,9 @@ class FakeDB:
     def __init__(self):
         self.observations_data = {}
         self.events_data = []
+        self.entities = {}
+        self.edges = []
+        self.embedding_rows = []
     def close(self):
         pass
     def record_observation(self, **kwargs):
@@ -33,6 +36,23 @@ class FakeDB:
                 rows.append({"source_event_id":e,"observed_at":v[0],"property":v[1],
                              "measured_value":v[2],"unit":v[3],"source_id":v[4]})
         return rows[:limit]
+    def upsert_entity(self, **kwargs):
+        self.entities[kwargs["entity_id"]]=kwargs
+    def resolve_entity(self, *, tenant_id, name):
+        matches=[v for v in self.entities.values()
+                 if v["tenant_id"]==tenant_id and
+                 (v["canonical_name"].lower()==name.lower() or
+                  any(a.lower()==name.lower() for a in v["aliases"]))]
+        if len(matches)>1:
+            raise ValueError("Ambiguous entity alias")
+        if not matches:
+            return None
+        return {"entity_id":matches[0]["entity_id"],"canonical_name":matches[0]["canonical_name"]}
+    def add_edge(self, **kwargs):
+        self.edges.append(kwargs)
+        return "edge-"+str(len(self.edges))
+    def store_embedding(self, **kwargs):
+        self.embedding_rows.append(kwargs)
     def events_after(self, *, tenant_id, after=None, limit=100):
         if tenant_id != "tenant-a":
             return []
@@ -162,3 +182,19 @@ def test_sse_stream_emits_event_id_and_replay_payload(tmp_path):
         assert next(lines)=="id: event-stream-1"
         assert next(lines)=="event: memory.observation.recorded"
         assert next(lines).startswith("data: ")
+
+
+def test_graph_and_vector_write_apis(tmp_path):
+    client,headers=make_client(tmp_path)
+    entity={"entity_id":"bedroom-1","entity_type":"room",
+            "canonical_name":"Main Bedroom","aliases":["primary bedroom"],
+            "attributes":{"floor":1}}
+    assert client.post("/v1/entities",json=entity,headers=headers).status_code==201
+    resolved=client.get("/v1/entities/resolve?name=PRIMARY%20BEDROOM",headers=headers)
+    assert resolved.status_code==200
+    assert resolved.json()["entity_id"]=="bedroom-1"
+    edge={"from_entity":"bedroom-1","predicate":"HAS_WINDOW","to_entity":"window-1"}
+    assert client.post("/v1/edges",json=edge,headers=headers).status_code==201
+    embedding={"model_id":"bge-small-zh-v1.5","embedding":[0.01]*512}
+    response=client.put("/v1/memories/memory-1/embedding",json=embedding,headers=headers)
+    assert response.status_code==422 or response.status_code==200

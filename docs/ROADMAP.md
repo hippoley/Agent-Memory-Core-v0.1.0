@@ -14,6 +14,9 @@ The repository is a **working local research prototype**, NOT a secure productio
 | G7 | Local embeddings, retrieval quality and latency benchmarks | Fixed 384-dim profile, no local encoder or Recall@k | ◻ Incomplete |
 | G8 | Real sensor time-series partitioning and object lifecycle | Observation schema and SHA-256 store only | ◻ Incomplete |
 | G9 | Temporal / Restate / WindowPilot adapters | Boundary documented; no runtime adapters | ◻ Not started |
+| G11 | Mem0-inspired extraction and multi-signal retrieval | Architecture decision recorded; pipeline not yet implemented | ◻ Planned |
+| G12 | Realtime outbox + change feed + snapshot query | PostgreSQL events exist; durable outbox/subscription API missing | ◻ Planned |
+| G13 | Temporal durable orchestration adapter | Optional adapter only; no Temporal server dependency in core | ◻ Planned |
 | G10 | Interop spec + external reproducer | Independent external verification absent | ◻ Not started |
 
 ## Verified version profile
@@ -38,3 +41,15 @@ implementing a new database engine.
 The authoritative PostgreSQL DDL is mirrored as a package resource so wheels
 do not depend on the source checkout path. The unit test asserts byte equality
 against the repository SQL and CI checks resource inclusion in built wheels.
+
+
+## Lightweight architecture decision
+
+See [ADR-0004](ADR-0004-lightweight-memory-platform.md). The design keeps one
+mandatory database and zero mandatory sidecar services. PostgreSQL is the
+authority; pgvector, AGE and full-text search are in-database indexes. Object
+bytes use local content-addressed files by default. Temporal is an optional
+durable workflow control plane for long-running/retryable processes, never a
+synchronous retrieval dependency. Mem0 contributes extraction, deduplication,
+entity-aware and multi-signal retrieval patterns, not a required platform or
+a second source of truth.

@@ -48,6 +48,12 @@ class PostgresMemory:
         mid = uuid4()
         with self.conn.transaction():
             mutation_time = self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
+            if object_sha256 is not None:
+                owned = self.conn.execute(
+                    "SELECT 1 FROM memory_objects WHERE tenant_id=%s AND object_sha256=%s",
+                    (tenant_id,object_sha256)).fetchone()
+                if owned is None:
+                    raise ValueError("Evidence object is not registered to this tenant")
             if replaces_id is not None:
                 # Lock the historical claim to prevent concurrent conflicting corrections.
                 old = self.conn.execute(

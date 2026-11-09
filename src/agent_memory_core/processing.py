@@ -45,11 +45,17 @@ class MemoryProcessor:
                           separators=(",", ":"), allow_nan=False)
 
     def process(self, *, tenant_id: str, text: str, source_id: str,
-                extractor: Callable[[str], object]) -> ProcessingReport:
+                extractor: Callable[[str], object],
+                context: list[dict] | None = None) -> ProcessingReport:
         if not tenant_id or not text.strip() or not source_id:
             raise ValueError("tenant_id, non-empty text and source_id are required")
+        if context is not None and (not isinstance(context, list) or len(context) > 20):
+            raise ValueError("context must contain at most 20 turns")
         report = ProcessingReport()
-        candidates = extractor(text)
+        contextual_extract = getattr(extractor, "extract_with_context", None)
+        candidates = (contextual_extract(text, context or [])
+                      if context is not None and callable(contextual_extract)
+                      else extractor(text))
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 report.rejected += 1
@@ -67,35 +73,52 @@ class MemoryProcessor:
             predicate = candidate.get("predicate")
             value = candidate.get("value")
             confidence = candidate.get("confidence", 1.0)
+            polarity = candidate.get("polarity", "positive")
             if (not isinstance(subject, str) or not subject.strip()
                     or not isinstance(predicate, str) or not predicate.strip()
                     or not isinstance(value, dict)
                     or not isinstance(confidence, (int, float))
                     or not 0.0 <= confidence <= 1.0
-                    or confidence < self.confidence_threshold):
+                    or confidence < self.confidence_threshold
+                    or polarity not in {"positive", "negative"}):
                 report.rejected += 1
                 continue
             try:
                 canonical = self._canonical(value)
                 clock = getattr(self.store, "current_time", None)
                 now = clock() if callable(clock) else datetime.now(timezone.utc)
-                active = self.store.recall(
-                    tenant_id=tenant_id, subject_id=subject,
-                    predicate=predicate, valid_at=now, known_at=now)
-                exact = next((row for row in active
-                              if self._canonical(row["value"]) == canonical), None)
-                if exact is not None:
-                    link_source = getattr(self.store, "link_claim_source", None)
-                    if callable(link_source):
-                        link_source(tenant_id=tenant_id,memory_id=exact["id"],
-                                    source_id=source_id,confidence=float(confidence))
-                    report.duplicates += 1
-                    continue
-                replaces_id = active[0]["id"] if active else None
-                memory_id = self.store.remember(
-                    tenant_id=tenant_id, subject_id=subject, predicate=predicate,
-                    value=value, source_id=source_id, valid_from=now,
-                    replaces_id=replaces_id)
+                atomic_apply = getattr(self.store, "apply_candidate", None)
+                if callable(atomic_apply):
+                    outcome = atomic_apply(
+                        tenant_id=tenant_id, subject_id=subject,
+                        predicate=predicate, value=value, source_id=source_id,
+                        valid_from=now, confidence=float(confidence),
+                        polarity=polarity,
+                    )
+                    if outcome["status"] == "duplicate":
+                        report.duplicates += 1
+                        continue
+                    memory_id = outcome["memory_id"]
+                    replaces_id = outcome["replaces_id"]
+                else:
+                    active = self.store.recall(
+                        tenant_id=tenant_id, subject_id=subject,
+                        predicate=predicate, valid_at=now, known_at=now)
+                    exact = next((row for row in active
+                                  if row.get("polarity", "positive") == polarity
+                                  and self._canonical(row["value"]) == canonical), None)
+                    if exact is not None:
+                        link_source = getattr(self.store, "link_claim_source", None)
+                        if callable(link_source):
+                            link_source(tenant_id=tenant_id,memory_id=exact["id"],
+                                        source_id=source_id,confidence=float(confidence))
+                        report.duplicates += 1
+                        continue
+                    replaces_id = active[0]["id"] if active else None
+                    memory_id = self.store.remember(
+                        tenant_id=tenant_id, subject_id=subject, predicate=predicate,
+                        value=value, source_id=source_id, valid_from=now,
+                        replaces_id=replaces_id, polarity=polarity)
                 report.created.append(memory_id)
                 if replaces_id:
                     report.replaced.append(replaces_id)

@@ -15,9 +15,11 @@
 | GET | `/v1/capabilities` | 能力发现 |
 | POST | `/v1/memories` | 写入事实 |
 | GET | `/v1/memories/{subject_id}` | 双时间事实查询 |
-| POST | `/v1/memories/process` | 结构化候选记忆加工 |
+| POST | `/v1/memories/process` | 调用方结构化候选记忆加工 |
+| POST | `/v1/memories/extract` | 可选本地模型抽取与确定性加工 |
 | GET | `/v1/memories/{memory_id}/sources` | 来源追溯 |
 | PUT | `/v1/memories/{memory_id}/embedding` | 写入调用方生成的向量 |
+| GET | `/v1/search/lexical` | PostgreSQL FTS + 中文子串检索 |
 | POST | `/v1/search` | SQL + Vector + Graph 混合检索 |
 | PUT | `/v1/objects` | 上传证据对象 |
 | GET | `/v1/objects/{digest}` | 下载并校验对象 |
@@ -327,3 +329,49 @@ curl -X POST http://127.0.0.1:8765/v1/workflows/memory-verifications \
 响应中的 workflow_id 已由服务端加上租户前缀。后续使用完整 ID 调用 `GET /v1/workflows/{workflow_id}` 查询，或调用 `POST /v1/workflows/{workflow_id}/cancel` 请求取消。跨租户 workflow ID 会返回 404。
 
 目前只注册了 VerifyMemoryWorkflow。尚未实现任意 Workflow 注册、Signal/Update、通用长期任务调度、Worker 自动扩缩容和生产 Temporal 集群运维。取消工作流也不等于回滚已发生的外部副作用。
+
+
+## 词法检索与中文子串检索
+
+第三方 Agent 可以调用：
+
+```http
+GET /v1/search/lexical?query=卧室保持安静&limit=10
+Authorization: Bearer <MEMORY_API_KEY>
+```
+
+该接口只搜索已完成 FTS 投影的事实。英文使用 PostgreSQL tsvector
+排序，中文使用 pg_trgm 子串匹配；它不是向量语义检索。投影尚未完成时，
+新事实不会立即出现在结果中。
+
+
+## 事实否定与断言极性
+
+`POST /v1/memories` 与 `POST /v1/memories/process` 都支持
+`polarity: "positive" | "negative"`。由调用方的本地抽取器负责判断中文
+否定语义，记忆核心负责校验、保存和在查询结果中返回，不会擅自把否定改写为肯定。
+
+
+## 幂等写入
+
+`POST /v1/memories` 支持可选请求头 `Idempotency-Key`（1–255 字符）。
+同一个租户、同一个 key、同一个请求体会返回首次创建的记忆 ID，不会重复写入；
+如果同一个 key 对应不同请求体，则返回 HTTP 409。幂等记录与事实写入在同一
+PostgreSQL 事务中提交。
+
+
+## 本地模型抽取接口
+
+配置 `MEMORY_LOCAL_MODEL_URL=http://127.0.0.1:1234/v1` 与
+`MEMORY_LOCAL_MODEL=本地模型名称` 后，可调用：
+
+```http
+POST /v1/memories/extract
+Authorization: Bearer <MEMORY_API_KEY>
+Content-Type: application/json
+
+{"text":"我不喜欢安静的卧室","source_id":"conversation:001"}
+```
+
+内置适配器只允许 loopback HTTP 地址，不会调用云端模型。未配置本地
+模型时返回 503，并通过 `memory.local_extraction` 能力标志明确告知。

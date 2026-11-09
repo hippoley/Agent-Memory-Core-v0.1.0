@@ -12,6 +12,9 @@ license = {text = "Apache-2.0"}
 authors = [{name = "Noah Ellis"}]
 dependencies = []
 
+[project.scripts]
+agent-memory-projection-worker = "agent_memory_core.projection_worker:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 postgres = ["psycopg[binary]>=3.1"]

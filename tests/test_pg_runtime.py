@@ -180,3 +180,154 @@ def test_real_postgres_pgvector_age():
         assert "window-current" not in age.neighbors(tenant_id=tenant,from_entity="room-1")
     finally:
         db.close()
+
+
+@pytest.mark.integration
+def test_concurrent_memory_processing_deduplicates_atomically():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real PostgreSQL required")
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timezone
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.processing import MemoryProcessor
+    dsn=os.environ["MEMORY_TEST_DSN"]
+    tenant="processing-race-"+uuid4().hex
+    def process(index):
+        db=PostgresMemory(dsn)
+        try:
+            processor=MemoryProcessor(db)
+            report=processor.process(
+                tenant_id=tenant,text="The bedroom target is quiet.",
+                source_id=f"concurrent-source-{index}",
+                extractor=lambda _: [{
+                    "subject_id":"bedroom-1","predicate":"noise_preference",
+                    "value":{"level":"quiet"},"confidence":0.99,
+                }],
+            )
+            return report
+        finally:
+            db.close()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        reports=list(pool.map(process,range(8)))
+    assert sum(len(r.created) for r in reports)==1
+    assert sum(r.duplicates for r in reports)==7
+    db=PostgresMemory(dsn)
+    try:
+        rows=db.recall(tenant_id=tenant,subject_id="bedroom-1",
+                       predicate="noise_preference")
+        assert len(rows)==1
+        sources=db.sources_for_memory(tenant_id=tenant,memory_id=rows[0]["id"])
+        assert len(sources)==8
+    finally:
+        db.close()
+
+
+@pytest.mark.integration
+def test_memory_processor_preserves_negation_and_versions_polarity():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real PostgreSQL required")
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.processing import MemoryProcessor
+    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        db.migrate()
+        tenant="polarity-"+uuid4().hex
+        processor=MemoryProcessor(db)
+        positive=processor.process(
+            tenant_id=tenant,text="我喜欢安静的卧室",source_id="polarity-positive",
+            extractor=lambda _: [{
+                "subject_id":"bedroom-1","predicate":"noise_preference",
+                "value":{"level":"quiet"},"polarity":"positive","confidence":0.99,
+            }])
+        negative=processor.process(
+            tenant_id=tenant,text="我不喜欢安静的卧室",source_id="polarity-negative",
+            extractor=lambda _: [{
+                "subject_id":"bedroom-1","predicate":"noise_preference",
+                "value":{"level":"quiet"},"polarity":"negative","confidence":0.99,
+            }])
+        assert len(positive.created)==1
+        assert len(negative.created)==1 and negative.replaced==positive.created
+        current=db.recall(tenant_id=tenant,subject_id="bedroom-1",
+                          predicate="noise_preference")
+        assert len(current)==1 and current[0]["polarity"]=="negative"
+        repeated=processor.process(
+            tenant_id=tenant,text="我不喜欢安静的卧室",source_id="polarity-repeat",
+            extractor=lambda _: [{
+                "subject_id":"bedroom-1","predicate":"noise_preference",
+                "value":{"level":"quiet"},"polarity":"negative","confidence":0.98,
+            }])
+        assert repeated.duplicates==1 and not repeated.created
+        invalid=processor.process(
+            tenant_id=tenant,text="unknown",source_id="polarity-invalid",
+            extractor=lambda _: [{
+                "subject_id":"bedroom-1","predicate":"noise_preference",
+                "value":{"level":"quiet"},"polarity":"uncertain",
+            }])
+        assert invalid.rejected==1
+    finally:
+        db.close()
+
+
+@pytest.mark.integration
+def test_age_claim_projection_runs_from_independent_projection_job():
+    if not DSN:
+        pytest.skip("Real PostgreSQL + AGE required")
+    from agent_memory_core.projection_jobs import ProjectionWorker
+    from agent_memory_core.age_graph import AgeProjection
+    unique=uuid4().hex
+    tenant="age-claim-"+unique
+    db=PostgresMemory(DSN)
+    try:
+        db.migrate()
+        memory_id=db.remember(
+            tenant_id=tenant,subject_id="room-1",predicate="noise_preference",
+            value={"level":"quiet"},source_id="age-claim-source",
+            valid_from=datetime.now(timezone.utc),polarity="negative")
+        projector=AgeProjection(db.conn)
+        projector.initialize()
+        worker=ProjectionWorker(db.conn)
+        assert worker.consume(projection_name="age",tenant_id=tenant,
+                              handler=projector.project_claim_event,limit=1)==1
+        rows=db.conn.execute(
+            "SELECT count(*) FROM memory_graph_claim_projection WHERE tenant_id=%s",
+            (tenant,)).fetchone()[0]
+        assert rows==1
+        key=tenant+"\x1f"+memory_id
+        from agent_memory_core.age_graph import _cypher_string
+        found=projector._cypher(
+            f"MATCH (c:MemoryClaim {{key: {_cypher_string(key)}}}) RETURN c.claim_id")
+        assert len(found)==1
+        assert worker.stats(projection_name="age",tenant_id=tenant)["succeeded"]==1
+    finally:
+        db.close()
+
+
+@pytest.mark.integration
+def test_vector_projection_uses_injected_embedder_and_is_searchable():
+    if not DSN:
+        pytest.skip("Real PostgreSQL + pgvector required")
+    from agent_memory_core.projection_jobs import ProjectionWorker
+    from agent_memory_core.vector_projection import VectorProjection
+    unique=uuid4().hex
+    tenant="vector-projection-"+unique
+    db=PostgresMemory(DSN)
+    try:
+        db.migrate()
+        memory_id=db.remember(
+            tenant_id=tenant,subject_id="bedroom-1",predicate="air_preference",
+            value={"co2_max":800,"noise":"quiet"},source_id="vector-source",
+            valid_from=datetime.now(timezone.utc))
+        # Deterministic test embedder verifies the adapter/pgvector path only;
+        # production applications inject their own local multilingual embedder.
+        adapter=VectorProjection(
+            embedder=lambda text:[1.0]+[0.0]*383,
+            model_id="test-local-384")
+        worker=ProjectionWorker(db.conn)
+        assert worker.consume(projection_name="vector",tenant_id=tenant,
+                              handler=adapter,limit=1)==1
+        hits=db.vector_search(tenant_id=tenant,model_id="test-local-384",
+                              vector=[1.0]+[0.0]*383,limit=5)
+        assert hits and hits[0][0]==memory_id
+        assert worker.stats(projection_name="vector",tenant_id=tenant)["succeeded"]==1
+    finally:
+        db.close()

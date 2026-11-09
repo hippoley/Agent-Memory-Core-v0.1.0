@@ -20,12 +20,18 @@ observation streams and workflow execution.
 - **Object storage** — atomic SHA-256-addressed local store and an S3-compatible
   adapter. Tenant ownership is registered in PostgreSQL before API downloads.
 - **Events** — durable event replay, cursor pagination, bounded SSE reconnect,
-  and an internal transactional outbox consumer.
+  transactional outbox and independent per-destination projection jobs with
+  bounded retries, dead letters and operator recovery.
+- **Projection workers** — separate FTS, vector and AGE processes; FTS uses
+  tsvector + pg_trgm, vector uses an injected local embedder, AGE projects
+  tenant-qualified claim nodes.
 - **Time series** — PostgreSQL event-time observations, idempotent ingestion,
   bounded range reads and basic count/min/max/average aggregation.
 - **Memory processing** — structured candidate validation, confidence
-  filtering, exact deduplication, source linking, alias resolution and
-  bitemporal fact replacement.
+  filtering, positive/negative assertion polarity, atomic per-fact
+  deduplication, source linking, alias resolution and bitemporal replacement.
+  An optional loopback-only local model adapter supports bounded cross-turn
+  context; a 12-case Chinese smoke benchmark is included, not release-grade.
 - **Temporal** — optional SDK workflow with real PostgreSQL Activities; REST exposes start/status/cancel for the memory-verification workflow. The Worker runs separately.
 
 ## Public API
@@ -39,7 +45,9 @@ Run the service and open Swagger:
 Implemented route families include:
 
 - Health, readiness and capability discovery.
-- Memory create, recall, structured processing and provenance.
+- Memory create, recall, structured processing, local-model extraction and provenance.
+- Optional Idempotency-Key writes with replay and HTTP 409 body-mismatch semantics.
+- Tenant-scoped lexical search via PostgreSQL FTS/trigram.
 - Caller-generated embedding ingestion and hybrid SQL/vector/graph search.
 - Entity and edge writes with AGE projection.
 - Object upload/download with SHA-256 verification and tenant ownership.
@@ -48,7 +56,9 @@ Implemented route families include:
 - Temporal memory-verification workflow start, status and cancellation.
 
 See [API Reference](docs/API-REFERENCE.md) for complete request/response
-examples and deployment settings. See [Capability Acceptance Audit](docs/CAPABILITY-ACCEPTANCE-AUDIT.md)
+examples and deployment settings. See the [Python SDK](docs/PYTHON-SDK.md) for
+a dependency-free third-party client and [outbox guide](docs/OUTBOX-CONSUMER.md)
+for worker deployment and projection contracts. See [Capability Acceptance Audit](docs/CAPABILITY-ACCEPTANCE-AUDIT.md)
 for implementation, test and production-readiness boundaries.
 
 ## Quick start
@@ -67,7 +77,22 @@ export MEMORY_TENANT_ID='demo-home'
 export MEMORY_ENABLE_VECTOR='1'
 export MEMORY_ENABLE_AGE='1'
 export MEMORY_OBJECT_BACKEND='local'
+# Optional local extraction (LM Studio/vLLM/Ollama OpenAI-compatible endpoint):
+# export MEMORY_LOCAL_MODEL_URL='http://127.0.0.1:1234/v1'
+# export MEMORY_LOCAL_MODEL='your-local-model-name'
 uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765
+```
+
+In separate terminals, run the projection workers for enabled destinations:
+```bash
+agent-memory-projection-worker --projection fts --tenant-id demo-home
+agent-memory-projection-worker --projection age --tenant-id demo-home
+```
+For vector projection, configure a local embedding callable and model ID:
+```bash
+export MEMORY_EMBEDDER='my_local_embeddings:embed_text'
+export MEMORY_EMBEDDING_MODEL_ID='bge-small-zh-v1.5'
+agent-memory-projection-worker --projection vector --tenant-id demo-home
 ```
 
 The Compose credentials are for local development only. Bind to loopback;
@@ -105,10 +130,14 @@ release candidate as qualified.
 - Time-series is a PostgreSQL observation subsystem, not a specialized TSDB.
   Automated retention, partitioning, downsampling and sustained ingest tests
   remain.
-- Memory processing accepts structured facts from a caller-provided local
-  extractor. It does not automatically infer facts from arbitrary text.
-  Contradiction classification, fuzzy multilingual entity resolution,
-  consolidation, forgetting policies and Chinese evaluation remain.
+- Local text extraction is optional and requires an explicitly configured
+  loopback model server. Cross-turn context is bounded, but complex Chinese
+  contradiction classification, human-adjudicated multilingual entity
+  resolution, consolidation and forgetting policies remain.
+- The Chinese extraction benchmark is a 12-case smoke set, not a statistically
+  representative or release-gating evaluation.
+- The benchmark runner measures concurrent writes and FTS latency only; vector
+  model quality, AGE traversal, SSE scale and 100-agent load are not qualified.
 - Temporal exposes a narrow memory-verification start/status/cancel API; general workflow registration, Signal/Update and production worker operations remain.
 - Production RLS, key rotation/revocation, TLS, rate limits, audit logs,
   backup/restore and disaster-recovery exercises remain required.

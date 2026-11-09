@@ -176,3 +176,113 @@ CREATE TABLE IF NOT EXISTS memory_objects (
 );
 CREATE INDEX IF NOT EXISTS memory_objects_created
 ON memory_objects(tenant_id, created_at DESC);
+
+-- Reliable outbox lifecycle. Additive so existing installations upgrade safely.
+ALTER TABLE memory_outbox
+  ADD COLUMN IF NOT EXISTS last_attempt_at timestamptz,
+  ADD COLUMN IF NOT EXISTS dead_lettered_at timestamptz;
+
+CREATE INDEX IF NOT EXISTS memory_outbox_ready
+  ON memory_outbox(event_type,available_at,created_at,event_id)
+  WHERE processed_at IS NULL AND dead_lettered_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS memory_outbox_dead_letters
+  ON memory_outbox(dead_lettered_at,created_at,event_id)
+  WHERE dead_lettered_at IS NOT NULL AND processed_at IS NULL;
+
+
+-- Independent, durable fan-out: one canonical event creates one task per projection.
+CREATE TABLE IF NOT EXISTS memory_projection_jobs (
+  event_id uuid NOT NULL,
+  projection_name text NOT NULL,
+  tenant_id text NOT NULL,
+  aggregate_type text NOT NULL,
+  aggregate_id text NOT NULL,
+  event_type text NOT NULL,
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','retry','succeeded','dead_letter')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  available_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  last_attempt_at timestamptz,
+  processed_at timestamptz,
+  dead_lettered_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY(event_id,projection_name)
+);
+CREATE INDEX IF NOT EXISTS memory_projection_jobs_ready
+  ON memory_projection_jobs(projection_name,available_at,created_at,event_id)
+  WHERE status IN ('pending','retry');
+CREATE INDEX IF NOT EXISTS memory_projection_jobs_dead_letters
+  ON memory_projection_jobs(projection_name,dead_lettered_at,created_at)
+  WHERE status='dead_letter';
+
+CREATE OR REPLACE FUNCTION enqueue_claim_projection_jobs()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.event_type = 'memory.claim.created' THEN
+    INSERT INTO memory_projection_jobs
+      (event_id,projection_name,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+    SELECT NEW.event_id, target, NEW.tenant_id, 'claim', NEW.event_id::text,
+           NEW.event_type, NEW.payload
+    FROM unnest(ARRAY['fts','vector','age']::text[]) AS target
+    ON CONFLICT(event_id,projection_name) DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS memory_outbox_projection_fanout ON memory_outbox;
+CREATE TRIGGER memory_outbox_projection_fanout
+AFTER INSERT ON memory_outbox
+FOR EACH ROW EXECUTE FUNCTION enqueue_claim_projection_jobs();
+
+
+-- First concrete text projection. pg_trgm provides substring matching for CJK text
+-- where the built-in simple text-search parser does not perform word segmentation.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE TABLE IF NOT EXISTS memory_fts_documents (
+  tenant_id text NOT NULL,
+  memory_id uuid NOT NULL REFERENCES memory_claims(id) ON DELETE CASCADE,
+  document_text text NOT NULL,
+  search_vector tsvector NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY(tenant_id,memory_id)
+);
+CREATE INDEX IF NOT EXISTS memory_fts_documents_vector
+  ON memory_fts_documents USING gin(search_vector);
+CREATE INDEX IF NOT EXISTS memory_fts_documents_trgm
+  ON memory_fts_documents USING gin(document_text gin_trgm_ops);
+
+
+-- Explicit assertion polarity preserves negation without inverting the fact value.
+ALTER TABLE memory_claims
+  ADD COLUMN IF NOT EXISTS polarity text NOT NULL DEFAULT 'positive';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='memory_claims_polarity_check'
+      AND conrelid='memory_claims'::regclass
+  ) THEN
+    ALTER TABLE memory_claims
+      ADD CONSTRAINT memory_claims_polarity_check
+      CHECK (polarity IN ('positive','negative'));
+  END IF;
+END;
+$$;
+
+
+-- Idempotency records are committed atomically with canonical claim creation.
+CREATE TABLE IF NOT EXISTS memory_idempotency_keys (
+  tenant_id text NOT NULL,
+  idempotency_key text NOT NULL,
+  request_sha256 char(64) NOT NULL,
+  memory_id uuid NOT NULL REFERENCES memory_claims(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY(tenant_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS memory_idempotency_created
+  ON memory_idempotency_keys(created_at);

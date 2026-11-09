@@ -6,8 +6,10 @@ import os
 import asyncio
 import json
 from uuid import UUID, uuid4
+from typing import Literal
+import hashlib
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Header
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +29,7 @@ class Claim(BaseModel):
     valid_to: str | None = Field(default=None, description="Timezone-aware ISO-8601 exclusive validity end.")
     replaces_id: str | None = Field(default=None, description="Existing claim UUID to correct; subject and predicate must match.")
     object_sha256: str | None = Field(default=None, description="Optional SHA-256 reference to separately stored evidence object.")
+    polarity: Literal["positive", "negative"] = Field(default="positive", description="Assertion polarity supplied by the extractor; negation is preserved as a first-class fact attribute.")
 
 
 class ObservationWrite(BaseModel):
@@ -71,6 +74,20 @@ class ProcessRequest(BaseModel):
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
 
 
+class ContextTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=10000)
+
+
+class TextProcessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=100000)
+    source_id: str = Field(min_length=1, max_length=255)
+    context: list[ContextTurn] = Field(default_factory=list, max_length=20)
+    confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+
+
 class MemoryVerificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     memory_id: str = Field(min_length=36, max_length=36, description="Canonical memory claim UUID to verify.")
@@ -90,7 +107,8 @@ class SearchRequest(BaseModel):
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
-               temporal_client_factory=None, temporal_task_queue=None):
+               temporal_client_factory=None, temporal_task_queue=None,
+               text_extractor=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
@@ -178,7 +196,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         return {
             "contract_version": CONTRACT_VERSION,
             "tenant_id": t,
-            "capabilities": capabilities(**(capability_flags or {})),
+            "capabilities": capabilities(**{
+                **(capability_flags or {}),
+                "local_extraction": text_extractor is not None,
+            }),
         }
 
     @app.post(
@@ -191,23 +212,44 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             "Tenant identity is derived from the API credential, never from request JSON."
         ),
     )
-    def add_claim(item: Claim, t: str = Depends(auth)):
+    def add_claim(item: Claim, t: str = Depends(auth),
+                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
         try:
             valid_from = aware_iso(item.valid_from)
             valid_to = aware_iso(item.valid_to)
             db = store_factory()
             try:
-                mid = db.remember(
+                claim = dict(
                     tenant_id=t, subject_id=item.subject_id, predicate=item.predicate,
                     value=item.value, source_id=item.source_id, valid_from=valid_from,
                     valid_to=valid_to, replaces_id=item.replaces_id,
-                    object_sha256=item.object_sha256,
+                    object_sha256=item.object_sha256, polarity=item.polarity,
                 )
+                if idempotency_key is not None:
+                    if not idempotency_key or len(idempotency_key) > 255:
+                        raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
+                    canonical_body = json.dumps(
+                        item.model_dump(mode="json"), ensure_ascii=False,
+                        sort_keys=True, separators=(",", ":"),
+                    )
+                    request_sha256 = hashlib.sha256(canonical_body.encode("utf-8")).hexdigest()
+                    mid = db.remember_idempotent(
+                        idempotency_key=idempotency_key,
+                        request_sha256=request_sha256,
+                        **claim,
+                    )
+                else:
+                    mid = db.remember(**claim)
             finally:
                 db.close()
             return {"id": mid, "tenant_id": t}
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception as exc:
+            from .postgres import IdempotencyConflict
+            if isinstance(exc, IdempotencyConflict):
+                raise HTTPException(status_code=409, detail=str(exc))
+            if isinstance(exc, ValueError):
+                raise HTTPException(status_code=422, detail=str(exc))
+            raise
 
     @app.get(
         "/v1/memories/{subject_id}", tags=["Memory"], summary="Recall claims for a subject",
@@ -544,6 +586,44 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             db.close()
 
     @app.post(
+        "/v1/memories/extract", status_code=200, tags=["Memory"],
+        summary="Extract and process facts with the configured local model",
+        description="Uses an explicitly configured loopback-only local OpenAI-compatible extractor, then applies deterministic validation, polarity, deduplication and fact replacement. Returns 503 if no local extractor is configured.",
+        responses={503: {"description": "Local model extractor is not configured or unavailable."}},
+    )
+    def extract_and_process(item: TextProcessRequest, t: str = Depends(auth)):
+        if text_extractor is None:
+            raise HTTPException(status_code=503, detail="Local memory extractor is not configured")
+        from .processing import MemoryProcessor
+        db = store_factory()
+        try:
+            processor = MemoryProcessor(
+                db,
+                confidence_threshold=item.confidence_threshold,
+                entity_resolver=lambda tenant_id, name: db.resolve_entity(
+                    tenant_id=tenant_id, name=name),
+            )
+            report = processor.process(
+                tenant_id=t, text=item.text, source_id=item.source_id,
+                extractor=text_extractor,
+                context=[turn.model_dump() for turn in item.context],
+            )
+            return {
+                "tenant_id": t,
+                "created": report.created,
+                "duplicates": report.duplicates,
+                "rejected": report.rejected,
+                "replaced": report.replaced,
+                "embedding_failures": report.embedding_failures,
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        finally:
+            db.close()
+
+    @app.post(
         "/v1/workflows/memory-verifications", status_code=202, tags=["Workflows"],
         summary="Start a durable Temporal memory verification workflow",
         description="Starts the registered VerifyMemoryWorkflow. Requires a separately running Temporal Worker on the configured task queue.",
@@ -606,6 +686,26 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
         except Exception:
             raise HTTPException(status_code=503,detail="Temporal workflow service is unavailable")
+
+    @app.get(
+        "/v1/search/lexical", tags=["Retrieval"],
+        summary="Tenant-scoped lexical and Chinese substring search",
+        description="Searches the derived PostgreSQL FTS/trigram projection. Claims appear after their FTS projection job succeeds; this is lexical retrieval, not vector similarity.",
+    )
+    def lexical_search(query: str, limit: int = 10, t: str = Depends(auth)):
+        from .fts import search_fts
+        try:
+            db = store_factory()
+            try:
+                items = search_fts(db.conn, tenant_id=t, query=query, limit=limit)
+            finally:
+                db.close()
+            return {"contract_version": CONTRACT_VERSION, "tenant_id": t,
+                    "channel": "fts", "items": items}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception:
+            raise HTTPException(status_code=503, detail="Lexical search projection is unavailable")
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

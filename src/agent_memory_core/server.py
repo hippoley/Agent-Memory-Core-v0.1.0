@@ -7,7 +7,26 @@ import os
 
 from .api import create_app
 from .objects import ObjectStore, S3ObjectStore
+from .local_extractor import LocalOpenAICompatibleExtractor
 
+
+
+def local_extractor_factory():
+    base_url = os.getenv("MEMORY_LOCAL_MODEL_URL")
+    model = os.getenv("MEMORY_LOCAL_MODEL")
+    if not base_url and not model:
+        return None
+    if not base_url or not model:
+        raise RuntimeError("Set both MEMORY_LOCAL_MODEL_URL and MEMORY_LOCAL_MODEL")
+    return LocalOpenAICompatibleExtractor(
+        base_url=base_url,
+        model=model,
+        timeout=float(os.getenv("MEMORY_LOCAL_MODEL_TIMEOUT", "30")),
+        api_key=os.getenv("MEMORY_LOCAL_MODEL_API_KEY") or None,
+    )
+
+
+text_extractor = local_extractor_factory()
 
 def search_factory():
     from .postgres import PostgresMemory
@@ -72,9 +91,10 @@ flags = {
     "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1",
     "objects": True,
     "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
+    "local_extraction": text_extractor is not None,
 }
 
-app = create_app(search_factory=search_factory,
+app = create_app(text_extractor=text_extractor, search_factory=search_factory,
                  object_store_factory=object_store_factory,
                  capability_flags=flags,
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,

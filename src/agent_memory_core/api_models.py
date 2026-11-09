@@ -49,6 +49,7 @@ class MemoryItem(BaseModel):
     recorded_at: datetime | None = None
     superseded_at: datetime | None = None
     object_sha256: str | None = None
+    polarity: str = "positive"
 
 
 class MemoryReadResponse(BaseModel):

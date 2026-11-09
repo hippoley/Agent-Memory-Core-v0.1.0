@@ -16,6 +16,10 @@ def aware(value: datetime) -> datetime:
         raise ValueError("Timezone-aware datetime required")
     return value.astimezone(timezone.utc)
 
+class IdempotencyConflict(ValueError):
+    """An idempotency key was reused for a different canonical request."""
+
+
 class PostgresMemory:
     def __init__(self, dsn: str):
         try:
@@ -28,8 +32,9 @@ class PostgresMemory:
         self.conn.close()
 
     def current_time(self) -> datetime:
-        """Read the database clock used for recorded_at and bitemporal visibility."""
-        return self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
+        """Read the database clock without leaving an implicit transaction open."""
+        with self.conn.transaction():
+            return self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
 
     def migrate(self) -> None:
         sql = resources.files("agent_memory_core").joinpath("resources/001_core.sql").read_text(encoding="utf-8")
@@ -38,8 +43,9 @@ class PostgresMemory:
 
     def remember(self, *, tenant_id: str, subject_id: str, predicate: str, value: dict,
                  source_id: str, valid_from: datetime, valid_to: datetime | None = None,
-                 replaces_id: str | None = None, object_sha256: str | None = None) -> str:
-        if not all((tenant_id, subject_id, predicate, source_id)):
+                 replaces_id: str | None = None, object_sha256: str | None = None,
+                 polarity: str = "positive") -> str:
+        if not all((tenant_id, subject_id, predicate, source_id)) or polarity not in {"positive","negative"}:
             raise ValueError("Missing required identity/source")
         valid_from = aware(valid_from)
         valid_to = aware(valid_to) if valid_to else None
@@ -73,10 +79,10 @@ class PostgresMemory:
                 (tenant_id,source_id))
             self.conn.execute(
                 """INSERT INTO memory_claims(id,tenant_id,subject_id,predicate,value,source_id,
-                   valid_from,valid_to,replaces_id,object_sha256,recorded_at)
-                   VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
+                   valid_from,valid_to,replaces_id,object_sha256,polarity,recorded_at)
+                   VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s)""",
                 (mid,tenant_id,subject_id,predicate,json.dumps(value,ensure_ascii=False),
-                 source_id,valid_from,valid_to,replaces_id,object_sha256,mutation_time))
+                 source_id,valid_from,valid_to,replaces_id,object_sha256,polarity,mutation_time))
             self.conn.execute(
                 """INSERT INTO memory_claim_sources(tenant_id,claim_id,source_id,confidence)
                    VALUES (%s,%s,%s,1.0) ON CONFLICT DO NOTHING""",
@@ -95,12 +101,114 @@ class PostgresMemory:
                 (mid,tenant_id,str(mid),packed))
         return str(mid)
 
+
+
+    def remember_idempotent(self, *, idempotency_key: str,
+                            request_sha256: str, **claim) -> str:
+        """Create/replay one claim under a tenant-scoped idempotency key."""
+        tenant_id = claim.get("tenant_id")
+        if not tenant_id or not idempotency_key or len(idempotency_key) > 255:
+            raise ValueError("Tenant and idempotency key (1..255 chars) required")
+        if (len(request_sha256) != 64
+                or any(ch not in "0123456789abcdef" for ch in request_sha256.lower())):
+            raise ValueError("request_sha256 must be a SHA-256 hex digest")
+        lock_key = json.dumps([tenant_id, idempotency_key], ensure_ascii=False, separators=(",", ":"))
+        with self.conn.transaction():
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (lock_key,),
+            )
+            existing = self.conn.execute(
+                """SELECT request_sha256,memory_id::text
+                   FROM memory_idempotency_keys
+                   WHERE tenant_id=%s AND idempotency_key=%s""",
+                (tenant_id, idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                if existing[0] != request_sha256:
+                    raise IdempotencyConflict(
+                        "Idempotency-Key was already used with a different request body"
+                    )
+                return existing[1]
+            memory_id = self.remember(**claim)
+            self.conn.execute(
+                """INSERT INTO memory_idempotency_keys
+                   (tenant_id,idempotency_key,request_sha256,memory_id)
+                   VALUES (%s,%s,%s,%s::uuid)""",
+                (tenant_id, idempotency_key, request_sha256, memory_id),
+            )
+            return memory_id
+
+    def apply_candidate(self, *, tenant_id: str, subject_id: str,
+                        predicate: str, value: dict, source_id: str,
+                        valid_from: datetime, confidence: float = 1.0,
+                        polarity: str = "positive") -> dict:
+        """Atomically deduplicate or version one candidate for a tenant/fact key.
+
+        The transaction-scoped advisory lock serializes competing processors
+        for the same (tenant, subject, predicate). A duplicate provenance link
+        or a new canonical claim is committed before the lock is released.
+        """
+        if (not all((tenant_id, subject_id, predicate, source_id))
+                or not isinstance(confidence, (int, float))
+                or not 0.0 <= confidence <= 1.0
+                or polarity not in {"positive","negative"}):
+            raise ValueError("Missing identity/source or invalid confidence")
+        valid_from = aware(valid_from)
+        lock_key = json.dumps([tenant_id, subject_id, predicate], ensure_ascii=False, separators=(",", ":"))
+        canonical = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False)
+        with self.conn.transaction():
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (lock_key,),
+            )
+            mutation_time = self.conn.execute(
+                "SELECT clock_timestamp()").fetchone()[0]
+            # A candidate's wall clock may have been captured before it waited
+            # for this lock. Advance its effective time to the serialized commit
+            # point so concurrent writes cannot miss a just-committed fact.
+            effective_from = max(valid_from, mutation_time)
+            active = self.recall(
+                tenant_id=tenant_id, subject_id=subject_id,
+                predicate=predicate, valid_at=effective_from,
+                known_at=mutation_time,
+            )
+            exact = next(
+                (row for row in active
+                 if row.get("polarity", "positive") == polarity
+                 and json.dumps(row["value"], ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False) == canonical),
+                None,
+            )
+            if exact is not None:
+                self.link_claim_source(
+                    tenant_id=tenant_id, memory_id=exact["id"],
+                    source_id=source_id, confidence=confidence,
+                )
+                return {"status": "duplicate", "memory_id": exact["id"],
+                        "replaces_id": None}
+            replaces_id = active[0]["id"] if active else None
+            memory_id = self.remember(
+                tenant_id=tenant_id, subject_id=subject_id,
+                predicate=predicate, value=value, source_id=source_id,
+                valid_from=effective_from, replaces_id=replaces_id,
+                polarity=polarity,
+            )
+            self.conn.execute(
+                """UPDATE memory_claim_sources SET confidence=%s
+                   WHERE tenant_id=%s AND claim_id=%s AND source_id=%s""",
+                (confidence, tenant_id, memory_id, source_id),
+            )
+            return {"status": "created", "memory_id": memory_id,
+                    "replaces_id": replaces_id}
+
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:
         known_at = aware(known_at or datetime.now(timezone.utc))
         valid_at = aware(valid_at or known_at)
         sql = """SELECT id::text,subject_id,predicate,value,source_id,valid_from,valid_to,
-                 recorded_at,superseded_at,object_sha256 FROM memory_claims
+                 recorded_at,superseded_at,object_sha256,polarity FROM memory_claims
                  WHERE tenant_id=%s AND subject_id=%s AND recorded_at<=%s
                  AND (superseded_at IS NULL OR superseded_at>%s)
                  AND valid_from<=%s AND (valid_to IS NULL OR valid_to>%s)"""
@@ -110,7 +218,7 @@ class PostgresMemory:
             params.append(predicate)
         sql += " ORDER BY recorded_at DESC,id"
         cols = ("id","subject_id","predicate","value","source_id","valid_from","valid_to",
-                "recorded_at","superseded_at","object_sha256")
+                "recorded_at","superseded_at","object_sha256","polarity")
         return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
 
     @staticmethod

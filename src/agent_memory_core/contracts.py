@@ -12,11 +12,14 @@ class Capability:
     reason: str = ""
 
 def capabilities(*,graph=False,semantic=False,temporal=False,objects=False,
-                 observations=True,events=True,processing=True):
+                 observations=True,events=True,processing=True,lexical=True,
+                 local_extraction=False):
     return [asdict(x) for x in (
         Capability("memory.claims",True),
         Capability("memory.bitemporal",True),
         Capability("memory.processing",processing,"structured extractor candidates required" if processing else "memory processing is disabled"),
+        Capability("memory.lexical",lexical,"FTS projection is disabled" if not lexical else ""),
+        Capability("memory.local_extraction",local_extraction,"No loopback local model extractor is configured" if not local_extraction else ""),
         Capability("memory.vector",semantic,"caller-generated embeddings; vector index disabled" if not semantic else ""),
         Capability("memory.graph",graph,"AGE adapter not enabled" if not graph else ""),
         Capability("memory.objects",objects,"object adapter not enabled" if not objects else ""),

@@ -27,6 +27,10 @@ def test_public_api_roundtrip_to_postgres():
     assert client.get("/v1/ready").status_code==401
     assert client.get("/v1/ready",headers=token).status_code==200
     assert client.get("/v1/ready",headers=token).json()["checks"]=={"postgresql":"ready"}
+    capabilities=client.get("/v1/capabilities",headers=token).json()["capabilities"]
+    assert any(item["name"]=="memory.lexical" and item["available"] for item in capabilities)
+    assert client.get("/v1/search/lexical",headers=token,
+                      params={"query":"quiet"}).status_code==200
 
     token={"Authorization":"Bearer "+key}
     payload={"subject_id":"bedroom-1","predicate":"night_preference",
@@ -35,6 +39,25 @@ def test_public_api_roundtrip_to_postgres():
     response=client.post("/v1/memories",json=payload,headers=token)
     assert response.status_code==201,response.text
     mid=response.json()["id"]
+    idempotent_body={**payload,"predicate":"window_preference",
+                     "value":{"open":"avoid"},"source_id":"idempotency-source"}
+    idem_headers={**token,"Idempotency-Key":"agent-write-001"}
+    first_idem=client.post("/v1/memories",json=idempotent_body,headers=idem_headers)
+    replay_idem=client.post("/v1/memories",json=idempotent_body,headers=idem_headers)
+    assert first_idem.status_code==201 and replay_idem.status_code==201
+    assert first_idem.json()["id"]==replay_idem.json()["id"]
+    conflict=client.post("/v1/memories",
+        json={**idempotent_body,"value":{"open":"allow"}},headers=idem_headers)
+    assert conflict.status_code==409,conflict.text
+    negative_body={**payload,"predicate":"noise_preference",
+                   "value":{"level":"quiet"},"source_id":"negation-source",
+                   "polarity":"negative"}
+    negative=client.post("/v1/memories",json=negative_body,headers=token)
+    assert negative.status_code==201,negative.text
+    negative_read=client.get("/v1/memories/bedroom-1",headers=token,
+                             params={"predicate":"noise_preference"})
+    assert negative_read.status_code==200
+    assert negative_read.json()["items"][0]["polarity"]=="negative"
     found=client.get("/v1/memories/bedroom-1",headers=token)
     assert found.status_code==200,found.text
     assert any(x["id"]==mid and x["source_id"]=="utterance-1" for x in found.json()["items"])
@@ -115,6 +138,23 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     assert claim.status_code==201,claim.text
     memory_id=claim.json()["id"]
     assert client.get("/v1/objects/"+digest,headers=headers).content==evidence
+
+    # FTS is a derived destination: process its independent projection jobs,
+    # then exercise the same tenant-scoped HTTP endpoint used by third parties.
+    from agent_memory_core.projection_jobs import ProjectionWorker
+    from agent_memory_core.fts import project_claim_to_fts
+    fts_db=PostgresMemory(dsn)
+    try:
+        assert ProjectionWorker(fts_db.conn).consume(
+            projection_name="fts",tenant_id=tenant,
+            handler=project_claim_to_fts,limit=100)>=1
+    finally:
+        fts_db.close()
+    lexical=client.get("/v1/search/lexical",headers=headers,
+                       params={"query":"bedroom-1"})
+    assert lexical.status_code==200,lexical.text
+    assert any(item["memory_id"]==memory_id for item in lexical.json()["items"])
+
 
     check_db=PostgresMemory(dsn)
     try:
@@ -219,3 +259,47 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     body=search.json()
     assert body["items"] and body["items"][0]["memory_id"]==memory_id
     assert {"sql","vector","graph"}.issubset(set(body["channels_used"]))
+
+
+@pytest.mark.integration
+def test_local_model_extract_http_endpoint_uses_injected_extractor():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real database required")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    from agent_memory_core.postgres import PostgresMemory
+    tenant="local-extract-"+uuid4().hex
+    key="local-extract-test-api-key-strong"
+    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        db.migrate()
+    finally:
+        db.close()
+    extractor=lambda text:[{
+        "subject_id":"bedroom-1","predicate":"noise_preference",
+        "value":{"level":"quiet"},"confidence":0.98,"polarity":"negative",
+    }]
+    app=create_app(api_key=key,tenant_id=tenant,
+        store_factory=lambda:PostgresMemory(os.environ["MEMORY_TEST_DSN"]),
+        text_extractor=extractor)
+    client=TestClient(app)
+    headers={"Authorization":"Bearer "+key}
+    response=client.post("/v1/memories/extract",headers=headers,json={
+        "text":"我不喜欢安静的卧室","source_id":"local-model:session-1"})
+    assert response.status_code==200,response.text
+    assert len(response.json()["created"])==1
+    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        rows=db.recall(tenant_id=tenant,subject_id="bedroom-1",
+                       predicate="noise_preference")
+        assert len(rows)==1 and rows[0]["polarity"]=="negative"
+    finally:
+        db.close()
+
+    no_extractor=create_app(api_key=key,tenant_id=tenant,
+        store_factory=lambda:PostgresMemory(os.environ["MEMORY_TEST_DSN"]))
+    unavailable=TestClient(no_extractor).post(
+        "/v1/memories/extract",headers=headers,json={
+            "text":"我不喜欢安静的卧室","source_id":"no-extractor"})
+    assert unavailable.status_code==503

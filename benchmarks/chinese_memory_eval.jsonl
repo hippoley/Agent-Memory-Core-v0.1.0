@@ -1,0 +1,12 @@
+{"id":"zh-positive-preference","text":"我希望卧室晚上安静一点。","context":[],"expected":[{"subject_name":"卧室","predicate":"noise_preference","value":{"level":"quiet"},"polarity":"positive"}]}
+{"id":"zh-negative-preference","text":"我不喜欢安静的卧室。","context":[],"expected":[{"subject_name":"卧室","predicate":"noise_preference","value":{"level":"quiet"},"polarity":"negative"}]}
+{"id":"zh-preference-correction","text":"我之前喜欢安静，现在更喜欢有一点背景声。","context":[],"expected":[{"predicate":"noise_preference","value":{"level":"background_noise"},"polarity":"positive","subject_id":"self"}]}
+{"id":"zh-explicit-correction","text":"不是安静，我更喜欢白噪声。","context":[],"expected":[{"predicate":"noise_preference","value":{"level":"white_noise"},"polarity":"positive","subject_id":"self"}]}
+{"id":"zh-automation-negation","text":"我不再希望系统自动打开卧室窗户。","context":[],"expected":[{"subject_name":"卧室窗户","predicate":"automatic_open_preference","value":{"enabled":true},"polarity":"negative"}]}
+{"id":"zh-multi-fact","text":"书房窗户不要自动打开；卧室希望二氧化碳低于800ppm。","context":[],"expected":[{"subject_name":"书房窗户","predicate":"automatic_open_preference","value":{"enabled":true},"polarity":"negative"},{"subject_name":"卧室","predicate":"co2_target","value":{"max_ppm":800},"polarity":"positive"}]}
+{"id":"zh-ambiguous-pronoun","text":"它不要打开。","context":[],"expected":[]}
+{"id":"zh-grounded-pronoun","text":"它不要打开。","context":[{"role":"user","content":"我现在说的是卧室窗户。"}],"expected":[{"subject_name":"卧室窗户","predicate":"automatic_open_preference","value":{"enabled":true},"polarity":"negative"}]}
+{"id":"zh-assistant-suggestion-not-fact","text":"好。","context":[{"role":"assistant","content":"你可以考虑把卧室设置得更安静。"}],"expected":[]}
+{"id":"zh-temporary-state","text":"今天晚餐我想吃面条。","context":[],"expected":[]}
+{"id":"zh-durable-routine","text":"我通常晚上十一点睡觉。","context":[],"expected":[{"predicate":"sleep_schedule","value":{"usual_bedtime":"23:00"},"polarity":"positive","subject_id":"self"}]}
+{"id":"zh-negation-change","text":"我不再使用自动开窗功能。","context":[],"expected":[{"predicate":"automatic_window_use","value":{"enabled":true},"polarity":"negative","subject_id":"self"}]}

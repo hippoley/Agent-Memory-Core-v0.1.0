@@ -79,9 +79,11 @@ deployment acceptance requirements.
 | GET | `/v1/capabilities` | Runtime capability discovery |
 | POST | `/v1/memories` | Create canonical bitemporal claim |
 | GET | `/v1/memories/{subject_id}` | Recall facts for a subject |
-| POST | `/v1/memories/process` | Validate, deduplicate, version and provenance-link extracted candidates |
+| POST | `/v1/memories/process` | Validate, deduplicate, version and provenance-link caller-extracted candidates |
+| POST | `/v1/memories/extract` | Optional loopback local-model extraction + deterministic processing |
 | GET | `/v1/memories/{memory_id}/sources` | Read claim provenance |
 | PUT | `/v1/memories/{memory_id}/embedding` | Attach caller-generated vector |
+| GET | `/v1/search/lexical` | Tenant-scoped PostgreSQL FTS + CJK substring retrieval |
 | POST | `/v1/search` | SQL + optional vector + optional graph retrieval |
 | PUT | `/v1/objects` | Upload raw evidence object |
 | GET | `/v1/objects/{digest}` | Download and verify evidence object |
@@ -363,3 +365,54 @@ rate limiting, audit logs, object ownership metadata, backup/restore, object
 lifecycle, outbox DLQ and per-projection task accounting, Temporal worker
 operations, memory-processing concurrency controls, Chinese retrieval and
 extraction evaluation, and measured p50/p95/load/failure-recovery results.
+
+
+## Lexical retrieval
+
+`GET /v1/search/lexical?query=bedroom%20window&limit=10` searches the
+tenant-scoped FTS projection. Claims are searchable after the corresponding
+`fts` projection job succeeds. English token ranking uses PostgreSQL
+`tsvector`; Chinese substring matching uses `pg_trgm`/ILIKE. This endpoint
+does not provide semantic vector similarity.
+
+```bash
+curl -G http://127.0.0.1:8765/v1/search/lexical \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --data-urlencode "query=卧室保持安静" \
+  --data-urlencode "limit=10"
+```
+
+
+## Assertion polarity
+
+Both `POST /v1/memories` and `POST /v1/memories/process` accept the explicit
+`polarity` field (`positive` or `negative`). The field is not inferred by
+the storage API: the caller's local extractor must classify negation. Recall
+responses expose polarity on each memory item.
+
+
+## Idempotent claim writes
+
+`POST /v1/memories` accepts an optional `Idempotency-Key` header (1–255
+characters). The server hashes the canonical request body and commits the key
+record in the same transaction as the claim. Repeating the same key and body
+returns the original claim ID; reusing the key with a different body returns
+HTTP 409. Without the header, the endpoint retains its normal create behavior.
+
+
+## Local model extraction
+
+If `MEMORY_LOCAL_MODEL_URL` and `MEMORY_LOCAL_MODEL` are configured, the
+server exposes `POST /v1/memories/extract`. The built-in adapter accepts only
+loopback HTTP endpoints and validates structured JSON output. If not configured,
+the endpoint returns HTTP 503 and `GET /v1/capabilities` reports
+`memory.local_extraction=false`.
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/memories/extract \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"我不喜欢安静的卧室","source_id":"conversation:001"}'
+```

@@ -49,6 +49,30 @@ def edge_upsert_cypher(*, tenant_id: str, edge_id: str, from_entity: str,
     )
 
 
+
+
+def claim_upsert_cypher(*, tenant_id: str, claim_id: str, subject_id: str,
+                        predicate: str, polarity: str, value_json: str,
+                        source_id: str) -> str:
+    """Build a fixed-label AGE claim node MERGE with escaped scalar properties."""
+    if polarity not in {"positive", "negative"}:
+        raise ValueError("Unsupported assertion polarity")
+    key = _cypher_string(tenant_id + "\x1f" + claim_id)
+    tenant = _cypher_string(tenant_id)
+    cid = _cypher_string(claim_id)
+    subject = _cypher_string(subject_id)
+    relation = _cypher_string(predicate)
+    stance = _cypher_string(polarity)
+    value = _cypher_string(value_json)
+    source = _cypher_string(source_id)
+    return (
+        f"MERGE (c:MemoryClaim {{key: {key}}}) "
+        f"SET c.tenant_id={tenant}, c.claim_id={cid}, "
+        f"c.subject_id={subject}, c.predicate={relation}, "
+        f"c.polarity={stance}, c.value_json={value}, c.source_id={source} "
+        "RETURN c"
+    )
+
 def edge_delete_cypher(*, tenant_id: str, edge_id: str) -> str:
     """Delete only the typed edge addressed by tenant and canonical edge ID."""
     tenant=_cypher_string(tenant_id)
@@ -107,6 +131,14 @@ class AgeProjection:
                     projected_at timestamptz NOT NULL DEFAULT clock_timestamp()
                 )
             """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_graph_claim_projection (
+                    claim_id uuid PRIMARY KEY REFERENCES memory_claims(id)
+                        ON DELETE CASCADE,
+                    tenant_id text NOT NULL,
+                    projected_at timestamptz NOT NULL DEFAULT clock_timestamp()
+                )
+            """)
 
     def _cypher(self, statement: str) -> list[tuple]:
         """AGE requires Cypher query text as a SQL literal, not bind placeholder."""
@@ -124,6 +156,40 @@ class AgeProjection:
             token + ") AS (result ag_catalog.agtype)"
         )
         return list(self.conn.execute(query))
+
+
+    def project_claim_event(self, conn, tenant_id: str, event_id: str,
+                            aggregate_id: str, payload) -> None:
+        """Idempotently project one canonical claim event to a MemoryClaim node.
+
+        Call initialize() once for each worker connection before consuming AGE
+        jobs. The job acknowledgement and this graph+ledger write share the
+        caller's ProjectionWorker transaction.
+        """
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        claim_id = payload.get("memory_id") if isinstance(payload, dict) else None
+        if not claim_id:
+            raise ValueError("Claim projection event is missing memory_id")
+        row = conn.execute(
+            """SELECT subject_id,predicate,value,source_id,polarity
+               FROM memory_claims WHERE tenant_id=%s AND id=%s::uuid""",
+            (tenant_id, claim_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError("Canonical claim for AGE projection was not found")
+        subject_id, predicate, value, source_id, polarity = row
+        value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        self._cypher(claim_upsert_cypher(
+            tenant_id=tenant_id, claim_id=claim_id, subject_id=subject_id,
+            predicate=predicate, polarity=polarity, value_json=value_json,
+            source_id=source_id,
+        ))
+        conn.execute(
+            """INSERT INTO memory_graph_claim_projection(claim_id,tenant_id)
+               VALUES (%s::uuid,%s) ON CONFLICT(claim_id) DO NOTHING""",
+            (claim_id, tenant_id),
+        )
 
     def project_pending(self, *, tenant_id: str, limit: int = 100) -> ProjectionProgress:
         if not tenant_id or not (1 <= limit <= 1000):

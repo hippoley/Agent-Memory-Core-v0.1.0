@@ -288,6 +288,44 @@ This is a basic PostgreSQL event-time observation store. It is not yet a
 full-featured time-series database: range aggregation, retention/partition
 automation, downsampling and high-ingest benchmarks remain future work.
 
+## 4.9 Durable event replay and live SSE
+
+Every newly created PostgreSQL memory claim and observation is now written to
+`memory_events` and `memory_outbox` in the same transaction as its canonical
+record.
+
+Poll/replay events:
+
+```bash
+curl -G http://127.0.0.1:8765/v1/events \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --data-urlencode 'limit=100'
+```
+
+Continue from the previous response's `next_cursor`:
+
+```bash
+curl -G http://127.0.0.1:8765/v1/events \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --data-urlencode 'after=<previous-next_cursor>' \
+  --data-urlencode 'limit=100'
+```
+
+Subscribe with Server-Sent Events:
+
+```bash
+curl -N http://127.0.0.1:8765/v1/events/stream \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Accept: text/event-stream"
+```
+
+Connections are bounded to 30 seconds. On reconnect, send the last received
+SSE `id` as `Last-Event-ID` or the `after` query parameter. This is a
+durable replay plus polling-based SSE implementation, not a broker-backed
+push fabric. The outbox consumer still needs independent workers for each
+projection (embeddings, FTS, AGE, remote side effects); an outbox row being
+created does not mean every projection is complete.
+
 ## 5. Backend capabilities still not exposed as HTTP APIs
 
 These are not Swagger endpoints today:
@@ -300,7 +338,7 @@ These are not Swagger endpoints today:
 | Object store | Local SHA-256 store implemented | Local upload/download now exposed | S3-compatible adapter, metadata lifecycle, quotas, backup/restore |
 | Time-series observations | PostgreSQL write/read implemented | Basic ingestion/query now exposed | Range aggregation, retention/partition policy and downsampling |
 | Temporal | Optional SDK workflow/activities prototype | Not exposed | Public workflow start/status/cancel contract, worker deployment and auth |
-| Realtime outbox | SQL outbox exists | Not exposed | Durable cursor, consumer/subscription API, replay and delivery semantics |
+| Realtime outbox | SQL outbox exists | Durable replay + SSE exposed | Dedicated per-projection workers, DLQ and high-scale broker fan-out |
 | Mem0-inspired memory extraction | Design patterns recorded | Not exposed | Extraction, deduplication, entity resolution and policy pipeline |
 
 Do not interpret a module or database table as a finished external product

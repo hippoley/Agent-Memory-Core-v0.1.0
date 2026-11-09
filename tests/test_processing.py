@@ -6,6 +6,7 @@ class FakeStore:
     def __init__(self):
         self.rows=[]
         self.embeddings=[]
+        self.sources=[]
     def recall(self, *, tenant_id, subject_id, predicate, valid_at, known_at):
         return [r for r in reversed(self.rows)
                 if r["tenant_id"]==tenant_id and r["subject_id"]==subject_id
@@ -23,6 +24,9 @@ class FakeStore:
         return mid
     def store_embedding(self, **kwargs):
         self.embeddings.append(kwargs)
+    def link_claim_source(self, **kwargs):
+        self.sources.append(kwargs)
+        return True
 
 
 def test_processor_creates_deduplicates_and_versions_conflicts():
@@ -39,6 +43,7 @@ def test_processor_creates_deduplicates_and_versions_conflicts():
                              source_id="conversation-1",extractor=extract)
     assert report.created==["memory-1","memory-2"]
     assert report.duplicates==1
+    assert store.sources==[{'tenant_id':'home','memory_id':'memory-1','source_id':'conversation-1','confidence':1.0}]
     assert report.replaced==["memory-1"]
     assert report.rejected==2
     active=store.recall(tenant_id="home",subject_id="room-1",

@@ -6,7 +6,7 @@ AGE graph projection deliberately remains a separate, explicitly optional step.
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from importlib import resources
 from .vector_validation import vector_literal
 from uuid import uuid4
 import json
@@ -28,7 +28,7 @@ class PostgresMemory:
         self.conn.close()
 
     def migrate(self) -> None:
-        sql = (Path(__file__).resolve().parents[2] / "sql/postgresql/001_core.sql").read_text()
+        sql = resources.files("agent_memory_core").joinpath("resources/001_core.sql").read_text(encoding="utf-8")
         with self.conn.transaction():
             self.conn.execute(sql)
 

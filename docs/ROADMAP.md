@@ -32,3 +32,9 @@ For reproducibility, pin base digest and package versions before production.
 
 Not planned: replicating Temporal, hosting a multi-model cloud platform or
 implementing a new database engine.
+
+## Packaging closure
+
+The authoritative PostgreSQL DDL is mirrored as a package resource so wheels
+do not depend on the source checkout path. The unit test asserts byte equality
+against the repository SQL and CI checks resource inclusion in built wheels.

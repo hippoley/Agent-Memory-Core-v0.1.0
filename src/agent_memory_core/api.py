@@ -197,6 +197,9 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             valid_to = aware_iso(item.valid_to)
             db = store_factory()
             try:
+                if item.object_sha256 is not None:
+                    if not db.object_accessible(tenant_id=t,digest=item.object_sha256):
+                        raise ValueError("Evidence object is not registered to this tenant")
                 mid = db.remember(
                     tenant_id=t, subject_id=item.subject_id, predicate=item.predicate,
                     value=item.value, source_id=item.source_id, valid_from=valid_from,

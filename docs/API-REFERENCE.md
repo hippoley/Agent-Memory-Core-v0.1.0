@@ -297,14 +297,44 @@ been benchmarked. Browser EventSource cannot set arbitrary Authorization
 headers; use fetch streaming or a trusted gateway rather than putting API keys
 in query strings.
 
-## 10. Temporal boundary
+## 10. Temporal workflow lifecycle
 
-The repository includes a real Temporal SDK integration prototype that
-verifies a memory claim and writes an idempotent receipt using PostgreSQL
-activities. The public REST API does not yet expose general workflow
-start/status/signal/cancel endpoints, and the default server does not start a
-Temporal worker. Do not advertise Temporal as an enabled runtime capability
-unless a worker deployment is configured.
+The API can start, describe and request cancellation of the registered
+`VerifyMemoryWorkflow`. The Temporal service and Worker are separate processes.
+
+Configure the API:
+
+```bash
+export MEMORY_TEMPORAL_ADDRESS=localhost:7233
+export MEMORY_TEMPORAL_NAMESPACE=default
+export MEMORY_TEMPORAL_TASK_QUEUE=agent-memory-core
+```
+
+Install the Temporal extra and start a Worker in a separate process:
+
+```bash
+python -m pip install -e '.[temporal,postgres]'
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.temporal_worker
+```
+
+Start a verification:
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/workflows/memory-verifications \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"memory_id":"<existing-claim-uuid>","workflow_id":"verify-claim-001"}'
+```
+
+The returned workflow ID is tenant-prefixed by the server. Use that exact ID
+for `GET /v1/workflows/{workflow_id}` and
+`POST /v1/workflows/{workflow_id}/cancel`. Cross-tenant workflow IDs are
+rejected. The current public workflow set contains only memory verification;
+general workflow authoring, Signal/Update, arbitrary workflow registration,
+worker autoscaling and production Temporal cluster operations are not
+implemented. Cancellation is a request to Temporal, not proof that an
+external side effect was rolled back.
 
 ## 11. Capability discovery and error semantics
 

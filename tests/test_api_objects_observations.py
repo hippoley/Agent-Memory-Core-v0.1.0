@@ -8,7 +8,8 @@ from agent_memory_core.objects import ObjectStore
 
 
 class FakeDB:
-    observations_data = {}
+    def __init__(self):
+        self.observations_data = {}
     def close(self):
         pass
     def record_observation(self, **kwargs):
@@ -32,8 +33,9 @@ class FakeDB:
 
 def make_client(tmp_path):
     key="test-api-key-with-strong-example-length"
+    db=FakeDB()
     app=create_app(api_key=key,tenant_id="tenant-a",
-        store_factory=FakeDB,
+        store_factory=lambda:db,
         object_store_factory=lambda:ObjectStore(tmp_path/"objects"),
         capability_flags={"objects":True})
     return TestClient(app), {"Authorization":"Bearer "+key}

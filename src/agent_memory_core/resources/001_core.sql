@@ -225,7 +225,7 @@ BEGIN
   IF NEW.event_type = 'memory.claim.created' THEN
     INSERT INTO memory_projection_jobs
       (event_id,projection_name,tenant_id,aggregate_type,aggregate_id,event_type,payload)
-    SELECT NEW.event_id, target, NEW.tenant_id, 'claim', NEW.event_id::text,
+    SELECT NEW.event_id, target, NEW.tenant_id, NEW.aggregate_type, NEW.aggregate_id,
            NEW.event_type, NEW.payload
     FROM unnest(ARRAY['fts','vector','age']::text[]) AS target
     ON CONFLICT(event_id,projection_name) DO NOTHING;

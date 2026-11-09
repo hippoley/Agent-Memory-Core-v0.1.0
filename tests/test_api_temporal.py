@@ -93,3 +93,27 @@ def test_temporal_api_rejects_invalid_memory_uuid():
     response=client.post("/v1/workflows/memory-verifications",
         headers=headers,json={"memory_id":"not-a-uuid"})
     assert response.status_code==422
+
+
+def test_temporal_status_and_cancel_distinguish_service_outage_from_missing_workflow():
+    class BrokenHandle:
+        async def describe(self):
+            raise RuntimeError("Temporal connection unavailable")
+        async def cancel(self):
+            raise RuntimeError("Temporal connection unavailable")
+    class BrokenClient:
+        async def start_workflow(self,*args,**kwargs):
+            raise RuntimeError("not used")
+        def get_workflow_handle(self,workflow_id):
+            return BrokenHandle()
+    async def factory():
+        return BrokenClient()
+    key="test-temporal-api-key-with-sufficient-length"
+    app=create_app(api_key=key,tenant_id="tenant-a",
+        temporal_client_factory=factory,temporal_task_queue="agent-memory-core")
+    client=TestClient(app)
+    headers={"Authorization":"Bearer "+key}
+    workflow_id="tenant-a:known-workflow"
+    assert client.get("/v1/workflows/"+workflow_id,headers=headers).status_code==503
+    assert client.post("/v1/workflows/"+workflow_id+"/cancel",
+                       headers=headers).status_code==503

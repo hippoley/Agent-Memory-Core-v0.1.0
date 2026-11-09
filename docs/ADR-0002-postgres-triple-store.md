@@ -46,3 +46,14 @@ extensions on a real PostgreSQL instance before considering the combination supp
 No embedding inference or production PostgreSQL instance has been tested
 by this repository yet. Server-side vector indexes under tenant filters require
 Recall@k comparisons to exact search.
+
+## As-of semantic retrieval
+
+Vector candidates are filtered by tenant, `known_at` (transaction time),
+and `valid_at` (real-world validity) *before* cosine ranking. A correction
+records both the prior supersession and replacement insertion at a shared
+database time. This closes the intermediate historical gap between the two
+versions. Full effective-date interval splitting remains a separate gate.
+
+The index is exact by default to avoid filtered HNSW neighbor starvation;
+tenant-partitioned ANN requires Recall@k/P95 evidence before activation.

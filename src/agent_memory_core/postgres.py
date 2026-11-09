@@ -43,6 +43,7 @@ class PostgresMemory:
             raise ValueError("Invalid effective interval")
         mid = uuid4()
         with self.conn.transaction():
+            mutation_time = self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
             if replaces_id is not None:
                 # Lock the historical claim to prevent concurrent conflicting corrections.
                 old = self.conn.execute(
@@ -53,14 +54,14 @@ class PostgresMemory:
                 if not old:
                     raise ValueError("Missing, mismatched, or already superseded claim")
                 self.conn.execute(
-                    "UPDATE memory_claims SET superseded_at=clock_timestamp() WHERE id=%s",
-                    (replaces_id,))
+                    "UPDATE memory_claims SET superseded_at=%s WHERE id=%s",
+                    (mutation_time,replaces_id,))
             self.conn.execute(
                 """INSERT INTO memory_claims(id,tenant_id,subject_id,predicate,value,source_id,
-                   valid_from,valid_to,replaces_id,object_sha256)
-                   VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s)""",
+                   valid_from,valid_to,replaces_id,object_sha256,recorded_at)
+                   VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
                 (mid,tenant_id,subject_id,predicate,json.dumps(value,ensure_ascii=False),
-                 source_id,valid_from,valid_to,replaces_id,object_sha256))
+                 source_id,valid_from,valid_to,replaces_id,object_sha256,mutation_time))
         return str(mid)
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
@@ -98,15 +99,18 @@ class PostgresMemory:
                 raise PermissionError("Memory does not belong to requested tenant")
 
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
-                      limit: int = 10) -> list[tuple[str,float]]:
-        """Exact correctness path: tenant filtering precedes distance ordering.
+                      limit: int = 10, valid_at: datetime | None = None,
+                      known_at: datetime | None = None) -> list[tuple[str,float]]:
+        """Exact bitemporal vector retrieval within one tenant.
 
-        A shared HNSW index can under-return under selective tenant filters.
-        This materialized subset deliberately avoids approximate candidate
-        starvation until tenant-aware ANN has real Recall@k benchmarks.
+        Materialize the canonical time/tenant scoped candidates BEFORE scoring:
+        naive ANN+WHERE postfiltering can silently under-return neighbors, and
+        filtering by *current* supersession would break historical as-of search.
         """
         if not tenant_id or not model_id or not (1 <= limit <= 100):
             raise ValueError("Invalid tenant, embedding model or limit")
+        known_at = aware(known_at or datetime.now(timezone.utc))
+        valid_at = aware(valid_at or known_at)
         literal = vector_literal(vector)
         rows = self.conn.execute(
             """WITH scoped AS MATERIALIZED (
@@ -114,11 +118,14 @@ class PostgresMemory:
                  FROM memory_embeddings e
                  JOIN memory_claims c ON c.id=e.memory_id
                  WHERE c.tenant_id=%s AND e.model_id=%s
-                   AND c.superseded_at IS NULL
+                   AND c.recorded_at<=%s
+                   AND (c.superseded_at IS NULL OR c.superseded_at>%s)
+                   AND c.valid_from<=%s
+                   AND (c.valid_to IS NULL OR c.valid_to>%s)
                )
                SELECT memory_id::text, embedding <=> %s::vector AS distance
                FROM scoped ORDER BY distance,memory_id LIMIT %s""",
-            (tenant_id,model_id,literal,limit))
+            (tenant_id,model_id,known_at,known_at,valid_at,valid_at,literal,limit))
         return [(r[0],float(r[1])) for r in rows]
 
     def add_edge(self, *, tenant_id: str, from_entity: str, predicate: str,

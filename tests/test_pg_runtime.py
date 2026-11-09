@@ -96,11 +96,23 @@ def test_real_postgres_pgvector_age():
         assert age.project_pending(tenant_id=tenant).projected==1
         assert special in age.neighbors(tenant_id=tenant,from_entity="room-1")
 
+        # Capture database time before correction to verify historical vector recall.
+        past_known_at=db.conn.execute("SELECT clock_timestamp()").fetchone()[0]
         # Superseding the sourced claim invalidates graph relationships.
-        db.remember(tenant_id=tenant,subject_id="room-1",predicate="preference",
+        new_mid=db.remember(tenant_id=tenant,subject_id="room-1",predicate="preference",
                     value={"text":"prefer ventilation"},source_id="user-correction",
                     valid_from=datetime(2026,11,8,tzinfo=timezone.utc),
                     replaces_id=mid)
+        old_change_time=db.conn.execute(
+            "SELECT superseded_at FROM memory_claims WHERE id=%s",(mid,)).fetchone()[0]
+        new_record_time=db.conn.execute(
+            "SELECT recorded_at FROM memory_claims WHERE id=%s",(new_mid,)).fetchone()[0]
+        assert old_change_time==new_record_time
+        assert db.vector_search(tenant_id=tenant,model_id="test384",vector=vec) == []
+        assert db.vector_search(
+            tenant_id=tenant,model_id="test384",vector=vec,
+            valid_at=datetime(2026,11,7,tzinfo=timezone.utc),known_at=past_known_at
+        )[0][0]==mid
         assert age.reconcile_invalidated(tenant_id=tenant) == 3
         assert age.neighbors(tenant_id=tenant,from_entity="room-1") == []
         assert age.project_pending(tenant_id=tenant).projected == 0

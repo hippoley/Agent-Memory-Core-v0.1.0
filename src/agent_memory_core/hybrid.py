@@ -38,7 +38,8 @@ class HybridMemorySearch:
         k = 60
         if embedding is not None:
             for rank,(mid,_) in enumerate(self.store.vector_search(
-                tenant_id=tenant_id,model_id=model_id,vector=embedding,limit=min(limit*10,100)),1):
+                tenant_id=tenant_id,model_id=model_id,vector=embedding,
+                limit=min(limit*10,100),valid_at=valid_at,known_at=known_at),1):
                 ranked.setdefault(mid,[]).append(("vector",rank))
         if query.strip():
             pattern = "%" + query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_") + "%"

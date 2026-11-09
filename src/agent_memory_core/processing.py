@@ -31,12 +31,13 @@ class MemoryProcessor:
     """
 
     def __init__(self, store, *, confidence_threshold: float = 0.65,
-                 embedder: Callable | None = None):
+                 embedder: Callable | None = None, entity_resolver: Callable | None = None):
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError("confidence_threshold must be between 0 and 1")
         self.store = store
         self.confidence_threshold = confidence_threshold
         self.embedder = embedder
+        self.entity_resolver = entity_resolver
 
     @staticmethod
     def _canonical(value: dict) -> str:
@@ -55,6 +56,15 @@ class MemoryProcessor:
                 report.rejected += 1
                 continue
             subject = candidate.get("subject_id")
+            subject_name = candidate.get("subject_name")
+            if subject_name and self.entity_resolver is not None:
+                try:
+                    resolved = self.entity_resolver(tenant_id, subject_name)
+                except ValueError:
+                    report.rejected += 1
+                    continue
+                if resolved is not None:
+                    subject = resolved["entity_id"]
             predicate = candidate.get("predicate")
             value = candidate.get("value")
             confidence = candidate.get("confidence", 1.0)

@@ -34,3 +34,38 @@ class ObjectStore:
         if hashlib.sha256(data).hexdigest() != digest:
             raise IOError("Object checksum mismatch")
         return data
+
+
+class S3ObjectStore:
+    """S3-compatible content-addressed object store (AWS S3, MinIO, etc.).
+
+    The caller supplies a boto3-compatible client. Object keys are derived only
+    from the SHA-256 digest; reads always verify content integrity.
+    """
+    def __init__(self, *, bucket: str, client):
+        if not bucket:
+            raise ValueError("S3 bucket is required")
+        self.bucket = bucket
+        self.client = client
+
+    @staticmethod
+    def _key(digest: str) -> str:
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError("Invalid SHA256")
+        return f"sha256/{digest[:2]}/{digest}"
+
+    def put(self, data: bytes) -> str:
+        digest = hashlib.sha256(data).hexdigest()
+        self.client.put_object(
+            Bucket=self.bucket, Key=self._key(digest), Body=data,
+            Metadata={"sha256": digest},
+        )
+        return digest
+
+    def get(self, digest: str) -> bytes:
+        response = self.client.get_object(Bucket=self.bucket, Key=self._key(digest))
+        body = response["Body"]
+        data = body.read() if hasattr(body, "read") else bytes(body)
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise IOError("Object checksum mismatch")
+        return data

@@ -6,6 +6,15 @@ Local-first, evidence-aware, time-versioned Agent memory infrastructure with plu
 
 The project separates **memory facts and provenance** from workflow execution (Temporal, Restate, or local state machines) and from independent verification of physical device state.
 
+## Target: PostgreSQL triple-store (design accepted, not fully implemented)
+
+- PostgreSQL: canonical facts, event/time history, references and transactional metadata.
+- pgvector: optional 384-dimensional semantic index; requires local embedding generation.
+- Apache AGE: optional graph projection and Cypher traversal; AGE projection writer is **not implemented**.
+- Object bytes remain in local content-addressed storage; time-series records may live in PostgreSQL.
+
+See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sql/postgresql/README.md). The prototype includes SQL migrations, optional Python backend and contract tests, **not a validated integrated AGE deployment**.
+
 ## Current capabilities
 - SQLite persistence and bitemporal-style as-of queries
 - Source identifiers, correction links, and append-oriented history
@@ -17,7 +26,7 @@ The project separates **memory facts and provenance** from workflow execution (T
 ## Not yet implemented
 - Authenticated multi-tenant access control and cryptographic protection
 - Complete bitemporal interval revision semantics
-- PostgreSQL / pgvector / Apache AGE or time-series adapters
+- Apache AGE graph projection and production-ready PostgreSQL integration tests
 - Embedding, hybrid retrieval, graph queries
 - Temporal / Restate integration
 - Production-grade deletion, retention, backup, and observability

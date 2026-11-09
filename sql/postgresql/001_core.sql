@@ -162,3 +162,17 @@ CREATE TABLE IF NOT EXISTS memory_idempotency (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY(tenant_id,idempotency_key)
 );
+
+
+-- Tenant ownership metadata for content-addressed evidence objects.
+-- Physical objects may share a digest, but access is granted per tenant.
+CREATE TABLE IF NOT EXISTS memory_objects (
+  tenant_id text NOT NULL,
+  object_sha256 text NOT NULL CHECK (object_sha256 ~ '^[0-9a-f]{64}$'),
+  byte_size bigint NOT NULL CHECK (byte_size >= 0),
+  content_type text NOT NULL DEFAULT 'application/octet-stream',
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (tenant_id, object_sha256)
+);
+CREATE INDEX IF NOT EXISTS memory_objects_created
+ON memory_objects(tenant_id, created_at DESC);

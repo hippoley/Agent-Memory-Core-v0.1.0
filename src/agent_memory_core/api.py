@@ -555,7 +555,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             memory_id=str(UUID(item.memory_id))
             client=await temporal_client_factory()
             from .temporal_adapter import VerifyMemoryWorkflow
-            workflow_id=item.workflow_id or "memory-verify-"+str(uuid4())
+            workflow_id=t+":"+(item.workflow_id or "memory-verify-"+str(uuid4()))
             handle=await client.start_workflow(
                 VerifyMemoryWorkflow.run,
                 {"tenant_id":t,"memory_id":memory_id},
@@ -573,6 +573,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         summary="Describe a Temporal workflow execution",
     )
     async def describe_workflow(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
         if temporal_client_factory is None or not temporal_task_queue:
             raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
         try:
@@ -580,7 +582,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             description=await client.get_workflow_handle(workflow_id).describe()
             status=getattr(description.status,"name",str(description.status))
             return {"workflow_id":workflow_id,"run_id":description.run_id,
-                    "status":status,"workflow_type":getattr(description,"workflow_type",None)}
+                    "status":status,"workflow_type":str(getattr(description,"workflow_type","VerifyMemoryWorkflow"))}
         except Exception:
             raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
 
@@ -589,6 +591,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         summary="Request cancellation of a Temporal workflow",
     )
     async def cancel_workflow(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
         if temporal_client_factory is None or not temporal_task_queue:
             raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
         try:

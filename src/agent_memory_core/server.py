@@ -16,8 +16,16 @@ def search_factory():
     graph = None
     if os.getenv("MEMORY_ENABLE_AGE", "0") == "1":
         from .age_graph import AgeProjection
-        graph = AgeProjection(db.conn)
-        graph.initialize()
+        try:
+            graph = AgeProjection(db.conn)
+            graph.initialize()
+        except Exception:
+            # A failed optional graph initialization must not prevent canonical
+            # SQL and vector retrieval. Graph failure appears in diagnostics.
+            class UnavailableGraph:
+                def neighbors(self, **kwargs):
+                    raise RuntimeError("Apache AGE graph adapter is unavailable")
+            graph = UnavailableGraph()
     return HybridMemorySearch(db, graph=graph)
 
 

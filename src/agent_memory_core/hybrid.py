@@ -7,6 +7,13 @@ No index result bypasses canonical tenant/time revalidation.
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from contextlib import nullcontext
+
+
+def _channel_transaction(store):
+    """Rollback a failed optional SQL index query before canonical SQL continues."""
+    factory=getattr(getattr(store, "conn", None), "transaction", None)
+    return factory() if callable(factory) else nullcontext()
 
 @dataclass(frozen=True)
 class MemoryHit:
@@ -53,9 +60,10 @@ class HybridMemorySearch:
 
         if embedding is not None:
             try:
-                vector_rows=self.store.vector_search(
-                    tenant_id=tenant_id,model_id=model_id,vector=embedding,
-                    limit=min(limit*10,100),valid_at=valid_at,known_at=known_at)
+                with _channel_transaction(self.store):
+                    vector_rows=self.store.vector_search(
+                        tenant_id=tenant_id,model_id=model_id,vector=embedding,
+                        limit=min(limit*10,100),valid_at=valid_at,known_at=known_at)
                 for rank,(mid,_) in enumerate(vector_rows,1):
                     ranked.setdefault(mid,[]).append(("vector",rank))
             except Exception as exc:
@@ -78,7 +86,8 @@ class HybridMemorySearch:
 
         if self.graph and anchor_entity:
             try:
-                subjects=set(self.graph.neighbors(tenant_id=tenant_id,from_entity=anchor_entity,hops=1))
+                with _channel_transaction(self.store):
+                    subjects=set(self.graph.neighbors(tenant_id=tenant_id,from_entity=anchor_entity,hops=1))
                 subjects.add(anchor_entity)
                 graph_rank=0
                 for subject in sorted(subjects):

@@ -22,6 +22,12 @@ def test_public_api_roundtrip_to_postgres():
     finally:
         db.close()
     client=TestClient(app)
+    # Readiness is an authenticated, real SQL SELECT 1 (not a static status flag).
+    token={"Authorization":"Bearer "+key}
+    assert client.get("/v1/ready").status_code==401
+    assert client.get("/v1/ready",headers=token).status_code==200
+    assert client.get("/v1/ready",headers=token).json()["checks"]=={"postgresql":"ready"}
+
     token={"Authorization":"Bearer "+key}
     payload={"subject_id":"bedroom-1","predicate":"night_preference",
              "value":{"noise":"quiet"},"source_id":"utterance-1",
@@ -40,3 +46,18 @@ def test_public_api_roundtrip_to_postgres():
         assert db.recall(tenant_id="another",subject_id="bedroom-1")==[]
     finally:
         db.close()
+
+
+def test_ready_fails_closed_if_database_cannot_be_opened():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    def fail_db():
+        raise ConnectionError("database unavailable")
+    app=create_app(
+        api_key="test-api-key-with-strong-example-length",
+        tenant_id="readiness-test",store_factory=fail_db)
+    response=TestClient(app).get(
+        "/v1/ready",headers={"Authorization":"Bearer test-api-key-with-strong-example-length"})
+    assert response.status_code==503
+    assert response.json()["detail"]=="Canonical memory store is unavailable"

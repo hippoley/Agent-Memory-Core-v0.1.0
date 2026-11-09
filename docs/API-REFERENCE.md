@@ -305,6 +305,51 @@ This is a basic PostgreSQL event-time observation store. It is not yet a
 full-featured time-series database: range aggregation, retention/partition
 automation, downsampling and high-ingest benchmarks remain future work.
 
+## 4.10 Build vector and graph indexes through the API
+
+Attach a caller-generated embedding to an existing memory claim:
+
+```bash
+curl -X PUT http://127.0.0.1:8765/v1/memories/<memory-uuid>/embedding \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model_id":"BAAI/bge-small-zh-v1.5","embedding":[...512 float values...]}'
+```
+
+Only 384D and 512D profiles are accepted by the current PostgreSQL adapter.
+The embedding model/version must have a stable model_id. The API does not run
+an embedding model; generate vectors locally or in the calling application.
+
+Register a canonical entity and aliases:
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/entities \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"entity_id":"bedroom-1","entity_type":"room","canonical_name":"Main Bedroom","aliases":["primary bedroom"],"attributes":{"floor":1}}'
+```
+
+Resolve a name or alias:
+
+```bash
+curl -G http://127.0.0.1:8765/v1/entities/resolve \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --data-urlencode 'name=primary bedroom'
+```
+
+Create a canonical relationship:
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/edges \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"from_entity":"bedroom-1","predicate":"HAS_WINDOW","to_entity":"window-1"}'
+```
+
+When `MEMORY_ENABLE_AGE=1`, the service also attempts to project pending
+relationships to Apache AGE. The PostgreSQL edge ledger remains canonical.
+Vector ingestion requires `MEMORY_ENABLE_VECTOR=1`.
+
 ## 4.9 Durable event replay and live SSE
 
 Every newly created PostgreSQL memory claim and observation is now written to

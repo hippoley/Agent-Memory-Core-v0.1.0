@@ -109,8 +109,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             "Local-first, evidence-aware Agent memory. PostgreSQL is the canonical "
             "record; pgvector and Apache AGE are optional retrieval indexes; object "
             "storage and Temporal are independent optional adapters. The currently "
-            "implemented HTTP surface is claims, recall, capability discovery and "
-            "configured hybrid search. Unimplemented adapters are not implied by this API."
+            "implemented HTTP surface includes memory claims and processing, evidence "
+            "objects, observations, events, entity/edge operations, hybrid retrieval, "
+            "and optional Temporal workflow lifecycle endpoints. Optional capabilities "
+            "must be enabled and are reported through capability discovery."
         ),
         docs_url="/docs",
         redoc_url="/redoc",

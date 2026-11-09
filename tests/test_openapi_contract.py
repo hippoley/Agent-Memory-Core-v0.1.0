@@ -26,6 +26,9 @@ EXPECTED={
     "/v1/entities":{"post"},
     "/v1/entities/resolve":{"get"},
     "/v1/edges":{"post"},
+    "/v1/workflows/memory-verifications":{"post"},
+    "/v1/workflows/{workflow_id}":{"get"},
+    "/v1/workflows/{workflow_id}/cancel":{"post"},
 }
 
 def spec():

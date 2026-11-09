@@ -99,8 +99,8 @@ production Temporal cluster operations are not implemented.
 
 The API is single-tenant per process and uses a configured bearer key. Before
 public multi-customer deployment, add database RLS, key lifecycle, TLS,
-rate limiting, audit events, request quotas, object ownership controls and
-backup/restore exercises.
+rate limiting, audit events, request quotas, object lifecycle/deletion,
+quotas, orphan cleanup and backup/restore exercises.
 
 ## CI evidence interpretation
 
@@ -130,6 +130,5 @@ the public API now includes object upload/download, observation ingestion/query/
 aggregation, vector writes, entity/edge writes, durable event replay, SSE and
 structured memory processing. PostgreSQL/pgvector/AGE and Temporal have real
 integration test paths. The remaining gap is not "all features are missing";
-it is production hardening, richer memory intelligence, robust multi-tenant
-object ownership, projection orchestration and general Temporal workflow
-management.
+it is production hardening, richer memory intelligence, object lifecycle
+controls, projection orchestration and general Temporal workflow management.

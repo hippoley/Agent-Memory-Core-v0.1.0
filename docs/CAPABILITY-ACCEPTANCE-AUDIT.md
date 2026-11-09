@@ -1,122 +1,128 @@
-# Capability-by-capability acceptance audit
+# Capability Acceptance Audit — refreshed against current main
 
 Audit date: 2026-11-09  
-Repository: https://github.com/hippoley/Agent-Memory-Core-v0.1.0  
-Scope: inspect source, schema, tests and GitHub Actions. This is a code-evidence
-audit, not a production security certification or an independent penetration test.
+Repository: `hippoley/Agent-Memory-Core-v0.1.0`
 
-## Status vocabulary
+This replaces earlier audit snapshots that predated the expanded REST facade.
+The audit distinguishes implementation, tests, external API exposure and
+production readiness. A successful unit test is not described as a real
+service integration test.
 
-- **Implemented + integration-tested**: real adapter code and a test against
-  the real backing service exist.
-- **Implemented + unit-tested**: real local code exists, but the test does not
-  exercise the production backing service or a remote deployment.
-- **Prototype only**: narrow demonstration exists; not a general-purpose feature.
-- **Designed only / missing**: docs or schema references exist, but no usable
-  implementation of the promised capability.
-- **Not exposed**: backend code may exist, but third parties cannot call it via
-  the HTTP API.
+## Status
 
-## Results
-
-| Capability | Code evidence | Test evidence | Verdict |
+| Capability | Implementation found | HTTP API | Evidence / remaining boundary |
 |---|---|---|---|
-| PostgreSQL canonical claims + bitemporal correction | `postgres.py`, `001_core.sql` | `test_pg_runtime.py`, real PostgreSQL CI | Implemented + integration-tested |
-| pgvector write/search, 384D and 512D | `store_embedding`, `vector_search`, vector tables, authenticated embedding REST endpoint | `test_pg_runtime.py`, API contract tests, real pgvector CI | Implemented + integration-tested; caller must supply embeddings, no built-in encoder |
-| Apache AGE graph projection/traversal | `age_graph.py`, canonical entity/edge ledger, entity upsert/resolve and edge REST APIs | `test_pg_runtime.py`, API contract tests, real AGE CI | Implemented + integration-tested; graph deletion/admin and advanced query APIs remain limited |
-| Time-series observations | `record_observation`, `observations`, `memory_observations`, authenticated REST write/query | `test_pg_runtime.py`, `test_api_objects_observations.py` | Implemented + integration-tested at basic event/observation level; not a full TSDB |
-| Local content-addressed object storage | `objects.py`, SHA-256 path, atomic replace, read checksum | `test_core.py::test_object_integrity` | Implemented + unit-tested; no S3 adapter, metadata lifecycle, API upload/download or object-store integration test |
-| Event append in SQLite reference backend | `MemoryStore.append_event/events` | `test_core.py::test_event_idempotency` | Implemented + unit-tested; SQLite only |
-| PostgreSQL transactional outbox consumer | `outbox.py`, `memory_outbox` | `test_outbox_runtime.py` real PostgreSQL tests | Implemented + integration-tested for DB-local handler, retry and atomic ack |
-| Realtime event subscription/stream | PostgreSQL claim/observation event writes, cursor replay API, bounded SSE with Last-Event-ID | `test_api_objects_observations.py` verifies replay and SSE framing; `test_pg_runtime.py` verifies DB event persistence | Implemented + integration-tested at prototype scale; no broker fan-out, DLQ or load test |
-| Temporal durable workflow | `temporal_adapter.py` one VerifyMemoryWorkflow + two Activities | `test_temporal_integration.py` starts local Temporal dev service and real PostgreSQL | Prototype only, integration-tested; not general orchestration platform or HTTP API |
-| Mem0-inspired processing | `processing.py`: pluggable extraction adapter, confidence gate, canonical dedup, conflict versioning, optional embedding projection, canonical entity alias resolution | `test_processing.py` plus real PostgreSQL exercise in `test_pg_runtime.py` | First deterministic processing pipeline implemented; model-native extraction, source evidence linking, consolidation and Chinese benchmark remain absent |
-| Public REST API | `api.py`: health, ready, capabilities, claim write/read, hybrid search, object upload/download, observations, event replay/SSE, vector ingestion, entity and edge writes | `test_openapi_contract.py`, `test_api_postgres_runtime.py`, `test_api_objects_observations.py` | Expanded authenticated REST facade; Temporal workflow management and advanced graph administration still absent |
-| Third-party multi-tenant production boundary | single configured tenant per API process; app-level key check | API tenant-scope tests | Single-tenant prototype only; RLS and production identity/security absent |
+| PostgreSQL canonical memory | Yes | Yes | Claims, bitemporal recall, provenance and transactional event writes; real PostgreSQL integration workflow |
+| pgvector | Yes | Yes | 384D/512D embedding write and vector search; caller supplies embeddings; real pgvector integration workflow |
+| Apache AGE | Yes | Yes | Canonical entity/edge writes and AGE projection/traversal; real AGE integration workflow |
+| Hybrid retrieval | Yes | Yes | SQL + vector + graph channels and degraded-channel reporting; real DB workflow |
+| Time-series observations | Yes | Yes | Ingest, event-time range query, count/min/max/avg; real DB integration test; not a full TSDB |
+| Local object store | Yes | Yes | Atomic content-addressed writes and checksum-verified reads; local tests and HTTP API tests |
+| S3-compatible object store | Yes | Adapter + HTTP wiring | boto3 adapter and server environment configuration; current adapter test uses a fake S3 client, not live AWS/MinIO |
+| Durable events | Yes | Yes | PostgreSQL event log, cursor replay, claim/observation events |
+| Realtime SSE | Yes | Yes | Authenticated bounded SSE with replay cursor and Last-Event-ID; TestClient contract test; production fan-out/load not measured |
+| Transactional outbox | Yes | Internal worker | PostgreSQL row locking, atomic DB-local handler acknowledgement and retry; real PostgreSQL integration tests |
+| Temporal | Narrow workflow | No general workflow API | Real local Temporal SDK workflow + PostgreSQL activities and idempotent receipt test; no general workflow lifecycle API or default worker |
+| Mem0-inspired processing | Deterministic first stage | Yes | Structured candidate validation, confidence filtering, exact deduplication, provenance linking, alias resolution and fact replacement; model extractor injected by caller |
+| Automatic LLM extraction | No built-in model | No | Local model/rules extractor contract is injected; core does not call a hosted model |
+| Memory consolidation / forgetting | Not complete | No | Summarization, consolidation scheduling, policy-based forgetting, contradiction classification and benchmark remain |
+| Third-party REST contract | Yes, broad prototype | Yes | Swagger/OpenAPI and route contract tests; not yet hardened for untrusted multi-customer public SaaS |
 
-## Important interpretations
+## Current public HTTP endpoints
 
-### Time-series
+- `GET /v1/health`
+- `GET /v1/ready`
+- `GET /v1/capabilities`
+- `POST /v1/memories`
+- `GET /v1/memories/{subject_id}`
+- `POST /v1/memories/process`
+- `GET /v1/memories/{memory_id}/sources`
+- `PUT /v1/memories/{memory_id}/embedding`
+- `POST /v1/search`
+- `PUT /v1/objects`
+- `GET /v1/objects/{digest}`
+- `POST /v1/observations`
+- `GET /v1/observations/{device_id}`
+- `GET /v1/observations/{device_id}/aggregate`
+- `POST /v1/entities`
+- `GET /v1/entities/resolve`
+- `POST /v1/edges`
+- `GET /v1/events`
+- `GET /v1/events/stream`
 
-This is not yet a dedicated time-series database or a mature telemetry subsystem.
-It is a PostgreSQL observation table with event time and ingestion time,
-tenant/device/event identity, idempotent insertion, and ordered retrieval.
-The current integration test demonstrates late-arriving events are ordered by
-observed time and conflicting event-ID reuse is rejected. Missing: range/
-aggregation APIs, retention/partition automation, downsampling, high-ingest
-load tests, backpressure and public HTTP ingestion/query routes.
+## Important limitations and risks
 
-### Object storage
+### Object ownership
 
-The current implementation is a local filesystem object store addressed by
-SHA-256, with atomic file placement and checksum verification. It is not S3,
-MinIO or a distributed object service. Missing: S3-compatible adapter, metadata
-and authorization, upload/download API, quotas, lifecycle, backup/restore and
-orphan reconciliation. The unit test proves local integrity only.
+The service binds one API key to one tenant per process, but object keys are
+content hashes and the current object adapter does not maintain a separate
+tenant-to-object ownership table. For untrusted tenants, deploy isolated
+object-store roots/buckets and do not share one object namespace until object
+ownership metadata and authorization are implemented.
 
-### Events and realtime
+### Realtime semantics
 
-There are three distinct things and they must not be conflated:
-1. SQLite reference-backend event append/read with idempotency.
-2. PostgreSQL transactional outbox with a DB-local consumer, retry and atomic
-   acknowledgement.
-3. Real-time external subscriptions, replay cursors and reconnect semantics.
+SSE currently polls the durable event log and emits events with IDs. Clients
+can reconnect using `Last-Event-ID` or `after`. It is not a broker-based
+fan-out service; no multi-replica ordering, high-volume throughput or
+backpressure guarantees have been demonstrated.
 
-Only the first two have code/tests. The third is not implemented. PostgreSQL
-NOTIFY is discussed as a wake-up hint in the architecture, but no live
-subscriber/stream API was found.
+### Time series
+
+This is a PostgreSQL observation subsystem, not TimescaleDB or another
+specialized TSDB. It handles event time vs ingest time, idempotent ingestion,
+late arrivals, bounded queries and simple aggregates. Retention, partitioning,
+downsampling, continuous aggregates and load benchmarks remain.
+
+### Memory processing
+
+The current API receives structured candidate facts from a caller-supplied
+extractor and applies deterministic memory logic. It does not infer facts from
+arbitrary raw text itself. Fuzzy multilingual entity resolution, conflict
+classification, memory consolidation, expiration/forgetting policy and
+Chinese evaluation corpus remain.
 
 ### Temporal
 
-The current workflow verifies one existing memory claim and writes an
-idempotent verification receipt. CI starts a local Temporal test service and
-runs real PostgreSQL activities. This proves the SDK integration path is real;
-it does not prove general-purpose workflow lifecycle, cancellation, signals,
-long-running orchestration, production cluster operations or an external API.
+The SDK integration demonstrates a durable workflow for verification and
+receipt writing. General-purpose workflow start/status/signal/cancel, worker
+deployment and operational recovery are not yet exposed through REST.
 
-### Mem0
+### Security / deployment
 
-The repository's ADR explicitly says it adopts Mem0-inspired algorithmic
-patterns rather than depending on Mem0 runtime. However, code inspection finds
-no implemented extraction pipeline, deduplication engine, entity resolver,
-memory conflict policy, consolidation scheduler or benchmark proving those
-features. These must be built and tested before claiming Mem0's core processing
-capabilities have been incorporated.
+The API is single-tenant per process and uses a configured bearer key. Before
+public multi-customer deployment, add database RLS, key lifecycle, TLS,
+rate limiting, audit events, request quotas, object ownership controls and
+backup/restore exercises.
 
-## CI evidence
+## CI evidence interpretation
 
-The repository's Actions history contains successful runs for:
-- `test`, `public-api-contract`, `triple-store-integration`,
-  `memory-data-flow`, and `temporal-memory-integration` on earlier commits.
+Relevant workflows include unit/API contract, real PostgreSQL+pgvector+AGE,
+memory data flow and Temporal+PostgreSQL integration. Always verify that
+workflow runs target the exact release candidate SHA. Do not combine green
+runs from different commits and call the latest main fully qualified.
 
-These runs occurred on different commits. They are not an atomic release
-qualification of the current main HEAD. Re-run every relevant workflow on the
-same release candidate SHA before calling the whole release green.
+## Next engineering gates
 
-## Acceptance sequence
-
-1. Finish Mem0-inspired processing pipeline with tests and a Chinese benchmark.
-2. Add object backend protocol and S3-compatible implementation + API.
-3. Add public observation APIs and TS range/aggregation/retention tests.
-4. Split outbox into independently tracked projection tasks (vector, FTS, AGE).
-5. Add live event consumer API: durable cursor, replay, reconnect, auth and
-   duplicate delivery semantics.
-6. Generalize Temporal workflows and expose authenticated start/status/signal/
-   cancel endpoints; test process restarts and retry behavior.
-7. Add graph and vector write/admin endpoints and prove third-party-only
-   integration without direct database access.
-8. Add RLS, tenant credential lifecycle, TLS, audit, rate limiting and
-   backup/restore acceptance.
-9. Run the full suite on one release candidate SHA and publish measured
-   performance and retrieval-quality results.
+1. Add object ownership metadata and isolated S3 integration tests against MinIO.
+2. Add outbox per-channel tasks for vector, FTS and AGE projection, plus retry
+   exhaustion and dead-letter handling.
+3. Add observation retention/partition policy and sustained ingestion tests.
+4. Add processing concurrency/idempotency controls and a Chinese candidate
+   extraction evaluation set.
+5. Generalize Temporal workflows and expose lifecycle APIs only after worker
+   deployment semantics are stable.
+6. Add RLS, API key rotation/revocation, rate limits and audit trails.
+7. Run the complete suite against one immutable release candidate SHA and
+   publish the resulting test matrix.
 
 ## Bottom line
 
-The repository is not empty and these are not all missing: PostgreSQL,
-pgvector, Apache AGE, basic time-series observations, local object integrity,
-PostgreSQL outbox, and one real Temporal workflow have meaningful code and
-tests. But object storage is local-only; realtime streaming and Mem0-style
-processing are not implemented; Temporal is a narrow prototype; and most
-advanced modules are not yet exposed through the REST API. The product is
-currently a tested backend prototype plus a limited authenticated REST
-facade—not yet a complete third-party Agent memory/knowledge platform.
+The current repository is materially more complete than earlier audit snapshots:
+the public API now includes object upload/download, observation ingestion/query/
+aggregation, vector writes, entity/edge writes, durable event replay, SSE and
+structured memory processing. PostgreSQL/pgvector/AGE and Temporal have real
+integration test paths. The remaining gap is not "all features are missing";
+it is production hardening, richer memory intelligence, robust multi-tenant
+object ownership, projection orchestration and general Temporal workflow
+management.

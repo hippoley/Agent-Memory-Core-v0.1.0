@@ -110,8 +110,11 @@ def test_real_postgres_pgvector_age():
             tenant_id="not-"+tenant,device_id="window-1",property="angle")==[]
 
 
+        db.upsert_entity(tenant_id=tenant,entity_id='canonical-bedroom',entity_type='room',canonical_name='Main Bedroom',aliases=['primary bedroom'])
+        resolved = db.resolve_entity(tenant_id=tenant,name='PRIMARY BEDROOM')
+        assert resolved and resolved['entity_id']=='canonical-bedroom'
         from agent_memory_core.processing import MemoryProcessor
-        processor = MemoryProcessor(db)
+        processor = MemoryProcessor(db,entity_resolver=lambda t,n:db.resolve_entity(tenant_id=t,name=n))
         extraction = lambda _: [{"subject_id":"processor-room",
             "predicate":"quiet_hours","value":{"start":"22:00","end":"07:00"},
             "confidence":0.97}]

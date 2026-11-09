@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import hmac
 import os
+import asyncio
+import json
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -291,6 +294,39 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     "has_more": len(items) == limit}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get(
+        "/v1/events/stream", tags=["Events"], summary="Subscribe to memory events (SSE)",
+        description="Server-Sent Events stream. Supports Last-Event-ID or after cursor for replay after reconnect. Each connection is bounded to 30 seconds; reconnect with the last received event ID.",
+    )
+    async def stream_events(request: Request, after: str | None = None,
+                            t: str = Depends(auth)):
+        cursor = after or request.headers.get("last-event-id")
+        async def generate():
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 30
+            while loop.time() < deadline and not await request.is_disconnected():
+                try:
+                    db = store_factory()
+                    try:
+                        items = await asyncio.to_thread(
+                            db.events_after, tenant_id=t, after=cursor, limit=100)
+                    finally:
+                        await asyncio.to_thread(db.close)
+                except ValueError as exc:
+                    yield "event: error\\ndata: " + json.dumps({"detail":str(exc)}) + "\\n\\n"
+                    return
+                if items:
+                    for item in items:
+                        cursor = item["event_id"]
+                        payload = {"event_id":cursor,"event_type":item["event_type"],
+                                   "payload":item["payload"],"recorded_at":str(item["recorded_at"])}
+                        yield "id: " + cursor + "\\nevent: " + item["event_type"] + "\\ndata: " + json.dumps(payload,default=str) + "\\n\\n"
+                else:
+                    yield ": keepalive\\n\\n"
+                    await asyncio.sleep(0.5)
+        return StreamingResponse(generate(), media_type="text/event-stream",
+                                 headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

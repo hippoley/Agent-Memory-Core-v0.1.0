@@ -6,6 +6,7 @@ MEMORY_ENABLE_AGE=1. This module does not start Temporal or an embedding model.
 import os
 
 from .api import create_app
+from .objects import ObjectStore
 
 
 def search_factory():
@@ -29,12 +30,18 @@ def search_factory():
     return HybridMemorySearch(db, graph=graph)
 
 
+def object_store_factory():
+    root = os.getenv("MEMORY_OBJECT_ROOT", "./data/objects")
+    return ObjectStore(root)
+
+
 flags = {
     "semantic": os.getenv("MEMORY_ENABLE_VECTOR", "0") == "1",
     "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1",
-    # Object bytes and Temporal workflows are not exposed by the HTTP facade yet.
-    "objects": False,
+    "objects": True,
     "temporal": False,
 }
 
-app = create_app(search_factory=search_factory, capability_flags=flags)
+app = create_app(search_factory=search_factory,
+                 object_store_factory=object_store_factory,
+                 capability_flags=flags)

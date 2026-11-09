@@ -103,3 +103,22 @@ def test_swagger_and_openapi_are_published_with_bearer_security():
     assert "HTTPBearer" in body["components"]["securitySchemes"]
     assert body["paths"]["/v1/memories"]["post"]["security"] == [{"HTTPBearer": []}]
     assert "HTTPBearer" not in body["paths"]["/v1/health"]["get"].get("security", [])
+
+
+def test_search_rejects_channels_not_advertised_as_available():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    key="secret-token-with-more-than-24-characters"
+    app=create_app(api_key=key,tenant_id="home",search_factory=lambda:None,
+                   capability_flags={"semantic":False,"graph":False})
+    client=TestClient(app)
+    headers={"Authorization":"Bearer "+key}
+    vector=client.post("/v1/search",headers=headers,json={
+        "query":"hello","embedding":[0.1]*384,"model_id":"test384"})
+    assert vector.status_code==503
+    assert "Vector retrieval is disabled" in vector.json()["detail"]
+    graph=client.post("/v1/search",headers=headers,json={
+        "query":"hello","anchor_entity":"room-1"})
+    assert graph.status_code==503
+    assert "Graph retrieval is disabled" in graph.json()["detail"]

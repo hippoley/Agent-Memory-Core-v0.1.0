@@ -195,3 +195,16 @@ J. Tenant isolation is enforced at the database boundary before production.
 - Deploy six separate databases/services to claim feature completeness.
 - Treat approximate similarity or graph reachability as truth.
 - Put the model inside the transactional write path.
+
+
+## 11. Temporal implementation status
+
+Yes: Temporal is explicitly part of the target architecture as the open-source
+Temporal Durable Execution platform (temporalio), not a generic timer or our
+own imitation. Its role is an optional execution control plane. The current
+repository contains the architecture boundary only; a working SDK adapter,
+worker, workflow definitions, and self-hosted Temporal service profile are
+not yet integrated. Do not describe Temporal as already running.
+
+Official project: https://github.com/temporalio/temporal
+Official docs: https://docs.temporal.io/temporal

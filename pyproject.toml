@@ -15,6 +15,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 postgres = ["psycopg[binary]>=3.1"]
+temporal = ["temporalio>=1.7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

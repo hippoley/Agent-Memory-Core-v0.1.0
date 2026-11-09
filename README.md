@@ -74,3 +74,13 @@ authorization/RLS, retention/erasure, vector relevance benchmarking, automatic
 local model inference, complete bitemporal interval revision, and historical AGE
 graph queries remain future gates. Do not expose the container credentials or
 the service to untrusted networks.
+
+
+## End-to-end example
+
+The runnable [end_to_end.py](examples/end_to_end.py) writes real sample entities,
+source provenance, a claim, graph edges, a time-series observation, an outbox
+event and a content-addressed object into the local stack, then queries AGE.
+Temporal is included in the target architecture as an optional open-source
+durable-execution adapter, but its SDK worker/service integration is not yet
+implemented.

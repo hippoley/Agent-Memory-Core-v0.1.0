@@ -15,6 +15,12 @@ def test_public_api_roundtrip_to_postgres():
     key="test-api-key-with-strong-example-length"
     app=create_app(api_key=key,tenant_id=tenant,
                    store_factory=lambda:PostgresMemory(os.environ["MEMORY_TEST_DSN"]))
+    # A standalone external consumer requires an initialized database.
+    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        db.migrate()
+    finally:
+        db.close()
     client=TestClient(app)
     token={"Authorization":"Bearer "+key}
     payload={"subject_id":"bedroom-1","predicate":"night_preference",

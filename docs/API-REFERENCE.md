@@ -227,7 +227,68 @@ the Python/PostgreSQL integration path. Therefore a third-party HTTP-only
 client can perform SQL search and can query already-populated vector/graph
 indexes, but cannot yet build those indexes end-to-end through REST.
 
-## 5. Capabilities present in the backend but not yet exposed as HTTP APIs
+## 4.7 Upload and download evidence objects
+
+The default server now wires the local SHA-256 content-addressed object store.
+Authenticated binary upload is limited to 10 MiB per request.
+
+```bash
+curl -X PUT http://127.0.0.1:8765/v1/objects \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @floorplan.png
+```
+
+Response includes `sha256`, `size`, and `X-Content-SHA256`. Store the digest
+in a memory claim's `object_sha256` field. Retrieve the original bytes:
+
+```bash
+curl http://127.0.0.1:8765/v1/objects/<sha256> \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --output floorplan.png
+```
+
+This is local filesystem storage, not S3 or distributed object storage.
+Configure `MEMORY_OBJECT_ROOT` to select its durable data directory. Back it
+up independently of PostgreSQL.
+
+## 4.8 Ingest and query time-series observations
+
+Ingest an observation (timestamps must include a timezone):
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/observations \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id":"window-1",
+    "source_event_id":"gateway-event-0001",
+    "observed_at":"2026-11-09T10:00:00+08:00",
+    "property":"angle",
+    "value":17.5,
+    "unit":"degree",
+    "source_id":"home-gateway"
+  }'
+```
+
+First identical event returns HTTP 201; an identical retry returns HTTP 200
+with `duplicate=true`. Reusing the same tenant/device/event ID with different
+content returns HTTP 409.
+
+Query:
+
+```bash
+curl -G http://127.0.0.1:8765/v1/observations/window-1 \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --data-urlencode 'property=angle' \
+  --data-urlencode 'limit=100'
+```
+
+This is a basic PostgreSQL event-time observation store. It is not yet a
+full-featured time-series database: range aggregation, retention/partition
+automation, downsampling and high-ingest benchmarks remain future work.
+
+## 5. Backend capabilities still not exposed as HTTP APIs
 
 These are not Swagger endpoints today:
 
@@ -236,8 +297,8 @@ These are not Swagger endpoints today:
 | Store/query canonical claims | Implemented | Available | Production auth hardening |
 | pgvector | DB adapter + query implemented | Partial | Public embedding write endpoint and local encoder integration |
 | Apache AGE | Projection/traversal adapter implemented | Partial | Public edge write, projection administration and direct graph query API |
-| Object store | Local SHA-256 store implemented | Not exposed | Authenticated upload/download, metadata, lifecycle and remote object adapter |
-| Time-series observations | PostgreSQL write/read implemented | Not exposed | Public ingestion/query endpoints and retention/partition policy |
+| Object store | Local SHA-256 store implemented | Local upload/download now exposed | S3-compatible adapter, metadata lifecycle, quotas, backup/restore |
+| Time-series observations | PostgreSQL write/read implemented | Basic ingestion/query now exposed | Range aggregation, retention/partition policy and downsampling |
 | Temporal | Optional SDK workflow/activities prototype | Not exposed | Public workflow start/status/cancel contract, worker deployment and auth |
 | Realtime outbox | SQL outbox exists | Not exposed | Durable cursor, consumer/subscription API, replay and delivery semantics |
 | Mem0-inspired memory extraction | Design patterns recorded | Not exposed | Extraction, deduplication, entity resolution and policy pipeline |

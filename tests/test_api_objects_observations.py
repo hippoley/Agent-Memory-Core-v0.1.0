@@ -88,3 +88,32 @@ def test_openapi_includes_object_and_observation_contracts(tmp_path):
     assert "/v1/objects/{digest}" in spec["paths"]
     assert "/v1/observations" in spec["paths"]
     assert "/v1/observations/{device_id}" in spec["paths"]
+
+
+class FakeS3Body:
+    def __init__(self, data):
+        self.data=data
+    def read(self):
+        return self.data
+
+
+class FakeS3:
+    def __init__(self):
+        self.objects={}
+    def put_object(self, **kwargs):
+        self.objects[(kwargs["Bucket"],kwargs["Key"])]=kwargs["Body"]
+    def get_object(self, **kwargs):
+        return {"Body":FakeS3Body(self.objects[(kwargs["Bucket"],kwargs["Key"])])}
+
+
+def test_s3_object_adapter_content_addressing_and_integrity():
+    from agent_memory_core.objects import S3ObjectStore
+    client=FakeS3()
+    store=S3ObjectStore(bucket="memory-test",client=client)
+    payload=b"original-evidence"
+    digest=store.put(payload)
+    assert store.get(digest)==payload
+    assert ("memory-test",f"sha256/{digest[:2]}/{digest}") in client.objects
+    client.objects[("memory-test",f"sha256/{digest[:2]}/{digest}")]=b"tampered"
+    with pytest.raises(IOError):
+        store.get(digest)

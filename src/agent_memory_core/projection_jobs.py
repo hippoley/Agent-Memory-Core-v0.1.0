@@ -7,6 +7,10 @@ commit; remote effects still require destination-side idempotency.
 """
 from __future__ import annotations
 
+import logging
+
+LOGGER = logging.getLogger(__name__)
+
 
 class ProjectionWorker:
     def __init__(self, conn, *, max_attempts: int = 8,
@@ -61,7 +65,8 @@ class ProjectionWorker:
             except Exception as exc:
                 if event_id is None:
                     raise
-                exhausted = attempts + 1 >= self.max_attempts
+                next_attempt = attempts + 1
+                exhausted = next_attempt >= self.max_attempts
                 delay = min(
                     self.base_retry_seconds * (2 ** max(0, attempts)),
                     self.max_retry_seconds,
@@ -81,6 +86,11 @@ class ProjectionWorker:
                         (exhausted, delay, exhausted, str(exc)[:1000],
                          event_id, projection_name),
                     )
+                LOGGER.warning(
+                    "Projection delivery failed projection=%s event_id=%s attempt=%s state=%s error=%s",
+                    projection_name, event_id, next_attempt,
+                    "dead_letter" if exhausted else "retry", str(exc)[:500],
+                )
                 break
         return done
 

@@ -307,6 +307,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     )
     def put_embedding(memory_id: str, item: EmbeddingWrite,
                       t: str = Depends(auth)):
+        if not (capability_flags or {}).get("semantic", False):
+            raise HTTPException(status_code=503, detail="Vector indexing is disabled on this instance")
         try:
             db = store_factory()
             try:
@@ -355,7 +357,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
 
     @app.post(
         "/v1/edges", status_code=201, tags=["Knowledge Graph"],
-        summary="Create an entity relationship and project it to AGE",
+        summary="Create a canonical entity relationship and optionally project it to AGE",
     )
     def put_edge(item: EdgeWrite, t: str = Depends(auth)):
         try:

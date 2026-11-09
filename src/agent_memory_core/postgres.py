@@ -418,6 +418,44 @@ class PostgresMemory:
         return [{"event_id":str(row[0]),"event_type":row[1],
                  "payload":row[2],"recorded_at":row[3]} for row in rows]
 
+    def register_object(self, *, tenant_id: str, sha256: str, size_bytes: int) -> None:
+        """Grant one tenant access to a content-addressed object."""
+        import re
+        if (not tenant_id or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+                or size_bytes < 0):
+            raise ValueError("Invalid tenant, object digest or size")
+        with self.conn.transaction():
+            self.conn.execute(
+                """INSERT INTO memory_objects(tenant_id,sha256,size_bytes)
+                   VALUES (%s,%s,%s)
+                   ON CONFLICT (tenant_id,sha256) DO UPDATE
+                   SET size_bytes=EXCLUDED.size_bytes""",
+                (tenant_id,sha256,size_bytes))
+
+    def object_accessible(self, *, tenant_id: str, sha256: str) -> bool:
+        import re
+        if not tenant_id or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            return False
+        return self.conn.execute(
+            "SELECT 1 FROM memory_objects WHERE tenant_id=%s AND sha256=%s",
+            (tenant_id,sha256)).fetchone() is not None
+
+    def active_claims(self, *, tenant_id: str, subject_id: str,
+                      predicate: str) -> list[dict]:
+        """Return current claims for deterministic post-extraction processing."""
+        rows=self.conn.execute(
+            """SELECT id::text,subject_id,predicate,value,source_id,valid_from,
+                      valid_to,recorded_at,object_sha256
+               FROM memory_claims
+               WHERE tenant_id=%s AND subject_id=%s AND predicate=%s
+                 AND superseded_at IS NULL
+                 AND (valid_to IS NULL OR valid_to>clock_timestamp())
+               ORDER BY recorded_at DESC,id""",
+            (tenant_id,subject_id,predicate))
+        columns=("id","subject_id","predicate","value","source_id","valid_from",
+                 "valid_to","recorded_at","object_sha256")
+        return [dict(zip(columns,row)) for row in rows]
+
     def outgoing_edges(self, *, tenant_id: str, from_entity: str) -> list[tuple[str,str]]:
         return list(self.conn.execute(
             """SELECT predicate,to_entity FROM memory_edges

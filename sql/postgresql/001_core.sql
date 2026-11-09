@@ -123,6 +123,21 @@ CREATE TABLE IF NOT EXISTS memory_sources (
   CHECK (object_sha256 IS NULL OR length(object_sha256)=64)
 );
 
+-- Many-to-many provenance: one canonical claim may be supported by multiple sources.
+CREATE TABLE IF NOT EXISTS memory_claim_sources (
+  tenant_id text NOT NULL,
+  claim_id uuid NOT NULL REFERENCES memory_claims(id) ON DELETE CASCADE,
+  source_id text NOT NULL,
+  confidence double precision NOT NULL DEFAULT 1.0
+    CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  linked_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (tenant_id,claim_id,source_id),
+  FOREIGN KEY (tenant_id,source_id)
+    REFERENCES memory_sources(tenant_id,source_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS memory_claim_sources_source
+ON memory_claim_sources(tenant_id,source_id,claim_id);
+
 CREATE TABLE IF NOT EXISTS memory_outbox (
   event_id uuid PRIMARY KEY,
   tenant_id text NOT NULL,

@@ -33,11 +33,15 @@ def test_real_postgres_pgvector_age():
         assert db.recall(tenant_id="not-"+tenant,subject_id="room-1")==[]
         vec=[0.0]*384
         vec[0]=1.0
-        db.store_embedding(memory_id=mid,model_id="test384",vector=vec)
+        db.store_embedding(tenant_id=tenant,memory_id=mid,model_id="test384",vector=vec)
+        with pytest.raises(PermissionError):
+            db.store_embedding(tenant_id="wrong-"+tenant,memory_id=mid,model_id="test384",vector=vec)
         assert db.vector_search(tenant_id=tenant,model_id="test384",vector=vec)[0][0]==mid
 
         db.add_edge(tenant_id=tenant,from_entity="room-1",predicate="HAS_WINDOW",to_entity="window-1",
                     source_memory_id=mid)
+        with pytest.raises(PermissionError):
+            db.add_edge(tenant_id="wrong-"+tenant,from_entity="window-1",predicate="BELONGS_TO",to_entity="home-1",source_memory_id=mid)
         db.add_edge(tenant_id=tenant,from_entity="window-1",predicate="BELONGS_TO",to_entity="home-1",
                     source_memory_id=mid)
         age=AgeProjection(db.conn)

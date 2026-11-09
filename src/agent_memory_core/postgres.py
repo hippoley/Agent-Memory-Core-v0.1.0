@@ -80,16 +80,21 @@ class PostgresMemory:
                 "recorded_at","superseded_at","object_sha256")
         return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
 
-    def store_embedding(self, *, memory_id: str, model_id: str, vector: list[float]) -> None:
-        if len(vector)!=384:
-            raise ValueError("Prototype embedding profile is 384 dimensions")
+    def store_embedding(self, *, tenant_id: str, memory_id: str,
+                        model_id: str, vector: list[float]) -> None:
+        if not tenant_id or not model_id or len(vector) != 384:
+            raise ValueError("Tenant, model and 384-dimensional vector required")
         literal = "[" + ",".join(str(float(x)) for x in vector) + "]"
         with self.conn.transaction():
-            self.conn.execute(
+            result = self.conn.execute(
                 """INSERT INTO memory_embeddings(memory_id,model_id,embedding)
-                   VALUES (%s,%s,%s::vector)
-                   ON CONFLICT (memory_id,model_id) DO UPDATE SET embedding=EXCLUDED.embedding""",
-                (memory_id,model_id,literal))
+                   SELECT id,%s,%s::vector FROM memory_claims
+                   WHERE id=%s AND tenant_id=%s
+                   ON CONFLICT (memory_id,model_id)
+                   DO UPDATE SET embedding=EXCLUDED.embedding""",
+                (model_id,literal,memory_id,tenant_id))
+            if result.rowcount != 1:
+                raise PermissionError("Memory does not belong to requested tenant")
 
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
                       limit: int = 10) -> list[tuple[str,float]]:
@@ -107,8 +112,16 @@ class PostgresMemory:
 
     def add_edge(self, *, tenant_id: str, from_entity: str, predicate: str,
                  to_entity: str, source_memory_id: str | None = None) -> str:
+        if not all((tenant_id,from_entity,predicate,to_entity)):
+            raise ValueError("Tenant, endpoints and predicate required")
         eid = uuid4()
         with self.conn.transaction():
+            if source_memory_id is not None:
+                found = self.conn.execute(
+                    "SELECT 1 FROM memory_claims WHERE id=%s AND tenant_id=%s",
+                    (source_memory_id,tenant_id)).fetchone()
+                if not found:
+                    raise PermissionError("Source memory belongs to another tenant or does not exist")
             self.conn.execute(
                 """INSERT INTO memory_edges(edge_id,tenant_id,from_entity,predicate,to_entity,source_memory_id)
                    VALUES (%s,%s,%s,%s,%s,%s)""",

@@ -116,6 +116,42 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     memory_id=claim.json()["id"]
     assert client.get("/v1/objects/"+digest,headers=headers).content==evidence
 
+    # A second tenant sharing the same physical content store cannot read the object.
+    other_app=create_app(
+        api_key="other-tenant-api-key-with-sufficient-length",
+        tenant_id="other-"+tenant,
+        store_factory=lambda:PostgresMemory(dsn),
+        object_store_factory=lambda:ObjectStore(tmp_path/"objects"),
+        capability_flags={"objects":True},
+    )
+    other=TestClient(other_app)
+    denied=other.get("/v1/objects/"+digest,
+        headers={"Authorization":"Bearer other-tenant-api-key-with-sufficient-length"})
+    assert denied.status_code==404
+
+    # The HTTP processing pipeline performs confidence filtering, exact dedup,
+    # provenance linking and bitemporal replacement against real PostgreSQL.
+    processed=client.post("/v1/memories/process",headers=headers,json={
+        "text":"Quiet room, later normal noise preference.",
+        "source_id":"conversation:processing-e2e",
+        "confidence_threshold":0.65,
+        "candidates":[
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"quiet"},"confidence":0.99},
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"quiet"},"confidence":0.98},
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"normal"},"confidence":0.95},
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"loud"},"confidence":0.1},
+        ],
+    })
+    assert processed.status_code==200,processed.text
+    assert len(processed.json()["created"])==2
+    assert processed.json()["duplicates"]==1
+    assert processed.json()["rejected"]==1
+    assert len(processed.json()["replaced"])==1
+
     vector=[0.0]*384
     vector[0]=1.0
     indexed=client.put("/v1/memories/"+memory_id+"/embedding",

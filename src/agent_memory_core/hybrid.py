@@ -29,6 +29,11 @@ class HybridMemorySearch:
         self.store = store
         self.graph = graph
 
+    def close(self) -> None:
+        close = getattr(self.store, "close", None)
+        if callable(close):
+            close()
+
     def search(self, **kwargs) -> list[MemoryHit]:
         return list(self.search_detailed(**kwargs).hits)
 

@@ -116,6 +116,12 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     memory_id=claim.json()["id"]
     assert client.get("/v1/objects/"+digest,headers=headers).content==evidence
 
+    vector=[0.0]*384
+    vector[0]=1.0
+    indexed=client.put("/v1/memories/"+memory_id+"/embedding",
+        headers=headers,json={"model_id":"e2e-384","embedding":vector})
+    assert indexed.status_code==200,indexed.text
+
     # A second tenant sharing the same physical content store cannot read the object.
     other_app=create_app(
         api_key="other-tenant-api-key-with-sufficient-length",
@@ -151,12 +157,6 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     assert processed.json()["duplicates"]==1
     assert processed.json()["rejected"]==1
     assert len(processed.json()["replaced"])==1
-
-    vector=[0.0]*384
-    vector[0]=1.0
-    indexed=client.put("/v1/memories/"+memory_id+"/embedding",
-        headers=headers,json={"model_id":"e2e-384","embedding":vector})
-    assert indexed.status_code==200,indexed.text
 
     # Entity registry -> canonical relation -> AGE graph projection.
     for entity_id,kind,name in [

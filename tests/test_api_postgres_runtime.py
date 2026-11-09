@@ -159,7 +159,7 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     assert events.status_code==200
     assert any(e["event_type"]=="memory.observation.recorded" for e in events.json()["items"])
     search=client.post("/v1/search",headers=headers,json={
-        "query":"quiet bedroom",
+        "query":"quiet",
         "embedding":vector,"model_id":"e2e-384",
         "anchor_entity":"bedroom-1","limit":10,
     })

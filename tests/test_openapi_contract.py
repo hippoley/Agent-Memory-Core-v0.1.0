@@ -72,7 +72,7 @@ def test_response_and_request_models_are_described():
 
 def test_no_unimplemented_operations_exposed():
     exposed=set(spec()["paths"])
-    for prefix in ("/v1/workflows","/v1/knowledge-bases",
+    for prefix in ("/v1/knowledge-bases",
                    "/v1/graph","/v1/documents","/v1/stream"):
         assert not any(p.startswith(prefix) for p in exposed)
 

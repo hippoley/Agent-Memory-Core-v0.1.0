@@ -24,14 +24,14 @@ audit, not a production security certification or an independent penetration tes
 | PostgreSQL canonical claims + bitemporal correction | `postgres.py`, `001_core.sql` | `test_pg_runtime.py`, real PostgreSQL CI | Implemented + integration-tested |
 | pgvector write/search, 384D and 512D | `store_embedding`, `vector_search`, vector tables | `test_pg_runtime.py`, real pgvector CI | Implemented + integration-tested; REST ingestion absent |
 | Apache AGE graph projection/traversal | `age_graph.py`, canonical `memory_edges` | `test_pg_runtime.py`, real AGE CI | Implemented + integration-tested; public graph CRUD absent |
-| Time-series observations | `record_observation`, `observations`, `memory_observations` | `test_pg_runtime.py` checks late arrival, idempotency, event-time ordering and tenant filter | Implemented + integration-tested at basic event/observation level; not a full TSDB |
+| Time-series observations | `record_observation`, `observations`, `memory_observations`, authenticated REST write/query | `test_pg_runtime.py`, `test_api_objects_observations.py` | Implemented + integration-tested at basic event/observation level; not a full TSDB |
 | Local content-addressed object storage | `objects.py`, SHA-256 path, atomic replace, read checksum | `test_core.py::test_object_integrity` | Implemented + unit-tested; no S3 adapter, metadata lifecycle, API upload/download or object-store integration test |
 | Event append in SQLite reference backend | `MemoryStore.append_event/events` | `test_core.py::test_event_idempotency` | Implemented + unit-tested; SQLite only |
 | PostgreSQL transactional outbox consumer | `outbox.py`, `memory_outbox` | `test_outbox_runtime.py` real PostgreSQL tests | Implemented + integration-tested for DB-local handler, retry and atomic ack |
-| Realtime event subscription/stream | No SSE/WebSocket/consumer cursor/replay HTTP route | No end-to-end subscriber test | Missing |
+| Realtime event subscription/stream | PostgreSQL claim/observation event writes, cursor replay API, bounded SSE with Last-Event-ID | `test_api_objects_observations.py` verifies replay and SSE framing; `test_pg_runtime.py` verifies DB event persistence | Implemented + integration-tested at prototype scale; no broker fan-out, DLQ or load test |
 | Temporal durable workflow | `temporal_adapter.py` one VerifyMemoryWorkflow + two Activities | `test_temporal_integration.py` starts local Temporal dev service and real PostgreSQL | Prototype only, integration-tested; not general orchestration platform or HTTP API |
 | Mem0-style memory processing | ADR describes extract/dedup/entity linking/multi-signal retrieval | No extractor, resolver, consolidation pipeline or evaluation tests found | Designed only / missing |
-| Public REST API | `api.py`: health, ready, capabilities, claim write/read, hybrid search | `test_openapi_contract.py`, API Postgres runtime test | Limited REST facade integration-tested; not complete knowledge-base API |
+| Public REST API | `api.py`: health, ready, capabilities, claim write/read, hybrid search, object upload/download, observations, event replay and SSE | `test_openapi_contract.py`, `test_api_postgres_runtime.py`, `test_api_objects_observations.py` | Expanded authenticated REST facade; graph/vector write/admin and workflow APIs still absent |
 | Third-party multi-tenant production boundary | single configured tenant per API process; app-level key check | API tenant-scope tests | Single-tenant prototype only; RLS and production identity/security absent |
 
 ## Important interpretations

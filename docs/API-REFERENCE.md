@@ -99,6 +99,7 @@ audit trails, TLS and rate limits are still required for internet-facing use.
 | GET | `/v1/capabilities` | Yes | Discover enabled/disabled channels |
 | POST | `/v1/memories` | Yes | Append a canonical memory claim |
 | GET | `/v1/memories/{subject_id}` | Yes | Read claims for one subject, with time filters |
+| GET | `/v1/memories/{memory_id}/sources` | Yes | List provenance sources linked to a claim |
 | POST | `/v1/search` | Yes | SQL + configured vector/graph hybrid retrieval |
 
 ### 4.1 Check liveness
@@ -179,6 +180,17 @@ curl -G http://127.0.0.1:8765/v1/memories/bedroom-1 \
 
 Interpretation: "What did the system know at `known_at` about facts valid
 at `valid_at`?" If omitted, both default to the current time.
+
+### 4.5.1 Inspect evidence provenance
+
+A claim can be supported by multiple source records. When a repeated fact is
+deduplicated, the new source is linked to the existing canonical claim rather
+than silently discarded.
+
+```bash
+curl http://127.0.0.1:8765/v1/memories/<memory-uuid>/sources \
+  -H "Authorization: Bearer $MEMORY_API_KEY"
+```
 
 ### 4.6 Hybrid search
 

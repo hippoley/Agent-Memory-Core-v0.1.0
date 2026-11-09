@@ -10,6 +10,7 @@ from agent_memory_core.objects import ObjectStore
 class FakeDB:
     def __init__(self):
         self.observations_data = {}
+        self.events_data = []
     def close(self):
         pass
     def record_observation(self, **kwargs):
@@ -21,6 +22,9 @@ class FakeDB:
                 raise ValueError("Conflicting observation with same source event ID")
             return False
         self.observations_data[key]=value
+        self.events_data.append({"event_id":kwargs["source_event_id"],
+            "event_type":"memory.observation.recorded","payload":{"device_id":kwargs["device_id"]},
+            "recorded_at":kwargs["observed_at"]})
         return True
     def observations(self, *, tenant_id, device_id, property, limit=100):
         rows=[]
@@ -28,6 +32,16 @@ class FakeDB:
             if (t,d)==(tenant_id,device_id) and v[1]==property:
                 rows.append({"source_event_id":e,"observed_at":v[0],"property":v[1],
                              "measured_value":v[2],"unit":v[3],"source_id":v[4]})
+        return rows[:limit]
+    def events_after(self, *, tenant_id, after=None, limit=100):
+        if tenant_id != "tenant-a":
+            return []
+        rows=self.events_data
+        if after is not None:
+            ids=[i for i,row in enumerate(rows) if row["event_id"]==after]
+            if not ids:
+                raise ValueError("Unknown event cursor for this tenant")
+            rows=rows[ids[0]+1:]
         return rows[:limit]
 
 
@@ -117,3 +131,19 @@ def test_s3_object_adapter_content_addressing_and_integrity():
     client.objects[("memory-test",f"sha256/{digest[:2]}/{digest}")]=b"tampered"
     with pytest.raises(IOError):
         store.get(digest)
+
+
+def test_durable_event_replay_uses_cursor_and_auth(tmp_path):
+    client,headers=make_client(tmp_path)
+    for event_id in ("event-1","event-2"):
+        body={"device_id":"window-1","source_event_id":event_id,
+              "observed_at":"2026-11-09T10:00:00+08:00","property":"angle",
+              "value":17.5,"unit":"degree","source_id":"gateway-1"}
+        assert client.post("/v1/observations",json=body,headers=headers).status_code==201
+    first=client.get("/v1/events?limit=1",headers=headers)
+    assert first.status_code==200
+    assert len(first.json()["items"])==1
+    cursor=first.json()["next_cursor"]
+    second=client.get("/v1/events",params={"after":cursor,"limit":10},headers=headers)
+    assert [e["event_id"] for e in second.json()["items"]]==["event-2"]
+    assert client.get("/v1/events").status_code==401

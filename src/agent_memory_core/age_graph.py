@@ -100,9 +100,19 @@ class AgeProjection:
 
     def _cypher(self, statement: str) -> list[tuple]:
         """AGE requires Cypher query text as a SQL literal, not bind placeholder."""
+        # AGE's parser specifically requires dollar-quoted Cypher query text.
+        # psycopg.sql.Literal produces a single-quoted string and is rejected.
+        # Choose a delimiter absent from the validated Cypher statement so
+        # input cannot terminate the SQL dollar-quoted literal.
+        suffix = "agecypher"
+        while f"${suffix}$" in statement:
+            suffix += "x"
+        token = f"${suffix}$"
         query = sql.SQL(
-            "SELECT * FROM ag_catalog.cypher({}, {}) AS (result ag_catalog.agtype)"
-        ).format(sql.Literal(GRAPH_NAME), sql.Literal(statement))
+            "SELECT * FROM ag_catalog.cypher({}, " + token
+        ).format(sql.Literal(GRAPH_NAME)) + sql.SQL(statement) + sql.SQL(
+            token + ") AS (result ag_catalog.agtype)"
+        )
         return list(self.conn.execute(query))
 
     def project_pending(self, *, tenant_id: str, limit: int = 100) -> ProjectionProgress:

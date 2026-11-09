@@ -27,7 +27,7 @@ class PostgresMemory:
         self.conn.close()
 
     def migrate(self) -> None:
-        sql = (Path(__file__).resolve().parents[3] / "sql/postgresql/001_core.sql").read_text()
+        sql = (Path(__file__).resolve().parents[2] / "sql/postgresql/001_core.sql").read_text()
         with self.conn.transaction():
             self.conn.execute(sql)
 

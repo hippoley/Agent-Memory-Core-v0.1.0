@@ -123,6 +123,8 @@ def test_real_postgres_pgvector_age():
         second = processor.process(tenant_id=tenant,text="User repeats preference",
                                    source_id="conversation-b",extractor=extraction)
         assert len(first.created)==1 and second.duplicates==1
+        linked_sources = db.sources_for_memory(tenant_id=tenant,memory_id=first.created[0])
+        assert {item["source_id"] for item in linked_sources} >= {"conversation-a","conversation-b"}
         changed = processor.process(tenant_id=tenant,text="User updates preference",
             source_id="conversation-c",
             extractor=lambda _: [{"subject_id":"processor-room",

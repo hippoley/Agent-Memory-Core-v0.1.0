@@ -6,14 +6,14 @@ Local-first, evidence-aware, time-versioned Agent memory infrastructure with plu
 
 The project separates **memory facts and provenance** from workflow execution (Temporal, Restate, or local state machines) and from independent verification of physical device state.
 
-## Target: PostgreSQL triple-store (design accepted, not fully implemented)
+## PostgreSQL triple-store (tested prototype)
 
 - PostgreSQL: canonical facts, event/time history, references and transactional metadata.
 - pgvector: optional 384-dimensional semantic index; requires local embedding generation.
-- Apache AGE: optional graph projection and Cypher traversal; AGE projection writer is **not implemented**.
+- Apache AGE: graph projection from canonical SQL edges, restart-safe ledger and bounded Cypher traversal, implemented and tested in CI.
 - Object bytes remain in local content-addressed storage; time-series records may live in PostgreSQL.
 
-See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sql/postgresql/README.md). The prototype includes SQL migrations, optional Python backend and contract tests, **not a validated integrated AGE deployment**.
+See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sql/postgresql/README.md). CI builds a single PostgreSQL instance with pgvector and AGE and verifies SQL, vector, graph, idempotent projection, and tenant query isolation. This remains a **prototype**, not a secured production deployment.
 
 ## Current capabilities
 - SQLite persistence and bitemporal-style as-of queries
@@ -44,3 +44,15 @@ See `docs/ADR-0001-boundaries.md` and `docs/ROADMAP.md` for boundaries and roadm
 ## License
 
 Apache-2.0.
+
+## Verified integration
+
+[GitHub Actions combined PostgreSQL/pgvector/AGE test](.github/workflows/integration.yml) builds a real database and runs the `tests/test_pg_runtime.py` suite. Run locally as documented in [RUNBOOK](docs/RUNBOOK.md).
+
+```bash
+docker compose up -d --build --wait
+python -m pip install -e '.[dev,postgres]'
+MEMORY_TEST_DSN='postgresql://memory:local-dev-only@127.0.0.1:55432/memory' pytest -q -m integration
+```
+
+All user input is scoped at query time with tenant IDs but **database RLS, authentication, encrypted storage, deletion and production observability remain unimplemented**. Never expose this prototype as a multi-tenant public service.

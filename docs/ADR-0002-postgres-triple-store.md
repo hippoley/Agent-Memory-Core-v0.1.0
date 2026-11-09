@@ -1,6 +1,6 @@
 # ADR-0002 · PostgreSQL + pgvector + Apache AGE
 
-Status: **Accepted as target architecture; only PostgreSQL/pgvector prototype is implemented**.
+Status: **Accepted as target architecture; PostgreSQL, pgvector and AGE prototype implemented and co-extension CI tested**.
 
 ## Decision
 
@@ -14,7 +14,7 @@ pgvector are actually installed in the same compatible build. Supporting
 both individually does not prove the combined runtime.
 
 Do NOT represent the current SQL adjacency table as Apache AGE graph search.
-The graph projection writer, reconcilers and multi-hop Cypher search are **not implemented**.
+Graph projection and bounded two-hop Cypher search are implemented and CI tested. Full rebuild and projection deletion/reconciliation are still missing.
 
 ## Evidence semantics
 
@@ -44,6 +44,6 @@ The AGE docs and main branch can disagree on supported PostgreSQL versions.
 Pin an explicit PostgreSQL/AGE/pgvector build combination and verify all three
 extensions on a real PostgreSQL instance before considering the combination supported.
 
-No model inference, embeddings or production PostgreSQL instance has been tested
+No embedding inference or production PostgreSQL instance has been tested
 by this repository yet. Server-side vector indexes under tenant filters require
 Recall@k comparisons to exact search.

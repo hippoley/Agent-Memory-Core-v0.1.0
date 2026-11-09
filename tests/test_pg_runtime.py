@@ -14,6 +14,7 @@ if not DSN:
 
 from agent_memory_core.postgres import PostgresMemory
 from agent_memory_core.age_graph import AgeProjection
+from agent_memory_core.hybrid import HybridMemorySearch
 
 
 def test_real_postgres_pgvector_age():
@@ -46,5 +47,22 @@ def test_real_postgres_pgvector_age():
         assert "window-1" in age.neighbors(tenant_id=tenant,from_entity="room-1")
         assert "home-1" in age.neighbors(tenant_id=tenant,from_entity="room-1",hops=2)
         assert age.neighbors(tenant_id="not-"+tenant,from_entity="room-1")==[]
+
+        hybrid=HybridMemorySearch(db, age)
+        hits=hybrid.search(
+            tenant_id=tenant,query="quiet nights",embedding=vec,
+            model_id="test384",anchor_entity="room-1",
+        )
+        assert hits and hits[0].memory_id==mid
+        assert set(hits[0].channels)=={"sql","vector","graph"}
+        assert hybrid.search(
+            tenant_id="not-"+tenant,query="quiet nights",
+            embedding=vec,model_id="test384",anchor_entity="room-1",
+        ) == []
+        special='window-"\\\\b'
+        db.add_edge(tenant_id=tenant,from_entity="room-1",predicate="SPECIALLY_NAMED",to_entity=special,
+                    source_memory_id=mid)
+        assert age.project_pending(tenant_id=tenant).projected==1
+        assert special in age.neighbors(tenant_id=tenant,from_entity="room-1")
     finally:
         db.close()

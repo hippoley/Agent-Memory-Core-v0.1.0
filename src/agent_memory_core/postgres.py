@@ -137,7 +137,7 @@ class PostgresMemory:
             result = self.conn.execute(
                 f"""INSERT INTO {table}(memory_id,model_id,embedding)
                     SELECT id,%s,%s::vector FROM memory_claims
-                    WHERE id=%s AND tenant_id=%s
+                    WHERE id=%s::uuid AND tenant_id=%s
                     ON CONFLICT (memory_id,model_id)
                     DO UPDATE SET embedding=EXCLUDED.embedding""",
                 (model_id,literal,memory_id,tenant_id))

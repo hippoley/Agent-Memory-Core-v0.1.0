@@ -9,7 +9,7 @@ import os
 import hmac
 from .contracts import CONTRACT_VERSION,capabilities,aware_iso
 from pydantic import BaseModel, Field, ConfigDict
-from fastapi import Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 class Claim(BaseModel):
     model_config=ConfigDict(extra="forbid")
@@ -45,8 +45,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_facto
         def store_factory():
             from .postgres import PostgresMemory
             return PostgresMemory(os.environ["MEMORY_DSN"])
-    app=FastAPI(title="Agent Memory Core",version=CONTRACT_VERSION,
-                docs_url=None,redoc_url=None,openapi_url=None)
+    app=FastAPI(title="Agent Memory Core",version=CONTRACT_VERSION,\n                description="Local-first, evidence-aware agent memory API. PostgreSQL is canonical; vector and graph are optional retrieval indexes; Temporal is an optional workflow adapter.",\n                docs_url="/docs",redoc_url="/redoc",openapi_url="/openapi.json",\n                openapi_tags=[{"name":"System","description":"Health and runtime capability discovery."},{"name":"Memory","description":"Canonical claim write and bitemporal recall."},{"name":"Retrieval","description":"Optional SQL + vector + graph hybrid search."}])
 
     def auth(authorization: str | None = Header(default=None)):
         if not authorization or not authorization.startswith("Bearer "):
@@ -57,16 +56,16 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_facto
 
 
 
-    @app.get("/v1/health")
+    @app.get("/v1/health",tags=["System"],summary="Health check",description="Unauthenticated liveness check. Does not prove PostgreSQL, AGE, pgvector or Temporal are healthy.")
     def health():
         return {"status":"alive","contract_version":CONTRACT_VERSION}
 
-    @app.get("/v1/capabilities")
+    @app.get("/v1/capabilities",tags=["System"],summary="Discover enabled capabilities",description="Returns runtime capability flags. A capability marked unavailable must not be assumed usable.")
     def get_capabilities(t: str=Depends(auth)):
         return {"contract_version":CONTRACT_VERSION,"tenant_id":t,
                 "capabilities":capabilities(**(capability_flags or {}))}
 
-    @app.post("/v1/memories",status_code=201)
+    @app.post("/v1/memories",status_code=201,tags=["Memory"],summary="Store a memory claim",description="Writes a provenance-aware claim to the canonical store. valid_from/valid_to describe real-world validity; valid_to is exclusive. To correct a claim, pass replaces_id for a claim with the same tenant, subject and predicate.")
     def add_claim(item: Claim,t: str=Depends(auth)):
         try:
             valid_from=aware_iso(item.valid_from)
@@ -82,7 +81,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_facto
         except ValueError as exc:
             raise HTTPException(status_code=422,detail=str(exc))
 
-    @app.get("/v1/memories/{subject_id}")
+    @app.get("/v1/memories/{subject_id}",tags=["Memory"],summary="Recall claims for a subject",description="Returns claims valid at valid_at as known at known_at. All timestamps must include a timezone. Tenant is taken from the server credential, never from request input.")
     def recall(subject_id: str,predicate: str|None=None,
                valid_at: str|None=None,known_at: str|None=None,
                t: str=Depends(auth)):
@@ -97,7 +96,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_facto
             finally: db.close()
         except ValueError as exc:
             raise HTTPException(status_code=422,detail=str(exc))
-    @app.post("/v1/search")
+    @app.post("/v1/search",tags=["Retrieval"],summary="Hybrid memory search",description="Queries the configured search adapter. Embeddings are caller-generated; this API does not host an embedding model. Vector and AGE are optional. Returns 503 if no search adapter is configured. Optional-channel failures are reported in degraded_channels; canonical SQL failures propagate.")
     def search_memories(item: SearchRequest,t: str=Depends(auth)):
         if search_factory is None:
             raise HTTPException(status_code=503,detail="Hybrid search adapter is not configured")

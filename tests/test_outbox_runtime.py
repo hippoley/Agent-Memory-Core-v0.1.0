@@ -190,6 +190,14 @@ def test_fts_projection_indexes_chinese_and_is_tenant_scoped():
         worker=ProjectionWorker(db.conn)
         assert worker.consume(projection_name="fts",tenant_id=tenant,
                               handler=project_claim_to_fts,limit=1)==1
+        assert db.conn.execute(
+            """SELECT aggregate_type,aggregate_id FROM memory_projection_jobs
+               WHERE tenant_id=%s AND event_id IN (
+                 SELECT event_id FROM memory_outbox
+                 WHERE tenant_id=%s AND aggregate_id=%s
+                   AND event_type='memory.claim.created')
+                 AND projection_name='fts'""",
+            (tenant,tenant,memory_id)).fetchone()==("claim",memory_id)
         event=db.conn.execute(
             """SELECT event_id,payload FROM memory_outbox
                WHERE tenant_id=%s AND aggregate_id=%s AND event_type='memory.claim.created'""",

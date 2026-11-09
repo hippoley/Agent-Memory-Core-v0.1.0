@@ -346,20 +346,51 @@ class PostgresMemory:
             return False
 
     def observations(self, *, tenant_id: str, device_id: str,
-                     property: str, limit: int = 100) -> list[dict]:
+                     property: str, limit: int = 100,
+                     start_at: datetime | None = None,
+                     end_at: datetime | None = None) -> list[dict]:
         """Physical event time ordering is distinct from ingest time."""
         if not all((tenant_id,device_id,property)) or not 1<=limit<=10000:
             raise ValueError("Invalid observation query")
+        start_at=aware(start_at) if start_at else None
+        end_at=aware(end_at) if end_at else None
+        if start_at and end_at and end_at <= start_at:
+            raise ValueError("end_at must be later than start_at")
+        sql = """SELECT source_event_id,observed_at,ingested_at,measured_value,unit,source_id
+                 FROM memory_observations
+                 WHERE tenant_id=%s AND device_id=%s AND property=%s"""
+        params=[tenant_id,device_id,property]
+        if start_at:
+            sql += " AND observed_at >= %s"
+            params.append(start_at)
+        if end_at:
+            sql += " AND observed_at < %s"
+            params.append(end_at)
+        sql += " ORDER BY observed_at DESC,source_event_id DESC LIMIT %s"
+        params.append(limit)
         columns=("source_event_id","observed_at","ingested_at",
                  "measured_value","unit","source_id")
-        rows = self.conn.execute(
-            """SELECT source_event_id,observed_at,ingested_at,measured_value,unit,source_id
+        rows=self.conn.execute(sql,params)
+        return [dict(zip(columns,row)) for row in rows]
+
+    def aggregate_observations(self, *, tenant_id: str, device_id: str,
+                               property: str, start_at: datetime,
+                               end_at: datetime) -> dict:
+        if not all((tenant_id,device_id,property)):
+            raise ValueError("Tenant, device and property are required")
+        start_at=aware(start_at)
+        end_at=aware(end_at)
+        if end_at <= start_at:
+            raise ValueError("end_at must be later than start_at")
+        row=self.conn.execute(
+            """SELECT count(*),min(measured_value),max(measured_value),
+                      avg(measured_value)
                FROM memory_observations
                WHERE tenant_id=%s AND device_id=%s AND property=%s
-               ORDER BY observed_at DESC,source_event_id DESC LIMIT %s""",
-            (tenant_id,device_id,property,limit),
-        )
-        return [dict(zip(columns,row)) for row in rows]
+                 AND observed_at >= %s AND observed_at < %s""",
+            (tenant_id,device_id,property,start_at,end_at)).fetchone()
+        return {"count":row[0],"min":row[1],"max":row[2],"avg":float(row[3]) if row[3] is not None else None,
+                "start_at":start_at,"end_at":end_at}
 
     def events_after(self, *, tenant_id: str, after: str | None = None,
                      limit: int = 100) -> list[dict]:

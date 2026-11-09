@@ -135,6 +135,13 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
         headers={"Authorization":"Bearer other-tenant-api-key-with-sufficient-length"})
     assert denied.status_code==404
 
+    cross_tenant_claim=other.post("/v1/memories",
+        headers={"Authorization":"Bearer other-tenant-api-key-with-sufficient-length"},
+        json={"subject_id":"bedroom-1","predicate":"layout",
+              "value":{"room":"bedroom"},"source_id":"foreign-evidence",
+              "valid_from":"2026-11-09T00:00:00Z","object_sha256":digest})
+    assert cross_tenant_claim.status_code==422
+
     # The HTTP processing pipeline performs confidence filtering, exact dedup,
     # provenance linking and bitemporal replacement against real PostgreSQL.
     processed=client.post("/v1/memories/process",headers=headers,json={

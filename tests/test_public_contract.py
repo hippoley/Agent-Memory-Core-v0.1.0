@@ -1,0 +1,40 @@
+import pytest
+from agent_memory_core.contracts import capabilities,aware_iso
+
+def test_capability_degradation():
+    items={x["name"]:x for x in capabilities()}
+    assert items["memory.claims"]["available"]
+    assert not items["workflow.temporal"]["available"]
+    assert not items["memory.graph"]["available"]
+
+def test_timezone_validation():
+    with pytest.raises(ValueError): aware_iso("2026-11-09T12:00:00")
+    assert aware_iso("2026-11-09T12:00:00+08:00").utcoffset().total_seconds()==0
+
+def test_single_tenant_api_and_fails_closed():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    with pytest.raises(RuntimeError):
+        create_app(api_key="short",tenant_id="home")
+    class FakeStore:
+        def remember(self, **kw):
+            assert kw["tenant_id"]=="home"
+            return "id1"
+        def recall(self, **kw):
+            assert kw["tenant_id"]=="home"
+            return [{"id":"id1"}]
+        def close(self): pass
+    app=create_app(api_key="secret-token-with-more-than-24-characters",
+                   tenant_id="home",store_factory=FakeStore)
+    client=TestClient(app)
+    assert client.get("/v1/health").status_code==200
+    assert client.get("/v1/capabilities").status_code==401
+    assert client.get("/v1/capabilities",headers={"Authorization":"Bearer bad"}).status_code==403
+    headers={"Authorization":"Bearer secret-token-with-more-than-24-characters"}
+    assert client.get("/v1/capabilities",headers=headers).status_code==200
+    data={"subject_id":"room","predicate":"preference","value":{"text":"quiet"},
+          "source_id":"user","valid_from":"2026-11-01T00:00:00Z"}
+    assert client.post("/v1/memories",json=data,headers=headers).status_code==201
+    assert client.get("/v1/memories/room",headers=headers).json()["items"]==[{"id":"id1"}]
+    assert client.post("/v1/memories",json={**data,"tenant_id":"other"},headers=headers).status_code==422

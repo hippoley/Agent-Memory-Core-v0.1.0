@@ -51,6 +51,33 @@ def test_real_postgres_pgvector_age():
         assert "window-1" in age.neighbors(tenant_id=tenant,from_entity="room-1")
         assert "home-1" in age.neighbors(tenant_id=tenant,from_entity="room-1",hops=2)
         assert age.neighbors(tenant_id="not-"+tenant,from_entity="room-1")==[]
+        # Late-arriving observations must be sorted by physical event time,
+        # not the order in which PostgreSQL received them.
+        later=datetime(2026,11,7,12,30,tzinfo=timezone.utc)
+        earlier=datetime(2026,11,7,12,0,tzinfo=timezone.utc)
+        assert db.record_observation(
+            tenant_id=tenant, device_id="window-1", source_event_id="evt-later",
+            observed_at=later,property="angle",value=35.0,unit="degree",
+            source_id="gateway-1")
+        assert db.record_observation(
+            tenant_id=tenant, device_id="window-1", source_event_id="evt-earlier",
+            observed_at=earlier,property="angle",value=17.5,unit="degree",
+            source_id="gateway-1")
+        assert not db.record_observation(
+            tenant_id=tenant, device_id="window-1", source_event_id="evt-later",
+            observed_at=later,property="angle",value=35.0,unit="degree",
+            source_id="gateway-1")
+        with pytest.raises(ValueError):
+            db.record_observation(
+                tenant_id=tenant, device_id="window-1", source_event_id="evt-later",
+                observed_at=later,property="angle",value=70.0,unit="degree",
+                source_id="gateway-1")
+        observations=db.observations(
+            tenant_id=tenant,device_id="window-1",property="angle")
+        assert [o["source_event_id"] for o in observations] == ["evt-later","evt-earlier"]
+        assert db.observations(
+            tenant_id="not-"+tenant,device_id="window-1",property="angle")==[]
+
 
         hybrid=HybridMemorySearch(db, age)
         hits=hybrid.search(

@@ -128,6 +128,61 @@ class PostgresMemory:
                 (eid,tenant_id,from_entity,predicate,to_entity,source_memory_id))
         return str(eid)
 
+
+    def record_observation(self, *, tenant_id: str, device_id: str,
+                           source_event_id: str, observed_at: datetime,
+                           property: str, value: float, unit: str,
+                           source_id: str) -> bool:
+        """Store a timestamped observation without confusing event and arrival times.
+
+        Source event ID is tenant/device scoped. Retried identical observations
+        are idempotent, conflicting repeats are rejected.
+        """
+        import math
+        if not all((tenant_id,device_id,source_event_id,property,unit,source_id)):
+            raise ValueError("Tenant, device, event, property, unit and source are required")
+        if not math.isfinite(float(value)):
+            raise ValueError("Observed value must be finite")
+        observed_at = aware(observed_at)
+        with self.conn.transaction():
+            inserted = self.conn.execute(
+                """INSERT INTO memory_observations
+                   (tenant_id,device_id,source_event_id,observed_at,
+                    measured_value,unit,property,source_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT(tenant_id,device_id,source_event_id) DO NOTHING
+                   RETURNING source_event_id""",
+                (tenant_id,device_id,source_event_id,observed_at,
+                 float(value),unit,property,source_id),
+            ).fetchone()
+            if inserted:
+                return True
+            prior = self.conn.execute(
+                """SELECT observed_at,measured_value,unit,property,source_id
+                   FROM memory_observations
+                   WHERE tenant_id=%s AND device_id=%s AND source_event_id=%s""",
+                (tenant_id,device_id,source_event_id),
+            ).fetchone()
+            if prior != (observed_at,float(value),unit,property,source_id):
+                raise ValueError("Conflicting observation with same source event ID")
+            return False
+
+    def observations(self, *, tenant_id: str, device_id: str,
+                     property: str, limit: int = 100) -> list[dict]:
+        """Physical event time ordering is distinct from ingest time."""
+        if not all((tenant_id,device_id,property)) or not 1<=limit<=10000:
+            raise ValueError("Invalid observation query")
+        columns=("source_event_id","observed_at","ingested_at",
+                 "measured_value","unit","source_id")
+        rows = self.conn.execute(
+            """SELECT source_event_id,observed_at,ingested_at,measured_value,unit,source_id
+               FROM memory_observations
+               WHERE tenant_id=%s AND device_id=%s AND property=%s
+               ORDER BY observed_at DESC,source_event_id DESC LIMIT %s""",
+            (tenant_id,device_id,property,limit),
+        )
+        return [dict(zip(columns,row)) for row in rows]
+
     def outgoing_edges(self, *, tenant_id: str, from_entity: str) -> list[tuple[str,str]]:
         return list(self.conn.execute(
             """SELECT predicate,to_entity FROM memory_edges

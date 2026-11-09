@@ -423,3 +423,28 @@ class PostgresMemory:
             """SELECT predicate,to_entity FROM memory_edges
                WHERE tenant_id=%s AND from_entity=%s AND retired_at IS NULL ORDER BY predicate,to_entity""",
             (tenant_id,from_entity)))
+
+
+    def register_object(self, *, tenant_id: str, digest: str,
+                        byte_size: int, content_type: str = "application/octet-stream") -> None:
+        """Grant one tenant access to a verified content-addressed object."""
+        import re
+        if (not tenant_id or not re.fullmatch(r"[0-9a-f]{64}",digest)
+                or byte_size < 0 or not content_type):
+            raise ValueError("Invalid tenant, object digest, size or content type")
+        with self.conn.transaction():
+            self.conn.execute(
+                """INSERT INTO memory_objects(tenant_id,object_sha256,byte_size,content_type)
+                   VALUES (%s,%s,%s,%s)
+                   ON CONFLICT (tenant_id,object_sha256) DO UPDATE SET
+                     byte_size=EXCLUDED.byte_size,
+                     content_type=EXCLUDED.content_type""",
+                (tenant_id,digest,byte_size,content_type))
+
+    def object_accessible(self, *, tenant_id: str, digest: str) -> bool:
+        """Check tenant ownership before reading a shared object namespace."""
+        if not tenant_id or not digest:
+            return False
+        return self.conn.execute(
+            "SELECT 1 FROM memory_objects WHERE tenant_id=%s AND object_sha256=%s",
+            (tenant_id,digest)).fetchone() is not None

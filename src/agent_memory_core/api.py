@@ -5,6 +5,7 @@ import hmac
 import os
 import asyncio
 import json
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -70,6 +71,12 @@ class ProcessRequest(BaseModel):
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
 
 
+class MemoryVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    memory_id: str = Field(min_length=36, max_length=36, description="Canonical memory claim UUID to verify.")
+    workflow_id: str | None = Field(default=None, min_length=1, max_length=255, description="Optional stable Temporal workflow ID; generated if omitted.")
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
@@ -82,7 +89,8 @@ class SearchRequest(BaseModel):
 
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
-               search_factory=None, object_store_factory=None, capability_flags=None):
+               search_factory=None, object_store_factory=None, capability_flags=None,
+               temporal_client_factory=None, temporal_task_queue=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
@@ -115,6 +123,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             {"name": "Observations", "description": "Idempotent device observations with event-time queries."},
             {"name": "Events", "description": "Durable tenant-scoped event replay with cursor pagination."},
             {"name": "Knowledge Graph", "description": "Canonical entity registry, relation writes and vector indexing."},
+            {"name": "Workflows", "description": "Optional Temporal workflow lifecycle operations."},
         ],
     )
     bearer = HTTPBearer(
@@ -531,6 +540,63 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=422, detail=str(exc))
         finally:
             db.close()
+
+    @app.post(
+        "/v1/workflows/memory-verifications", status_code=202, tags=["Workflows"],
+        summary="Start a durable Temporal memory verification workflow",
+        description="Starts the registered VerifyMemoryWorkflow. Requires a separately running Temporal Worker on the configured task queue.",
+        responses={503: {"description": "Temporal client is not configured or unavailable."}},
+    )
+    async def start_memory_verification(item: MemoryVerificationRequest,
+                                        t: str = Depends(auth)):
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            memory_id=str(UUID(item.memory_id))
+            client=await temporal_client_factory()
+            from .temporal_adapter import VerifyMemoryWorkflow
+            workflow_id=item.workflow_id or "memory-verify-"+str(uuid4())
+            handle=await client.start_workflow(
+                VerifyMemoryWorkflow.run,
+                {"tenant_id":t,"memory_id":memory_id},
+                id=workflow_id,task_queue=temporal_task_queue,
+            )
+            return {"workflow_id":handle.id,"run_id":getattr(handle,"result_run_id",None),
+                    "workflow_type":"VerifyMemoryWorkflow","status":"STARTED"}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail="memory_id must be a valid UUID")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow start failed")
+
+    @app.get(
+        "/v1/workflows/{workflow_id}", tags=["Workflows"],
+        summary="Describe a Temporal workflow execution",
+    )
+    async def describe_workflow(workflow_id: str,t: str = Depends(auth)):
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            description=await client.get_workflow_handle(workflow_id).describe()
+            status=getattr(description.status,"name",str(description.status))
+            return {"workflow_id":workflow_id,"run_id":description.run_id,
+                    "status":status,"workflow_type":getattr(description,"workflow_type",None)}
+        except Exception:
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+
+    @app.post(
+        "/v1/workflows/{workflow_id}/cancel", tags=["Workflows"],
+        summary="Request cancellation of a Temporal workflow",
+    )
+    async def cancel_workflow(workflow_id: str,t: str = Depends(auth)):
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            await client.get_workflow_handle(workflow_id).cancel()
+            return {"workflow_id":workflow_id,"cancel_requested":True}
+        except Exception:
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

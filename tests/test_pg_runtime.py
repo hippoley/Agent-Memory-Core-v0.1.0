@@ -110,6 +110,22 @@ def test_real_postgres_pgvector_age():
             tenant_id="not-"+tenant,device_id="window-1",property="angle")==[]
 
 
+        from agent_memory_core.processing import MemoryProcessor
+        processor = MemoryProcessor(db)
+        extraction = lambda _: [{"subject_id":"processor-room",
+            "predicate":"quiet_hours","value":{"start":"22:00","end":"07:00"},
+            "confidence":0.97}]
+        first = processor.process(tenant_id=tenant,text="User prefers quiet hours",
+                                  source_id="conversation-a",extractor=extraction)
+        second = processor.process(tenant_id=tenant,text="User repeats preference",
+                                   source_id="conversation-b",extractor=extraction)
+        assert len(first.created)==1 and second.duplicates==1
+        changed = processor.process(tenant_id=tenant,text="User updates preference",
+            source_id="conversation-c",
+            extractor=lambda _: [{"subject_id":"processor-room",
+                "predicate":"quiet_hours","value":{"start":"23:00","end":"07:00"}}])
+        assert len(changed.created)==1 and len(changed.replaced)==1
+
         hybrid=HybridMemorySearch(db, age)
         hits=hybrid.search(
             tenant_id=tenant,query="quiet nights",embedding=vec,

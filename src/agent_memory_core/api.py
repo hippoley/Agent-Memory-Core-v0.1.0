@@ -22,6 +22,17 @@ class Claim(BaseModel):
     replaces_id: str|None=None
     object_sha256: str|None=None
 
+class SearchRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    query: str=Field(min_length=1,max_length=2000)
+    embedding: list[float]|None=None
+    model_id: str|None=None
+    anchor_entity: str|None=None
+    limit: int=Field(default=10,ge=1,le=100)
+    valid_at: str|None=None
+    known_at: str|None=None
+
+
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_factory=None, capability_flags=None):
     from fastapi import FastAPI, HTTPException, Depends
@@ -45,15 +56,6 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None, search_facto
         return tenant
 
 
-    class SearchRequest(BaseModel):
-        model_config=ConfigDict(extra="forbid")
-        query: str=Field(min_length=1,max_length=2000)
-        embedding: list[float]|None=None
-        model_id: str|None=None
-        anchor_entity: str|None=None
-        limit: int=Field(default=10,ge=1,le=100)
-        valid_at: str|None=None
-        known_at: str|None=None
 
     @app.get("/v1/health")
     def health():

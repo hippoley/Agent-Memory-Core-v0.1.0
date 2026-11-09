@@ -317,16 +317,16 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     finally:
                         await asyncio.to_thread(db.close)
                 except ValueError as exc:
-                    yield "event: error\\ndata: " + json.dumps({"detail":str(exc)}) + "\\n\\n"
+                    yield "event: error\ndata: " + json.dumps({"detail":str(exc)}) + "\n\n"
                     return
                 if items:
                     for item in items:
                         last_id = item["event_id"]
                         payload = {"event_id":last_id,"event_type":item["event_type"],
                                    "payload":item["payload"],"recorded_at":str(item["recorded_at"])}
-                        yield "id: " + last_id + "\\nevent: " + item["event_type"] + "\\ndata: " + json.dumps(payload,default=str) + "\\n\\n"
+                        yield "id: " + last_id + "\nevent: " + item["event_type"] + "\ndata: " + json.dumps(payload,default=str) + "\n\n"
                 else:
-                    yield ": keepalive\\n\\n"
+                    yield ": keepalive\n\n"
                     await asyncio.sleep(0.5)
         return StreamingResponse(generate(), media_type="text/event-stream",
                                  headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})

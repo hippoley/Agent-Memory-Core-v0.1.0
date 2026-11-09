@@ -27,6 +27,10 @@ class PostgresMemory:
     def close(self) -> None:
         self.conn.close()
 
+    def current_time(self) -> datetime:
+        """Read the database clock used for recorded_at and bitemporal visibility."""
+        return self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
+
     def migrate(self) -> None:
         sql = resources.files("agent_memory_core").joinpath("resources/001_core.sql").read_text(encoding="utf-8")
         with self.conn.transaction():

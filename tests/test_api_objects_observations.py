@@ -327,13 +327,19 @@ def test_object_download_requires_tenant_ownership(tmp_path):
 
 
 def test_memory_claim_cannot_reference_another_tenants_object(tmp_path):
-    client,headers=make_client(tmp_path)
-    other_key="tenant-b-key-with-more-than-24-characters"
     shared_db=FakeDB()
-    other_app=create_app(api_key=other_key,tenant_id="tenant-b",
+    key_a="test-api-key-with-strong-example-length"
+    key_b="tenant-b-key-with-more-than-24-characters"
+    app_a=create_app(api_key=key_a,tenant_id="tenant-a",
         store_factory=lambda:shared_db,
         object_store_factory=lambda:ObjectStore(tmp_path/"objects"))
-    other=TestClient(other_app)
+    app_b=create_app(api_key=key_b,tenant_id="tenant-b",
+        store_factory=lambda:shared_db,
+        object_store_factory=lambda:ObjectStore(tmp_path/"objects"))
+    client=TestClient(app_a)
+    headers={"Authorization":"Bearer "+key_a}
+    other=TestClient(app_b)
+    other_key=key_b
     payload=b"tenant-b-private-evidence"
     uploaded=other.put("/v1/objects",headers={"Authorization":"Bearer "+other_key},
                        content=payload)

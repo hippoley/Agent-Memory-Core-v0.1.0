@@ -26,8 +26,7 @@ observation streams and workflow execution.
 - **Memory processing** — structured candidate validation, confidence
   filtering, exact deduplication, source linking, alias resolution and
   bitemporal fact replacement.
-- **Temporal** — optional SDK workflow prototype with real PostgreSQL
-  Activities. General workflow lifecycle is not yet exposed through REST.
+- **Temporal** — optional SDK workflow with real PostgreSQL Activities; REST exposes start/status/cancel for the memory-verification workflow. The Worker runs separately.
 
 ## Public API
 
@@ -46,6 +45,7 @@ Implemented route families include:
 - Object upload/download with SHA-256 verification and tenant ownership.
 - Observation ingestion, event-time range query and aggregation.
 - Durable event replay and SSE streaming.
+- Temporal memory-verification workflow start, status and cancellation.
 
 See [API Reference](docs/API-REFERENCE.md) for complete request/response
 examples and deployment settings. See [Capability Acceptance Audit](docs/CAPABILITY-ACCEPTANCE-AUDIT.md)
@@ -109,8 +109,7 @@ release candidate as qualified.
   extractor. It does not automatically infer facts from arbitrary text.
   Contradiction classification, fuzzy multilingual entity resolution,
   consolidation, forgetting policies and Chinese evaluation remain.
-- Temporal has a narrow real SDK workflow prototype; no general workflow
-  start/status/signal/cancel REST API or production worker operations yet.
+- Temporal exposes a narrow memory-verification start/status/cancel API; general workflow registration, Signal/Update and production worker operations remain.
 - Production RLS, key rotation/revocation, TLS, rate limits, audit logs,
   backup/restore and disaster-recovery exercises remain required.
 

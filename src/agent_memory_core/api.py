@@ -4,7 +4,7 @@ from __future__ import annotations
 import hmac
 import os
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +23,17 @@ class Claim(BaseModel):
     valid_to: str | None = Field(default=None, description="Timezone-aware ISO-8601 exclusive validity end.")
     replaces_id: str | None = Field(default=None, description="Existing claim UUID to correct; subject and predicate must match.")
     object_sha256: str | None = Field(default=None, description="Optional SHA-256 reference to separately stored evidence object.")
+
+
+class ObservationWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    device_id: str = Field(min_length=1, max_length=255)
+    source_event_id: str = Field(min_length=1, max_length=255)
+    observed_at: str = Field(description="Timezone-aware ISO-8601 physical event time.")
+    property: str = Field(min_length=1, max_length=255)
+    value: float
+    unit: str = Field(min_length=1, max_length=64)
+    source_id: str = Field(min_length=1, max_length=255)
 
 
 class SearchRequest(BaseModel):
@@ -66,6 +77,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             {"name": "System", "description": "Health and runtime capability discovery."},
             {"name": "Memory", "description": "Canonical claim write and bitemporal recall."},
             {"name": "Retrieval", "description": "Optional SQL + vector + graph hybrid search."},
+            {"name": "Objects", "description": "Content-addressed evidence object upload and download."},
+            {"name": "Observations", "description": "Idempotent device observations with event-time queries."},
         ],
     )
     bearer = HTTPBearer(
@@ -175,6 +188,88 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 }
             finally:
                 db.close()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.put(
+        "/v1/objects", tags=["Objects"], summary="Store an evidence object",
+        responses={201: {"description": "Object stored; SHA-256 returned in X-Content-SHA256."},
+                   413: {"description": "Object exceeds the configured size limit."},
+                   503: {"description": "Object storage is not configured."}},
+    )
+    async def put_object(request: Request, t: str = Depends(auth)):
+        if object_store_factory is None:
+            raise HTTPException(status_code=503, detail="Object storage is not configured")
+        data = await request.body()
+        if len(data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Object exceeds 10 MiB limit")
+        try:
+            store = object_store_factory()
+            digest = store.put(data)
+            return Response(status_code=201, headers={"X-Content-SHA256": digest},
+                             media_type="application/json",
+                             content='{"sha256":"' + digest + '","size":' + str(len(data)) + '}')
+        except Exception:
+            raise HTTPException(status_code=503, detail="Object storage write failed")
+
+    @app.get(
+        "/v1/objects/{digest}", tags=["Objects"], summary="Retrieve an evidence object",
+        responses={404: {"description": "Object does not exist."},
+                   503: {"description": "Object storage is not configured."}},
+    )
+    def get_object(digest: str, t: str = Depends(auth)):
+        if object_store_factory is None:
+            raise HTTPException(status_code=503, detail="Object storage is not configured")
+        try:
+            store = object_store_factory()
+            data = store.get(digest)
+            return Response(content=data, media_type="application/octet-stream",
+                            headers={"X-Content-SHA256": digest})
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Object not found")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception:
+            raise HTTPException(status_code=503, detail="Object storage read failed")
+
+    @app.post(
+        "/v1/observations", status_code=201, tags=["Observations"],
+        summary="Record a device observation",
+        description="Stores a tenant-scoped, idempotent observation. Repeated identical source_event_id returns 200; conflicting reuse is rejected.",
+        responses={200: {"description": "Identical observation already existed."}},
+    )
+    def add_observation(item: ObservationWrite, t: str = Depends(auth)):
+        try:
+            db = store_factory()
+            try:
+                inserted = db.record_observation(
+                    tenant_id=t, device_id=item.device_id,
+                    source_event_id=item.source_event_id,
+                    observed_at=aware_iso(item.observed_at), property=item.property,
+                    value=item.value, unit=item.unit, source_id=item.source_id)
+            finally:
+                db.close()
+            return Response(status_code=201 if inserted else 200,
+                            media_type="application/json",
+                            content='{"accepted":true,"duplicate":' + ('false' if inserted else 'true') + '}')
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+    @app.get(
+        "/v1/observations/{device_id}", tags=["Observations"],
+        summary="Query observations for a device",
+    )
+    def get_observations(device_id: str, property: str, limit: int = 100,
+                         t: str = Depends(auth)):
+        try:
+            db = store_factory()
+            try:
+                items = db.observations(tenant_id=t, device_id=device_id,
+                                        property=property, limit=limit)
+            finally:
+                db.close()
+            return {"tenant_id": t, "device_id": device_id,
+                    "property": property, "items": items}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 

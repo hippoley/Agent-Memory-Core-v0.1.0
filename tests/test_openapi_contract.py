@@ -17,6 +17,7 @@ EXPECTED={
     "/v1/observations":{"post"},
     "/v1/observations/{device_id}":{"get"},
     "/v1/events":{"get"},
+    "/v1/events/stream":{"get"},
 }
 
 def spec():

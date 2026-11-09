@@ -16,6 +16,7 @@ class FakeDB:
         self.embedding_rows = []
         self.memories = []
         self.source_links = []
+        self.objects_owned = set()
     def close(self):
         pass
     def remember(self, **kwargs):
@@ -39,6 +40,10 @@ class FakeDB:
     def link_claim_source(self, **kwargs):
         self.source_links.append(kwargs)
         return True
+    def register_object(self, *, tenant_id, digest, byte_size, content_type):
+        self.objects_owned.add((tenant_id,digest))
+    def object_accessible(self, *, tenant_id, digest):
+        return (tenant_id,digest) in self.objects_owned
     def record_observation(self, **kwargs):
         key=(kwargs["tenant_id"],kwargs["device_id"],kwargs["source_event_id"])
         old=self.observations_data.get(key)
@@ -297,3 +302,25 @@ def test_memory_processing_rejects_missing_provenance(tmp_path):
         "text":"hello","source_id":"","candidates":[
             {"subject_id":"room-1","predicate":"p","value":{"x":1}}]})
     assert response.status_code==422
+
+
+def test_object_download_requires_tenant_ownership(tmp_path):
+    key_a="tenant-a-key-with-more-than-24-characters"
+    key_b="tenant-b-key-with-more-than-24-characters"
+    db=FakeDB()
+    object_root=tmp_path/"shared-objects"
+    app_a=create_app(api_key=key_a,tenant_id="tenant-a",
+        store_factory=lambda:db,object_store_factory=lambda:ObjectStore(object_root))
+    app_b=create_app(api_key=key_b,tenant_id="tenant-b",
+        store_factory=lambda:db,object_store_factory=lambda:ObjectStore(object_root))
+    client_a=TestClient(app_a)
+    client_b=TestClient(app_b)
+    uploaded=client_a.put("/v1/objects",headers={"Authorization":"Bearer "+key_a},
+                          content=b"private tenant evidence")
+    assert uploaded.status_code==201,uploaded.text
+    digest=uploaded.json()["sha256"]
+    assert client_a.get("/v1/objects/"+digest,
+        headers={"Authorization":"Bearer "+key_a}).status_code==200
+    denied=client_b.get("/v1/objects/"+digest,
+        headers={"Authorization":"Bearer "+key_b})
+    assert denied.status_code==404

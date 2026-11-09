@@ -9,6 +9,7 @@ import os
 import hmac
 from .contracts import CONTRACT_VERSION,capabilities,aware_iso
 from pydantic import BaseModel, Field, ConfigDict
+from fastapi import Header
 
 class Claim(BaseModel):
     model_config=ConfigDict(extra="forbid")
@@ -23,8 +24,7 @@ class Claim(BaseModel):
 
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None):
-    from fastapi import FastAPI, Header, HTTPException, Depends
-    from typing import Annotated
+    from fastapi import FastAPI, HTTPException, Depends
 
     key=api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant=tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
@@ -37,7 +37,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None):
     app=FastAPI(title="Agent Memory Core",version=CONTRACT_VERSION,
                 docs_url=None,redoc_url=None,openapi_url=None)
 
-    def auth(authorization: Annotated[str|None,Header()] = None):
+    def auth(authorization: str | None = Header(default=None)):
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401,detail="Bearer token required")
         if not hmac.compare_digest(authorization[7:],key):

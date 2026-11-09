@@ -61,3 +61,109 @@ def test_ready_fails_closed_if_database_cannot_be_opened():
         "/v1/ready",headers={"Authorization":"Bearer test-api-key-with-strong-example-length"})
     assert response.status_code==503
     assert response.json()["detail"]=="Canonical memory store is unavailable"
+
+
+@pytest.mark.integration
+def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real database required")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.objects import ObjectStore
+    from agent_memory_core.age_graph import AgeProjection
+    from agent_memory_core.hybrid import HybridMemorySearch
+
+    tenant="api-e2e-"+uuid4().hex
+    key="full-lifecycle-api-key-with-sufficient-length"
+    dsn=os.environ["MEMORY_TEST_DSN"]
+
+    def search_factory():
+        db=PostgresMemory(dsn)
+        graph=AgeProjection(db.conn)
+        graph.initialize()
+        return HybridMemorySearch(db,graph=graph)
+
+    db=PostgresMemory(dsn)
+    try:
+        db.migrate()
+    finally:
+        db.close()
+
+    app=create_app(
+        api_key=key,tenant_id=tenant,
+        store_factory=lambda:PostgresMemory(dsn),
+        search_factory=search_factory,
+        object_store_factory=lambda:ObjectStore(tmp_path/"objects"),
+        capability_flags={"semantic":True,"graph":True,"objects":True},
+    )
+    client=TestClient(app)
+    headers={"Authorization":"Bearer "+key}
+
+    # Evidence object -> canonical memory -> provenance -> vector index.
+    evidence=b"floorplan evidence: bedroom window"
+    uploaded=client.put("/v1/objects",headers=headers,content=evidence)
+    assert uploaded.status_code==201,uploaded.text
+    digest=uploaded.json()["sha256"]
+    claim=client.post("/v1/memories",headers=headers,json={
+        "subject_id":"bedroom-1","predicate":"air_preference",
+        "value":{"noise":"quiet","target_co2_ppm":800},
+        "source_id":"floorplan:bedroom-1",
+        "valid_from":"2026-11-09T00:00:00Z","object_sha256":digest,
+    })
+    assert claim.status_code==201,claim.text
+    memory_id=claim.json()["id"]
+    assert client.get("/v1/objects/"+digest,headers=headers).content==evidence
+
+    vector=[0.0]*384
+    vector[0]=1.0
+    indexed=client.put("/v1/memories/"+memory_id+"/embedding",
+        headers=headers,json={"model_id":"e2e-384","embedding":vector})
+    assert indexed.status_code==200,indexed.text
+
+    # Entity registry -> canonical relation -> AGE graph projection.
+    for entity_id,kind,name in [
+        ("bedroom-1","room","Bedroom"),
+        ("window-1","device","Bedroom Window"),
+    ]:
+        response=client.post("/v1/entities",headers=headers,json={
+            "entity_id":entity_id,"entity_type":kind,"canonical_name":name,
+            "aliases":[],"attributes":{},
+        })
+        assert response.status_code==201,response.text
+    edge=client.post("/v1/edges",headers=headers,json={
+        "from_entity":"bedroom-1","predicate":"HAS_WINDOW",
+        "to_entity":"window-1","source_memory_id":memory_id,
+    })
+    assert edge.status_code==201,edge.text
+    assert edge.json()["projected_to_age"]>=1
+
+    # Observation ingestion, idempotency, event-time query and aggregation.
+    observation={"device_id":"window-1","source_event_id":"angle-001",
+        "observed_at":"2026-11-09T10:00:00+08:00","property":"angle",
+        "value":17.5,"unit":"degree","source_id":"window-gateway"}
+    first=client.post("/v1/observations",headers=headers,json=observation)
+    duplicate=client.post("/v1/observations",headers=headers,json=observation)
+    assert first.status_code==201 and duplicate.status_code==200
+    read=client.get("/v1/observations/window-1",headers=headers,
+                    params={"property":"angle"})
+    assert read.status_code==200 and read.json()["items"][0]["measured_value"]==17.5
+    aggregate=client.get("/v1/observations/window-1/aggregate",headers=headers,
+        params={"property":"angle","start_at":"2026-11-09T09:00:00+08:00",
+                "end_at":"2026-11-09T11:00:00+08:00"})
+    assert aggregate.status_code==200 and aggregate.json()["aggregate"]["count"]==1
+
+    # Durable event replay and combined SQL/vector/graph retrieval.
+    events=client.get("/v1/events",headers=headers,params={"limit":100})
+    assert events.status_code==200
+    assert any(e["event_type"]=="memory.observation.recorded" for e in events.json()["items"])
+    search=client.post("/v1/search",headers=headers,json={
+        "query":"quiet bedroom",
+        "embedding":vector,"model_id":"e2e-384",
+        "anchor_entity":"bedroom-1","limit":10,
+    })
+    assert search.status_code==200,search.text
+    body=search.json()
+    assert body["items"] and body["items"][0]["memory_id"]==memory_id
+    assert {"sql","vector","graph"}.issubset(set(body["channels_used"]))

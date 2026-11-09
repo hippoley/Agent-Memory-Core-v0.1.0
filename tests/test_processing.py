@@ -74,3 +74,14 @@ def test_processor_requires_provenance_and_rejects_low_confidence():
     report=processor.process(tenant_id="home",text="hello",source_id="s1",
         extractor=lambda _: [{"subject_id":"x","predicate":"p","value":{},"confidence":0.69}])
     assert report.rejected==1
+
+
+def test_processor_uses_canonical_entity_resolution():
+    store=FakeStore()
+    resolver=lambda tenant,name: {"entity_id":"canonical-bedroom-1"} if name.lower() in {"main bedroom","bedroom"} else None
+    processor=MemoryProcessor(store,entity_resolver=resolver)
+    report=processor.process(tenant_id="home",text="bedroom",source_id="s1",
+        extractor=lambda _: [{"subject_name":"Main Bedroom","predicate":"air_quality",
+                              "value":{"target":"good"}}])
+    assert report.created==["memory-1"]
+    assert store.rows[0]["subject_id"]=="canonical-bedroom-1"

@@ -25,6 +25,8 @@ def test_hybrid_rejects_unsafe_input():
         raise AssertionError("model ID required")
 
 
-def test_migrate_path_targets_repo_root():
-    source=(Path(__file__).resolve().parents[1]/"src/agent_memory_core/postgres.py").read_text()
-    assert 'parents[2] / "sql/postgresql/001_core.sql"' in source
+def test_migrate_schema_available_from_installable_package():
+    from importlib import resources
+    ddl=resources.files("agent_memory_core").joinpath("resources/001_core.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS memory_claims" in ddl
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in ddl

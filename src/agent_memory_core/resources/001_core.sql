@@ -162,3 +162,16 @@ CREATE TABLE IF NOT EXISTS memory_idempotency (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY(tenant_id,idempotency_key)
 );
+
+
+-- Tenant-scoped ownership registry for content-addressed objects.
+-- The underlying local/S3 object may be deduplicated globally, but access is
+-- granted only to tenants with an explicit registry row.
+CREATE TABLE IF NOT EXISTS memory_objects (
+  tenant_id text NOT NULL,
+  sha256 text NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+  size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (tenant_id, sha256)
+);
+CREATE INDEX IF NOT EXISTS memory_objects_by_hash ON memory_objects(sha256);

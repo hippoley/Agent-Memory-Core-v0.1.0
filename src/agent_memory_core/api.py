@@ -8,10 +8,22 @@ from datetime import datetime
 import os
 import hmac
 from .contracts import CONTRACT_VERSION,capabilities,aware_iso
+from pydantic import BaseModel, Field, ConfigDict
+
+class Claim(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    subject_id: str=Field(min_length=1,max_length=255)
+    predicate: str=Field(min_length=1,max_length=255)
+    value: dict
+    source_id: str=Field(min_length=1,max_length=255)
+    valid_from: str
+    valid_to: str|None=None
+    replaces_id: str|None=None
+    object_sha256: str|None=None
+
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None):
     from fastapi import FastAPI, Header, HTTPException, Depends
-    from pydantic import BaseModel, Field, ConfigDict
     from typing import Annotated
 
     key=api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
@@ -32,16 +44,6 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None):
             raise HTTPException(status_code=403,detail="Invalid credential")
         return tenant
 
-    class Claim(BaseModel):
-        model_config=ConfigDict(extra="forbid")
-        subject_id: str=Field(min_length=1,max_length=255)
-        predicate: str=Field(min_length=1,max_length=255)
-        value: dict
-        source_id: str=Field(min_length=1,max_length=255)
-        valid_from: str
-        valid_to: str|None=None
-        replaces_id: str|None=None
-        object_sha256: str|None=None
 
     @app.get("/v1/health")
     def health():

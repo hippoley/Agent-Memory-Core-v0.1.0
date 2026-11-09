@@ -14,6 +14,12 @@ class HealthResponse(BaseModel):
     contract_version: str = Field(examples=["1.0.0"])
 
 
+class ReadinessResponse(BaseModel):
+    status: str = Field(examples=["ready"])
+    checks: dict[str, str]
+    contract_version: str
+
+
 class CapabilityItem(BaseModel):
     name: str
     available: bool

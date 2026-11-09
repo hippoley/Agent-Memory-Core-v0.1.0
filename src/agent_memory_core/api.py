@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
 from .contracts import CONTRACT_VERSION, aware_iso, capabilities
-from .api_models import (HealthResponse, CapabilitiesResponse, MemoryWriteResponse,
+from .api_models import (HealthResponse, ReadinessResponse, CapabilitiesResponse, MemoryWriteResponse,
                          MemoryReadResponse, SearchResponse)
 
 
@@ -89,6 +89,26 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     )
     def health():
         return {"status": "alive", "contract_version": CONTRACT_VERSION}
+
+    @app.get(
+        "/v1/ready", tags=["System"], summary="PostgreSQL readiness",
+        response_model=ReadinessResponse,
+        description="Authenticated readiness check against the canonical PostgreSQL store only. Does not imply AGE, embedding models, object store or Temporal availability.",
+        responses={503: {"description": "Canonical PostgreSQL store is unavailable."}},
+    )
+    def ready(t: str = Depends(auth)):
+        try:
+            db = store_factory()
+            try:
+                ok = db.conn.execute("SELECT 1").fetchone()
+                if not ok or ok[0] != 1:
+                    raise RuntimeError("Unhealthy database response")
+            finally:
+                db.close()
+        except Exception:
+            raise HTTPException(status_code=503, detail="Canonical memory store is unavailable")
+        return {"status": "ready", "checks": {"postgresql": "ready"},
+                "contract_version": CONTRACT_VERSION}
 
     @app.get(
         "/v1/capabilities", tags=["System"], summary="Discover enabled capabilities", response_model=CapabilitiesResponse,

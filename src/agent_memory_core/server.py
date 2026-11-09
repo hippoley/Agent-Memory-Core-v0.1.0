@@ -22,7 +22,7 @@ def search_factory():
 
 
 flags = {
-    "semantic": True,
+    "semantic": os.getenv("MEMORY_ENABLE_VECTOR", "0") == "1",
     "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1",
     # Object bytes and Temporal workflows are not exposed by the HTTP facade yet.
     "objects": False,

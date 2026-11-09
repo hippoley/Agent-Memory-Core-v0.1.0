@@ -301,6 +301,21 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
+    @app.get(
+        "/v1/memories/{memory_id}/sources", tags=["Memory"],
+        summary="List provenance sources linked to a memory",
+    )
+    def get_memory_sources(memory_id: str, t: str = Depends(auth)):
+        try:
+            db=store_factory()
+            try:
+                items=db.sources_for_memory(tenant_id=t,memory_id=memory_id)
+            finally:
+                db.close()
+            return {"memory_id":memory_id,"sources":items}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
     @app.put(
         "/v1/memories/{memory_id}/embedding", tags=["Retrieval"],
         summary="Attach a caller-generated embedding to a memory",

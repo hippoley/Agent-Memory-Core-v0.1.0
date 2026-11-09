@@ -1,14 +1,14 @@
-# Agent Memory Core — Third-party API & Swagger guide
+# Agent Memory Core — API Reference and Third-party Integration
 
-Version: `1.0.0`  
-Status: **local single-tenant REST prototype; not a production public SaaS API**
+Contract version: `1.0.0`  
+Runtime: FastAPI / OpenAPI 3.x  
+Deployment model: local-first, one tenant per API process
 
-This document describes only capabilities that a third-party HTTP client can
-actually call today. Backend modules that do not yet have HTTP routes are
-listed explicitly as not exposed; their existence in Python/SQL is not an
-external API commitment.
+This document is the source-oriented guide for the current public HTTP facade.
+The generated contract is available at `/openapi.json` and Swagger UI at
+`/docs`. Optional channels must be checked through `GET /v1/capabilities`.
 
-## 1. Swagger UI and OpenAPI
+## 1. Runtime documentation
 
 When the service is running:
 
@@ -16,62 +16,44 @@ When the service is running:
 - ReDoc: `http://127.0.0.1:8765/redoc`
 - OpenAPI JSON: `http://127.0.0.1:8765/openapi.json`
 
-Swagger's **Authorize** control accepts the service API key. Enter the key
-without the `Bearer ` prefix; Swagger adds the Authorization scheme.
+Swagger's Authorize control accepts the API key without the `Bearer ` prefix.
 
-The OpenAPI document is generated from the running app, so its server URL is
-the address at which that instance is hosted. Do not publish the development
-server directly to the public internet.
+## 2. Local installation
 
-## 2. Start a local instance
-
-Requirements: Docker Compose, Python 3.10+, and an available local TCP port
-55432.
+Requirements: Docker Compose and Python 3.10+.
 
 ```bash
 git clone https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
 cd Agent-Memory-Core-v0.1.0
-
 docker compose up -d --build --wait
 python -m venv .venv
-# Linux/macOS
 source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-
-python -m pip install -e '.[postgres,api]'
+python -m pip install -e '.[dev,postgres,api,s3]'
 ```
 
-Initialize the canonical PostgreSQL schema:
+Initialize PostgreSQL:
 
 ```bash
 export MEMORY_DSN='postgresql://memory:local-dev-only@127.0.0.1:55432/memory'
 python -c "import os; from agent_memory_core.postgres import PostgresMemory; db=PostgresMemory(os.environ['MEMORY_DSN']); db.migrate(); db.close()"
 ```
 
-Set the service credential and start the API:
+Configure and start the API:
 
 ```bash
 export MEMORY_API_KEY='replace-with-a-random-secret-at-least-24-characters'
 export MEMORY_TENANT_ID='demo-home'
 export MEMORY_ENABLE_VECTOR='1'
 export MEMORY_ENABLE_AGE='1'
+export MEMORY_OBJECT_BACKEND='local'
+export MEMORY_OBJECT_ROOT='./data/objects'
 uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765
 ```
 
-PowerShell environment variables:
+Windows PowerShell uses `$env:NAME='value'` instead of `export NAME=value`.
 
-```powershell
-$env:MEMORY_DSN='postgresql://memory:local-dev-only@127.0.0.1:55432/memory'
-$env:MEMORY_API_KEY='replace-with-a-random-secret-at-least-24-characters'
-$env:MEMORY_TENANT_ID='demo-home'
-$env:MEMORY_ENABLE_VECTOR='1'
-$env:MEMORY_ENABLE_AGE='1'
-uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765
-```
-
-The Compose password is a development-only example. Use secrets management,
-TLS termination, network restrictions, backups and a hardened database role
-before any shared or remote deployment.
+The example database password is development-only. Do not expose this
+configuration directly to the public internet.
 
 ## 3. Authentication and tenant boundary
 
@@ -81,168 +63,154 @@ All endpoints except `GET /v1/health` require:
 Authorization: Bearer <MEMORY_API_KEY>
 ```
 
-The API key maps to exactly one server-configured `MEMORY_TENANT_ID`.
-Clients cannot choose a tenant in the request body. Unknown fields are
-rejected by the write/search request models.
+One process binds one API key to one server-configured `MEMORY_TENANT_ID`.
+Tenant IDs are never accepted from request payloads. This is not yet a
+multi-tenant identity provider: deploy separate credentials and isolated
+database/object-store boundaries for mutually untrusted customers. Production
+RLS, key rotation/revocation, TLS, rate limiting and audit controls remain
+deployment acceptance requirements.
 
-This is **single-tenant service authentication**, not a complete multi-tenant
-identity and authorization system. Do not share one key across mutually
-untrusted customers. Database RLS, per-user scopes, key rotation/revocation,
-audit trails, TLS and rate limits are still required for internet-facing use.
+## 4. Complete HTTP route inventory
 
-## 4. HTTP endpoints available today
+| Method | Path | Capability |
+|---|---|---|
+| GET | `/v1/health` | Liveness |
+| GET | `/v1/ready` | PostgreSQL readiness |
+| GET | `/v1/capabilities` | Runtime capability discovery |
+| POST | `/v1/memories` | Create canonical bitemporal claim |
+| GET | `/v1/memories/{subject_id}` | Recall facts for a subject |
+| POST | `/v1/memories/process` | Validate, deduplicate, version and provenance-link extracted candidates |
+| GET | `/v1/memories/{memory_id}/sources` | Read claim provenance |
+| PUT | `/v1/memories/{memory_id}/embedding` | Attach caller-generated vector |
+| POST | `/v1/search` | SQL + optional vector + optional graph retrieval |
+| PUT | `/v1/objects` | Upload raw evidence object |
+| GET | `/v1/objects/{digest}` | Download and verify evidence object |
+| POST | `/v1/observations` | Ingest idempotent device observation |
+| GET | `/v1/observations/{device_id}` | Query event-time observations |
+| GET | `/v1/observations/{device_id}/aggregate` | Aggregate a time range |
+| POST | `/v1/entities` | Upsert canonical entity |
+| GET | `/v1/entities/resolve` | Resolve canonical name or alias |
+| POST | `/v1/edges` | Create relation and optionally project into AGE |
+| GET | `/v1/events` | Durable event replay with cursor pagination |
+| GET | `/v1/events/stream` | Bounded SSE stream with reconnect cursor |
 
-| Method | Path | Auth | Purpose |
-|---|---|---:|---|
-| GET | `/v1/health` | No | Process liveness only |
-| GET | `/v1/ready` | Yes | Authenticated PostgreSQL `SELECT 1` |
-| GET | `/v1/capabilities` | Yes | Discover enabled/disabled channels |
-| POST | `/v1/memories` | Yes | Append a canonical memory claim |
-| GET | `/v1/memories/{subject_id}` | Yes | Read claims for one subject, with time filters |
-| GET | `/v1/memories/{memory_id}/sources` | Yes | List provenance sources linked to a claim |
-| POST | `/v1/search` | Yes | SQL + configured vector/graph hybrid retrieval |
+## 5. Core memory operations
 
-### 4.1 Check liveness
-
-```bash
-curl http://127.0.0.1:8765/v1/health
-```
-
-Expected: `status=alive`. This does **not** prove PostgreSQL is ready.
-
-### 4.2 Check database readiness
-
-```bash
-curl -H "Authorization: Bearer $MEMORY_API_KEY" \
-  http://127.0.0.1:8765/v1/ready
-```
-
-This checks PostgreSQL only. It does not test vector quality, AGE projection,
-object storage or Temporal.
-
-### 4.3 Discover actual capabilities
-
-```bash
-curl -H "Authorization: Bearer $MEMORY_API_KEY" \
-  http://127.0.0.1:8765/v1/capabilities
-```
-
-Treat `available: false` as unavailable. Capability flags describe this
-server configuration, not every module present in the source repository.
-
-### 4.4 Write a memory claim
+### 5.1 Create a fact
 
 ```bash
 curl -X POST http://127.0.0.1:8765/v1/memories \
   -H "Authorization: Bearer $MEMORY_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "subject_id": "bedroom-1",
-    "predicate": "night_preference",
-    "value": {"noise": "quiet", "temperature_c": 23},
-    "source_id": "conversation:session-001",
-    "valid_from": "2026-11-09T00:00:00+08:00"
+    "subject_id":"bedroom-1",
+    "predicate":"night_preference",
+    "value":{"noise":"quiet","temperature_c":23},
+    "source_id":"conversation:session-001",
+    "valid_from":"2026-11-09T00:00:00+08:00"
   }'
 ```
 
-The response contains the claim UUID. Save it: corrections and future
-embedding association need this identifier.
+The response contains the canonical claim UUID. `valid_from` and `valid_to`
+are real-world validity intervals; `recorded_at` is when the system learned
+the fact. Use `replaces_id` to explicitly correct an active claim with the
+same subject and predicate.
 
-Field semantics:
-
-- `subject_id`: stable entity ID (person, room, device, project, etc.).
-- `predicate`: typed relation/fact name.
-- `value`: structured JSON value.
-- `source_id`: provenance pointer to the originating conversation, file,
-  sensor or external event.
-- `valid_from`, `valid_to`: real-world validity interval; start inclusive,
-  end exclusive. Supply timezone offsets.
-- `replaces_id`: optional UUID of an active claim with the same subject and
-  predicate; use for correction, not ordinary additive facts.
-- `object_sha256`: optional hash reference. It does not upload an object.
-
-### 4.5 Recall a subject's memory
+### 5.2 Recall with bitemporal semantics
 
 ```bash
 curl -G http://127.0.0.1:8765/v1/memories/bedroom-1 \
   -H "Authorization: Bearer $MEMORY_API_KEY" \
-  --data-urlencode 'predicate=night_preference'
-```
-
-Bitemporal query:
-
-```bash
-curl -G http://127.0.0.1:8765/v1/memories/bedroom-1 \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  --data-urlencode 'predicate=night_preference' \
   --data-urlencode 'valid_at=2026-11-01T20:00:00+08:00' \
   --data-urlencode 'known_at=2026-11-05T12:00:00+08:00'
 ```
 
-Interpretation: "What did the system know at `known_at` about facts valid
-at `valid_at`?" If omitted, both default to the current time.
+This asks: "What did the system know at `known_at` about the world at
+`valid_at`?" Timestamps must include a timezone.
 
-### 4.5.1 Inspect evidence provenance
+### 5.3 Process structured extraction candidates
 
-A claim can be supported by multiple source records. When a repeated fact is
-deduplicated, the new source is linked to the existing canonical claim rather
-than silently discarded.
-
-```bash
-curl http://127.0.0.1:8765/v1/memories/<memory-uuid>/sources \
-  -H "Authorization: Bearer $MEMORY_API_KEY"
-```
-
-### 4.6 Hybrid search
-
-Lexical/canonical SQL search:
+The core deliberately does not call a hosted model. Your local Qwen model,
+rules engine or other extractor produces candidate facts; the API performs
+deterministic validation, confidence filtering, exact-fact deduplication,
+entity alias resolution, source linking and version replacement.
 
 ```bash
-curl -X POST http://127.0.0.1:8765/v1/search \
+curl -X POST http://127.0.0.1:8765/v1/memories/process \
   -H "Authorization: Bearer $MEMORY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"query":"quiet bedroom window","limit":10}'
+  -d '{
+    "text":"I prefer a quiet bedroom at night.",
+    "source_id":"conversation:session-002",
+    "confidence_threshold":0.7,
+    "candidates":[{
+      "subject_id":"bedroom-1",
+      "predicate":"night_preference",
+      "value":{"noise":"quiet"},
+      "confidence":0.96
+    }]
+  }'
 ```
 
-Vector-assisted query (the embedding must be generated by the caller):
+The response reports `created`, `duplicates`, `rejected`, `replaced` and
+`embedding_failures`. This is a deterministic processing API, not an
+automatic natural-language extraction model. Fuzzy cross-lingual resolution,
+contradiction classification and memory consolidation remain future work.
+
+## 6. Vector and graph operations
+
+### 6.1 Attach an embedding
+
+```bash
+curl -X PUT http://127.0.0.1:8765/v1/memories/<MEMORY_UUID>/embedding \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model_id":"BAAI/bge-small-zh-v1.5","embedding":[...]}'
+```
+
+The caller generates the vector. Current PostgreSQL profiles support 384 and
+512 dimensions. A model ID is permanently associated with one dimension per
+tenant. Do not mix embedding model versions under one ID.
+
+### 6.2 Create graph entities and edges
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/entities \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"entity_id":"bedroom-1","entity_type":"room","canonical_name":"Bedroom","aliases":["main bedroom"],"attributes":{}}'
+
+curl -X POST http://127.0.0.1:8765/v1/edges \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"from_entity":"bedroom-1","predicate":"HAS_WINDOW","to_entity":"window-1"}'
+```
+
+Edges are canonicalized in PostgreSQL. When AGE is enabled, the API initializes
+the projection and projects pending edges. PostgreSQL remains the source of
+truth; AGE is a derived graph index.
+
+### 6.3 Hybrid retrieval
 
 ```json
 {
   "query": "quiet bedroom window",
-  "embedding": [0.012, -0.031, 0.044],
-  "model_id": "your-embedding-model-id",
-  "limit": 10
-}
-```
-
-The vector above is illustrative only. It is not a valid production vector
-unless it has exactly the dimension registered for that model. The current
-PostgreSQL adapter supports 384D and 512D profiles. The model ID must remain
-stable for one embedding model/version and one dimension.
-
-Graph-assisted query:
-
-```json
-{
-  "query": "bedroom window",
+  "embedding": [0.01, 0.02],
+  "model_id": "your-embedding-model",
   "anchor_entity": "bedroom-1",
   "limit": 10
 }
 ```
 
-Graph expansion is bounded to the current adapter's one-hop neighborhood.
-The returned `channels_used` tells which channels actually contributed;
-`degraded_channels` reports optional channel failures.
+The vector shown above is illustrative; a real vector must have exactly the
+registered dimension. Omit `embedding` or `anchor_entity` if the respective
+channel is disabled. The response reports `channels_used` and
+`degraded_channels`.
 
-**Important current limitation:** the HTTP API has no endpoint to write
-embeddings or graph edges. Those indexes must currently be populated through
-the Python/PostgreSQL integration path. Therefore a third-party HTTP-only
-client can perform SQL search and can query already-populated vector/graph
-indexes, but cannot yet build those indexes end-to-end through REST.
+## 7. Objects and evidence
 
-## 4.7 Upload and download evidence objects
-
-The default server now wires the local SHA-256 content-addressed object store.
-Authenticated binary upload is limited to 10 MiB per request.
+Upload raw bytes:
 
 ```bash
 curl -X PUT http://127.0.0.1:8765/v1/objects \
@@ -251,218 +219,117 @@ curl -X PUT http://127.0.0.1:8765/v1/objects \
   --data-binary @floorplan.png
 ```
 
-Response includes `sha256`, `size`, and `X-Content-SHA256`. Store the digest
-in a memory claim's `object_sha256` field. Retrieve the original bytes:
+The response returns a SHA-256 digest. Attach it to a claim as
+`object_sha256`. Download using:
 
 ```bash
-curl http://127.0.0.1:8765/v1/objects/<sha256> \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  --output floorplan.png
+curl http://127.0.0.1:8765/v1/objects/<SHA256> \
+  -H "Authorization: Bearer $MEMORY_API_KEY" --output evidence.bin
 ```
 
-The default is local filesystem storage. To use an S3-compatible backend
-(AWS S3 or MinIO), install the optional dependency and configure:
+The local adapter stores content-addressed files atomically and verifies
+checksums. S3-compatible storage is available through the `S3ObjectStore`
+adapter. Configure:
 
 ```bash
-python -m pip install -e '.[s3]'
 export MEMORY_OBJECT_BACKEND=s3
-export MEMORY_S3_BUCKET=agent-memory-evidence
-export MEMORY_S3_ENDPOINT_URL=https://s3.example.internal
+export MEMORY_S3_BUCKET=your-private-bucket
 export MEMORY_S3_REGION=us-east-1
+export MEMORY_S3_ENDPOINT_URL=https://s3-compatible-endpoint
 export MEMORY_S3_ACCESS_KEY_ID=...
 export MEMORY_S3_SECRET_ACCESS_KEY=...
 ```
 
-For AWS, omit the endpoint and credentials when the runtime role supplies
-credentials. For MinIO, set the endpoint and credentials. The adapter uses
-SHA-256 object keys and verifies content on read. Configure bucket versioning,
-encryption, IAM permissions, lifecycle and backups at the object provider.
-Set `MEMORY_OBJECT_ROOT` when using local storage and back it up independently
-of PostgreSQL. S3 network integration and provider-specific behavior still
-require deployment acceptance tests.
+Install `.[s3]` to use boto3. Use a private bucket and isolate storage per
+tenant/deployment. The current object API enforces a 10 MiB request limit.
+Lifecycle, quota, malware scanning and backup policy are deployment concerns.
 
-## 4.8 Ingest and query time-series observations
+## 8. Time-series observations
 
-Ingest an observation (timestamps must include a timezone):
+Ingest:
 
-```bash
-curl -X POST http://127.0.0.1:8765/v1/observations \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device_id":"window-1",
-    "source_event_id":"gateway-event-0001",
-    "observed_at":"2026-11-09T10:00:00+08:00",
-    "property":"angle",
-    "value":17.5,
-    "unit":"degree",
-    "source_id":"home-gateway"
-  }'
+```json
+{
+  "device_id":"window-1",
+  "source_event_id":"gateway-event-001",
+  "observed_at":"2026-11-09T10:00:00+08:00",
+  "property":"angle",
+  "value":17.5,
+  "unit":"degree",
+  "source_id":"window-gateway"
+}
 ```
 
-First identical event returns HTTP 201; an identical retry returns HTTP 200
-with `duplicate=true`. Reusing the same tenant/device/event ID with different
-content returns HTTP 409.
+POST the payload to `/v1/observations`. Repeating the identical
+tenant/device/event ID returns a duplicate acknowledgement; reusing that ID
+with different contents is rejected.
 
-Query:
+Query `GET /v1/observations/{device_id}?property=angle&start_at=...&end_at=...`.
+Aggregate with `GET /v1/observations/{device_id}/aggregate?property=angle&start_at=...&end_at=...`.
 
-```bash
-curl -G http://127.0.0.1:8765/v1/observations/window-1 \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  --data-urlencode 'property=angle' \
-  --data-urlencode 'limit=100'
-```
+The current subsystem is a PostgreSQL event-time observation store with
+idempotent ingestion, late-arrival ordering and basic count/min/max/average
+aggregation. It is not yet a dedicated high-throughput TSDB: automated
+partitioning, retention, downsampling and sustained load benchmarks remain
+acceptance work.
 
-This is a basic PostgreSQL event-time observation store. It is not yet a
-full-featured time-series database: range aggregation, retention/partition
-automation, downsampling and high-ingest benchmarks remain future work.
+## 9. Durable events and realtime stream
 
-## 4.10 Build vector and graph indexes through the API
-
-Attach a caller-generated embedding to an existing memory claim:
+Poll durable events:
 
 ```bash
-curl -X PUT http://127.0.0.1:8765/v1/memories/<memory-uuid>/embedding \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model_id":"BAAI/bge-small-zh-v1.5","embedding":[...512 float values...]}'
+curl 'http://127.0.0.1:8765/v1/events?limit=100' \
+  -H "Authorization: Bearer $MEMORY_API_KEY"
 ```
 
-Only 384D and 512D profiles are accepted by the current PostgreSQL adapter.
-The embedding model/version must have a stable model_id. The API does not run
-an embedding model; generate vectors locally or in the calling application.
-
-Register a canonical entity and aliases:
+Pass the returned `next_cursor` as `after` to continue. SSE:
 
 ```bash
-curl -X POST http://127.0.0.1:8765/v1/entities \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"entity_id":"bedroom-1","entity_type":"room","canonical_name":"Main Bedroom","aliases":["primary bedroom"],"attributes":{"floor":1}}'
+curl -N 'http://127.0.0.1:8765/v1/events/stream?max_seconds=30' \
+  -H "Authorization: Bearer $MEMORY_API_KEY"
 ```
 
-Resolve a name or alias:
+The stream is intentionally bounded to 30 seconds. Reconnect using the last
+received `id:` as the `Last-Event-ID` header or `after` query parameter.
+Clients should de-duplicate by event ID. This is durable polling-backed SSE,
+not a push broker; multi-node fan-out and throughput guarantees have not yet
+been benchmarked. Browser EventSource cannot set arbitrary Authorization
+headers; use fetch streaming or a trusted gateway rather than putting API keys
+in query strings.
 
-```bash
-curl -G http://127.0.0.1:8765/v1/entities/resolve \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  --data-urlencode 'name=primary bedroom'
-```
+## 10. Temporal boundary
 
-Create a canonical relationship:
+The repository includes a real Temporal SDK integration prototype that
+verifies a memory claim and writes an idempotent receipt using PostgreSQL
+activities. The public REST API does not yet expose general workflow
+start/status/signal/cancel endpoints, and the default server does not start a
+Temporal worker. Do not advertise Temporal as an enabled runtime capability
+unless a worker deployment is configured.
 
-```bash
-curl -X POST http://127.0.0.1:8765/v1/edges \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"from_entity":"bedroom-1","predicate":"HAS_WINDOW","to_entity":"window-1"}'
-```
+## 11. Capability discovery and error semantics
 
-When `MEMORY_ENABLE_AGE=1`, the service also attempts to project pending
-relationships to Apache AGE. The PostgreSQL edge ledger remains canonical.
-Vector ingestion requires `MEMORY_ENABLE_VECTOR=1`.
+Call `GET /v1/capabilities` before using optional channels. A capability
+reported unavailable must be treated as unavailable on that instance.
 
-## 4.9 Durable event replay and live SSE
+Common status codes:
 
-Every newly created PostgreSQL memory claim and observation is now written to
-`memory_events` and `memory_outbox` in the same transaction as its canonical
-record.
-
-Poll/replay events:
-
-```bash
-curl -G http://127.0.0.1:8765/v1/events \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  --data-urlencode 'limit=100'
-```
-
-Continue from the previous response's `next_cursor`:
-
-```bash
-curl -G http://127.0.0.1:8765/v1/events \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  --data-urlencode 'after=<previous-next_cursor>' \
-  --data-urlencode 'limit=100'
-```
-
-Subscribe with Server-Sent Events:
-
-```bash
-curl -N http://127.0.0.1:8765/v1/events/stream \
-  -H "Authorization: Bearer $MEMORY_API_KEY" \
-  -H "Accept: text/event-stream"
-```
-
-Connections are bounded to 30 seconds. On reconnect, send the last received
-SSE `id` as `Last-Event-ID` or the `after` query parameter. This is a
-durable replay plus polling-based SSE implementation, not a broker-backed
-push fabric. The outbox consumer still needs independent workers for each
-projection (embeddings, FTS, AGE, remote side effects); an outbox row being
-created does not mean every projection is complete.
-
-## 5. Backend capabilities still not exposed as HTTP APIs
-
-These are not Swagger endpoints today:
-
-| Capability | Backend status | Third-party HTTP status | What is missing |
-|---|---|---|---|
-| Store/query canonical claims | Implemented | Available | Production auth hardening |
-| pgvector | DB adapter + query implemented | Partial | Public embedding write endpoint and local encoder integration |
-| Apache AGE | Projection/traversal adapter implemented | Partial | Public edge write, projection administration and direct graph query API |
-| Object store | Local SHA-256 store implemented | Local upload/download now exposed | S3-compatible adapter, metadata lifecycle, quotas, backup/restore |
-| Time-series observations | PostgreSQL write/read implemented | Basic ingestion/query now exposed | Range aggregation, retention/partition policy and downsampling |
-| Temporal | Optional SDK workflow/activities prototype | Not exposed | Public workflow start/status/cancel contract, worker deployment and auth |
-| Realtime outbox | SQL outbox exists | Durable replay + SSE exposed | Dedicated per-projection workers, DLQ and high-scale broker fan-out |
-| Mem0-inspired memory extraction | Design patterns recorded | Not exposed | Extraction, deduplication, entity resolution and policy pipeline |
-
-Do not interpret a module or database table as a finished external product
-feature. The capability endpoint is the runtime authority for advertised
-features; this table documents the present HTTP boundary.
-
-## 6. Error handling
-
-| HTTP status | Meaning |
+| Code | Meaning |
 |---|---|
-| 200 | Read/search/check succeeded |
-| 201 | Claim created |
-| 401 | Missing or malformed Bearer credential |
-| 403 | Invalid credential |
-| 422 | Invalid payload, unsupported timestamp or invalid query parameter |
-| 503 | PostgreSQL readiness failure or hybrid adapter not configured |
+| 200 | Read/query/processing succeeded |
+| 201 | New claim, observation or entity created |
+| 401 | Missing Bearer credential |
+| 403 | Invalid API key |
+| 409 | Conflicting observation or ambiguous entity |
+| 413 | Object exceeds 10 MiB |
+| 422 | Invalid payload or timestamp |
+| 503 | Optional adapter unavailable or disabled |
 
-Optional vector/graph outages are returned in `degraded_channels` when
-the configured search adapter can continue with SQL. A canonical SQL failure
-must fail the search request; it must not return an empty result as if the
-query succeeded.
+## 12. Production acceptance boundary
 
-## 7. Third-party integration pattern
-
-A client should:
-
-1. Obtain a dedicated API key and tenant from the service operator.
-2. Call `/v1/health`, then authenticated `/v1/ready`.
-3. Call `/v1/capabilities` and disable client features reported unavailable.
-4. Store facts with stable subject/predicate/source identifiers.
-5. Retain returned claim UUIDs and use `replaces_id` for explicit corrections.
-6. Generate embeddings locally using a fixed model/version before vector
-   indexing; never mix model versions under one `model_id`.
-7. Preserve `source_id` and object hashes so retrieval results can be traced.
-8. Treat graph/vector as derived indexes, never as the source of truth.
-
-## 8. Production acceptance gates — not yet passed
-
-Before describing this as a production-ready third-party service, require:
-
-- Per-tenant DB authorization/RLS tests, not only query-level tenant filters.
-- TLS, key rotation/revocation, rate limits, request-size limits and audit logs.
-- Public APIs for embeddings, graph edges, objects, observations and outbox.
-- Temporal worker lifecycle and externally documented workflow operations.
-- Object backup, restore, orphan reconciliation and retention/erasure.
-- End-to-end tests on one release commit, including process kill/restart,
-  duplicate delivery, partial outage and recovery.
-- Chinese corpus retrieval evaluation (Recall@k, MRR/nDCG) and p50/p95
-  latency/CPU/RAM measurements.
-- A pinned, reproducible PostgreSQL/AGE/pgvector image digest.
-
-Until these gates pass, call this a **working research prototype with a
-limited authenticated REST facade**, not a fully featured public memory API.
+The current implementation is a functional, testable backend prototype with
+a broad authenticated REST facade. Before multi-customer production use, still
+require: database RLS and stronger identity, key rotation/revocation, TLS,
+rate limiting, audit logs, object ownership metadata, backup/restore, object
+lifecycle, outbox DLQ and per-projection task accounting, Temporal worker
+operations, memory-processing concurrency controls, Chinese retrieval and
+extraction evaluation, and measured p50/p95/load/failure-recovery results.

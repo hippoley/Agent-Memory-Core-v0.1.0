@@ -38,3 +38,43 @@ def test_single_tenant_api_and_fails_closed():
     assert client.post("/v1/memories",json=data,headers=headers).status_code==201
     assert client.get("/v1/memories/room",headers=headers).json()["items"]==[{"id":"id1"}]
     assert client.post("/v1/memories",json={**data,"tenant_id":"other"},headers=headers).status_code==422
+
+
+def test_search_endpoint_uses_tenant_and_returns_channel_diagnostics():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+    from agent_memory_core.api import create_app
+
+    class Search:
+        def search_detailed(self, **kw):
+            assert kw["tenant_id"]=="home"
+            assert kw["query"]=="window noise"
+            return SimpleNamespace(
+                hits=[SimpleNamespace(memory_id="m1",subject_id="room",
+                    predicate="noise",value={"db":True},source_id="sensor",
+                    score=0.03,channels=("sql","graph"))],
+                channels_used=("graph","sql"),degraded_channels={"vector":"not configured"})
+        def close(self): pass
+
+    app=create_app(api_key="secret-token-with-more-than-24-characters",
+        tenant_id="home",search_factory=Search)
+    client=TestClient(app)
+    headers={"Authorization":"Bearer secret-token-with-more-than-24-characters"}
+    result=client.post("/v1/search",headers=headers,json={"query":"window noise"})
+    assert result.status_code==200,result.text
+    body=result.json()
+    assert body["items"][0]["memory_id"]=="m1"
+    assert body["channels_used"]==["graph","sql"]
+    assert body["degraded_channels"]["vector"]=="not configured"
+
+
+def test_search_endpoint_reports_unconfigured_adapter():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    app=create_app(api_key="secret-token-with-more-than-24-characters",tenant_id="home")
+    result=TestClient(app).post("/v1/search",
+        headers={"Authorization":"Bearer secret-token-with-more-than-24-characters"},
+        json={"query":"hello"})
+    assert result.status_code==503

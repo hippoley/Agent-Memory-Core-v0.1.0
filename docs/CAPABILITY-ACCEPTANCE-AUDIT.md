@@ -22,7 +22,7 @@ service integration test.
 | Durable events | Yes | Yes | PostgreSQL event log, cursor replay, claim/observation events |
 | Realtime SSE | Yes | Yes | Authenticated bounded SSE with replay cursor and Last-Event-ID; TestClient contract test; production fan-out/load not measured |
 | Transactional outbox | Yes | Internal worker | PostgreSQL row locking, atomic DB-local handler acknowledgement and retry; real PostgreSQL integration tests |
-| Temporal | Narrow workflow | No general workflow API | Real local Temporal SDK workflow + PostgreSQL activities and idempotent receipt test; no general workflow lifecycle API or default worker |
+| Temporal | Narrow verification workflow | Yes, start/status/cancel | Real local Temporal SDK workflow + PostgreSQL activities; standalone worker command; no general workflow authoring or production cluster operations |
 | Mem0-inspired processing | Deterministic first stage | Yes | Structured candidate validation, confidence filtering, exact deduplication, provenance linking, alias resolution and fact replacement; model extractor injected by caller |
 | Automatic LLM extraction | No built-in model | No | Local model/rules extractor contract is injected; core does not call a hosted model |
 | Memory consolidation / forgetting | Not complete | No | Summarization, consolidation scheduling, policy-based forgetting, contradiction classification and benchmark remain |

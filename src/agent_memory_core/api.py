@@ -79,6 +79,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             {"name": "Retrieval", "description": "Optional SQL + vector + graph hybrid search."},
             {"name": "Objects", "description": "Content-addressed evidence object upload and download."},
             {"name": "Observations", "description": "Idempotent device observations with event-time queries."},
+            {"name": "Events", "description": "Durable tenant-scoped event replay with cursor pagination."},
         ],
     )
     bearer = HTTPBearer(
@@ -270,6 +271,24 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 db.close()
             return {"tenant_id": t, "device_id": device_id,
                     "property": property, "items": items}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get(
+        "/v1/events", tags=["Events"], summary="Replay durable memory events",
+        description="Polls the tenant-scoped durable event log. Pass the previous page's next_cursor as after to continue without losing events.",
+    )
+    def get_events(after: str | None = None, limit: int = 100,
+                   t: str = Depends(auth)):
+        try:
+            db = store_factory()
+            try:
+                items = db.events_after(tenant_id=t, after=after, limit=limit)
+            finally:
+                db.close()
+            return {"items": items,
+                    "next_cursor": items[-1]["event_id"] if items else after,
+                    "has_more": len(items) == limit}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 

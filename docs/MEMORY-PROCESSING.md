@@ -24,8 +24,10 @@ The processor:
 3. Reads current facts for that subject and predicate.
 4. Deduplicates identical active facts using canonical JSON.
 5. Versions a changed fact using the existing claim correction mechanism.
-6. Optionally calls an injected embedder and stores the vector.
-7. Reports embedding failures separately; the canonical fact is not discarded.
+6. Optionally resolves subject aliases against the tenant-scoped canonical entity registry.
+7. Links every supporting source to the canonical claim; repeated facts add provenance rather than losing the new source.
+8. Optionally calls an injected embedder and stores the vector.
+9. Reports embedding failures separately; the canonical fact is not discarded.
 
 ## Example
 
@@ -61,7 +63,7 @@ finally:
 ## Current boundary
 
 This is the first deterministic processing stage, not a full Mem0 clone.
-The extractor is injected and must be provided by the application. Entity
-resolution, source-to-claim evidence many-to-many linking, contradiction
-classification, consolidation/summarization, forgetting policies and a
-Chinese extraction/retrieval benchmark remain to be implemented and evaluated.
+The extractor is injected and must be provided by the application. Model-native extraction, richer entity resolution (including fuzzy and cross-lingual
+resolution), contradiction classification, consolidation/summarization,
+forgetting policies and a Chinese extraction/retrieval benchmark remain to be
+implemented and evaluated.

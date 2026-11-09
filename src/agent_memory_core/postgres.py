@@ -62,6 +62,18 @@ class PostgresMemory:
                    VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
                 (mid,tenant_id,subject_id,predicate,json.dumps(value,ensure_ascii=False),
                  source_id,valid_from,valid_to,replaces_id,object_sha256,mutation_time))
+            event_payload = {"memory_id": str(mid), "subject_id": subject_id,
+                             "predicate": predicate, "source_id": source_id}
+            packed = json.dumps(event_payload, ensure_ascii=False, sort_keys=True)
+            self.conn.execute(
+                """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
+                   VALUES (%s,%s,'memory.claim.created',%s::jsonb)""",
+                (tenant_id,str(mid),packed))
+            self.conn.execute(
+                """INSERT INTO memory_outbox
+                   (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                   VALUES (%s,%s,'claim',%s,'memory.claim.created',%s::jsonb)""",
+                (mid,tenant_id,str(mid),packed))
         return str(mid)
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
@@ -219,6 +231,20 @@ class PostgresMemory:
                  float(value),unit,property,source_id),
             ).fetchone()
             if inserted:
+                event_id = uuid4()
+                payload = {"device_id": device_id, "source_event_id": source_event_id,
+                           "observed_at": observed_at.isoformat(), "property": property,
+                           "value": float(value), "unit": unit, "source_id": source_id}
+                packed = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+                self.conn.execute(
+                    """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
+                       VALUES (%s,%s,'memory.observation.recorded',%s::jsonb)""",
+                    (tenant_id,str(event_id),packed))
+                self.conn.execute(
+                    """INSERT INTO memory_outbox
+                       (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                       VALUES (%s,%s,'device',%s,'memory.observation.recorded',%s::jsonb)""",
+                    (event_id,tenant_id,device_id,packed))
                 return True
             prior = self.conn.execute(
                 """SELECT observed_at,measured_value,unit,property,source_id
@@ -245,6 +271,32 @@ class PostgresMemory:
             (tenant_id,device_id,property,limit),
         )
         return [dict(zip(columns,row)) for row in rows]
+
+    def events_after(self, *, tenant_id: str, after: str | None = None,
+                     limit: int = 100) -> list[dict]:
+        """Read a stable tenant-scoped event page after an opaque event-ID cursor."""
+        if not tenant_id or not 1 <= limit <= 500:
+            raise ValueError("Invalid tenant or event page size")
+        if after is None:
+            rows = self.conn.execute(
+                """SELECT event_id,event_type,payload,recorded_at
+                   FROM memory_events WHERE tenant_id=%s
+                   ORDER BY recorded_at,event_id LIMIT %s""",
+                (tenant_id,limit))
+        else:
+            cursor = self.conn.execute(
+                """SELECT recorded_at,event_id FROM memory_events
+                   WHERE tenant_id=%s AND event_id=%s""", (tenant_id,after)).fetchone()
+            if cursor is None:
+                raise ValueError("Unknown event cursor for this tenant")
+            rows = self.conn.execute(
+                """SELECT event_id,event_type,payload,recorded_at FROM memory_events
+                   WHERE tenant_id=%s AND
+                     (recorded_at,event_id)>(%s,%s)
+                   ORDER BY recorded_at,event_id LIMIT %s""",
+                (tenant_id,cursor[0],cursor[1],limit))
+        return [{"event_id":str(row[0]),"event_type":row[1],
+                 "payload":row[2],"recorded_at":row[3]} for row in rows]
 
     def outgoing_edges(self, *, tenant_id: str, from_entity: str) -> list[tuple[str,str]]:
         return list(self.conn.execute(

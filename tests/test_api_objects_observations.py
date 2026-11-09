@@ -53,6 +53,8 @@ class FakeDB:
         return "edge-"+str(len(self.edges))
     def store_embedding(self, **kwargs):
         self.embedding_rows.append(kwargs)
+    def sources_for_memory(self, **kwargs):
+        return [{"source_id":"conversation-1","trust_level":"unverified"}]
     def events_after(self, *, tenant_id, after=None, limit=100):
         if tenant_id != "tenant-a":
             return []
@@ -198,3 +200,10 @@ def test_graph_and_vector_write_apis(tmp_path):
     embedding={"model_id":"bge-small-zh-v1.5","embedding":[0.01]*512}
     response=client.put("/v1/memories/memory-1/embedding",json=embedding,headers=headers)
     assert response.status_code==200
+
+
+def test_memory_provenance_sources_are_exposed(tmp_path):
+    client,headers=make_client(tmp_path)
+    response=client.get("/v1/memories/memory-1/sources",headers=headers)
+    assert response.status_code==200
+    assert response.json()["sources"][0]["source_id"]=="conversation-1"

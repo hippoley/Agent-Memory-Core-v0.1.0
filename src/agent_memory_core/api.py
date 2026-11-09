@@ -284,16 +284,39 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=409, detail=str(exc))
 
     @app.get(
+        "/v1/observations/{device_id}/aggregate", tags=["Observations"],
+        summary="Aggregate observations over an event-time range",
+    )
+    def aggregate_observations(device_id: str, property: str,
+                               start_at: str, end_at: str,
+                               t: str = Depends(auth)):
+        try:
+            db=store_factory()
+            try:
+                result=db.aggregate_observations(
+                    tenant_id=t,device_id=device_id,property=property,
+                    start_at=aware_iso(start_at),end_at=aware_iso(end_at))
+            finally:
+                db.close()
+            return {"tenant_id":t,"device_id":device_id,"property":property,
+                    "aggregate":result}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
+    @app.get(
         "/v1/observations/{device_id}", tags=["Observations"],
         summary="Query observations for a device",
     )
     def get_observations(device_id: str, property: str, limit: int = 100,
+                         start_at: str | None = None, end_at: str | None = None,
                          t: str = Depends(auth)):
         try:
             db = store_factory()
             try:
                 items = db.observations(tenant_id=t, device_id=device_id,
-                                        property=property, limit=limit)
+                                        property=property, limit=limit,
+                                        start_at=aware_iso(start_at),
+                                        end_at=aware_iso(end_at))
             finally:
                 db.close()
             return {"tenant_id": t, "device_id": device_id,

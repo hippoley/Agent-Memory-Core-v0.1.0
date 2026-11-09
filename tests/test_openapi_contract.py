@@ -18,7 +18,6 @@ EXPECTED={
     "/v1/observations":{"post"},
     "/v1/observations/{device_id}":{"get"},
     "/v1/observations/{device_id}/aggregate":{"get"},
-    "/v1/observations/{device_id}/aggregate":{"get"},
     "/v1/events":{"get"},
     "/v1/events/stream":{"get"},
     "/v1/memories/{memory_id}/embedding":{"put"},

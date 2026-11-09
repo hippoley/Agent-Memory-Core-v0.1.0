@@ -170,6 +170,51 @@ class PostgresMemory:
             (tenant_id,model_id,known_at,known_at,valid_at,valid_at,literal,limit))
         return [(r[0],float(r[1])) for r in rows]
 
+    def upsert_entity(self, *, tenant_id: str, entity_id: str,
+                      entity_type: str, canonical_name: str,
+                      aliases: list[str] | None = None,
+                      attributes: dict | None = None) -> None:
+        allowed = {"person","agent","organization","project","device",
+                   "room","place","concept","account","document"}
+        if (not tenant_id or not entity_id or not canonical_name.strip()
+                or entity_type not in allowed):
+            raise ValueError("Invalid tenant, entity ID, type or canonical name")
+        alias_values = sorted({a.strip() for a in (aliases or [])
+                               if isinstance(a,str) and a.strip()})
+        with self.conn.transaction():
+            self.conn.execute(
+                """INSERT INTO memory_entities
+                   (tenant_id,entity_id,entity_type,canonical_name,aliases,attributes)
+                   VALUES (%s,%s,%s,%s,%s,%s::jsonb)
+                   ON CONFLICT (tenant_id,entity_id) DO UPDATE SET
+                     entity_type=EXCLUDED.entity_type,
+                     canonical_name=EXCLUDED.canonical_name,
+                     aliases=EXCLUDED.aliases,
+                     attributes=EXCLUDED.attributes""",
+                (tenant_id,entity_id,entity_type,canonical_name,
+                 alias_values,json.dumps(attributes or {},ensure_ascii=False)))
+
+    def resolve_entity(self, *, tenant_id: str, name: str) -> dict | None:
+        """Resolve a canonical name or alias; never guess when ambiguous."""
+        if not tenant_id or not name or not name.strip():
+            raise ValueError("Tenant and entity name are required")
+        rows = self.conn.execute(
+            """SELECT entity_id,entity_type,canonical_name,aliases,attributes
+               FROM memory_entities
+               WHERE tenant_id=%s AND
+                 (lower(canonical_name)=lower(%s) OR EXISTS
+                   (SELECT 1 FROM unnest(aliases) alias
+                    WHERE lower(alias)=lower(%s)))
+               ORDER BY entity_id LIMIT 2""",
+            (tenant_id,name.strip(),name.strip())).fetchall()
+        if len(rows) > 1:
+            raise ValueError("Ambiguous entity alias; explicit entity_id required")
+        if not rows:
+            return None
+        row=rows[0]
+        return {"entity_id":row[0],"entity_type":row[1],
+                "canonical_name":row[2],"aliases":row[3],"attributes":row[4]}
+
     def add_edge(self, *, tenant_id: str, from_entity: str, predicate: str,
                  to_entity: str, source_memory_id: str | None = None) -> str:
         if not all((tenant_id,from_entity,predicate,to_entity)):

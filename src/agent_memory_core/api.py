@@ -303,6 +303,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                             t: str = Depends(auth)):
         cursor = after or request.headers.get("last-event-id")
         async def generate():
+            last_id = cursor
             loop = asyncio.get_running_loop()
             deadline = loop.time() + 30
             while loop.time() < deadline and not await request.is_disconnected():
@@ -310,7 +311,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     db = store_factory()
                     try:
                         items = await asyncio.to_thread(
-                            db.events_after, tenant_id=t, after=cursor, limit=100)
+                            db.events_after, tenant_id=t, after=last_id, limit=100)
                     finally:
                         await asyncio.to_thread(db.close)
                 except ValueError as exc:
@@ -318,10 +319,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     return
                 if items:
                     for item in items:
-                        cursor = item["event_id"]
-                        payload = {"event_id":cursor,"event_type":item["event_type"],
+                        last_id = item["event_id"]
+                        payload = {"event_id":last_id,"event_type":item["event_type"],
                                    "payload":item["payload"],"recorded_at":str(item["recorded_at"])}
-                        yield "id: " + cursor + "\\nevent: " + item["event_type"] + "\\ndata: " + json.dumps(payload,default=str) + "\\n\\n"
+                        yield "id: " + last_id + "\\nevent: " + item["event_type"] + "\\ndata: " + json.dumps(payload,default=str) + "\\n\\n"
                 else:
                     yield ": keepalive\\n\\n"
                     await asyncio.sleep(0.5)

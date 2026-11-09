@@ -50,7 +50,6 @@ class MemoryProcessor:
             raise ValueError("tenant_id, non-empty text and source_id are required")
         report = ProcessingReport()
         candidates = extractor(text)
-        now = datetime.now(timezone.utc)
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 report.rejected += 1
@@ -78,6 +77,8 @@ class MemoryProcessor:
                 continue
             try:
                 canonical = self._canonical(value)
+                clock = getattr(self.store, "current_time", None)
+                now = clock() if callable(clock) else datetime.now(timezone.utc)
                 active = self.store.recall(
                     tenant_id=tenant_id, subject_id=subject,
                     predicate=predicate, valid_at=now, known_at=now)

@@ -30,6 +30,12 @@ def test_real_postgres_pgvector_age():
         )
         rows = db.recall(tenant_id=tenant, subject_id="room-1")
         assert len(rows) == 1 and rows[0]["id"] == mid
+        claim_events = db.events_after(tenant_id=tenant, limit=10)
+        assert any(e["event_id"] == mid and e["event_type"] == "memory.claim.created"
+                   for e in claim_events)
+        claim_cursor = next(e["event_id"] for e in claim_events
+                            if e["event_id"] == mid)
+        assert db.events_after(tenant_id=tenant, after=claim_cursor, limit=10) == []
         assert db.recall(tenant_id="not-"+tenant,subject_id="room-1")==[]
         vec=[0.0]*384
         vec[0]=1.0
@@ -96,6 +102,10 @@ def test_real_postgres_pgvector_age():
         observations=db.observations(
             tenant_id=tenant,device_id="window-1",property="angle")
         assert [o["source_event_id"] for o in observations] == ["evt-later","evt-earlier"]
+        observation_events = db.events_after(tenant_id=tenant, limit=20)
+        assert any(e["event_type"] == "memory.observation.recorded"
+                   and e["payload"]["source_event_id"] == "evt-later"
+                   for e in observation_events)
         assert db.observations(
             tenant_id="not-"+tenant,device_id="window-1",property="angle")==[]
 

@@ -242,11 +242,21 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         try:
             store = object_store_factory()
             digest = store.put(data)
+            db = store_factory()
+            try:
+                db.register_object(
+                    tenant_id=t, digest=digest, byte_size=len(data),
+                    content_type=request.headers.get("content-type","application/octet-stream"),
+                )
+            finally:
+                db.close()
             return Response(status_code=201, headers={"X-Content-SHA256": digest},
                              media_type="application/json",
                              content='{"sha256":"' + digest + '","size":' + str(len(data)) + '}')
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
         except Exception:
-            raise HTTPException(status_code=503, detail="Object storage write failed")
+            raise HTTPException(status_code=503, detail="Object storage write or ownership registration failed")
 
     @app.get(
         "/v1/objects/{digest}", tags=["Objects"], summary="Retrieve an evidence object",
@@ -257,10 +267,19 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         if object_store_factory is None:
             raise HTTPException(status_code=503, detail="Object storage is not configured")
         try:
+            db = store_factory()
+            try:
+                allowed = db.object_accessible(tenant_id=t,digest=digest)
+            finally:
+                db.close()
+            if not allowed:
+                raise HTTPException(status_code=404, detail="Object not found")
             store = object_store_factory()
             data = store.get(digest)
             return Response(content=data, media_type="application/octet-stream",
                             headers={"X-Content-SHA256": digest})
+        except HTTPException:
+            raise
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Object not found")
         except ValueError as exc:

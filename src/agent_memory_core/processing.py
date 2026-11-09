@@ -84,6 +84,10 @@ class MemoryProcessor:
                 exact = next((row for row in active
                               if self._canonical(row["value"]) == canonical), None)
                 if exact is not None:
+                    link_source = getattr(self.store, "link_claim_source", None)
+                    if callable(link_source):
+                        link_source(tenant_id=tenant_id,memory_id=exact["id"],
+                                    source_id=source_id,confidence=float(confidence))
                     report.duplicates += 1
                     continue
                 replaces_id = active[0]["id"] if active else None

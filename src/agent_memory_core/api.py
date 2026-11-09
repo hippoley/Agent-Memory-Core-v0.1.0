@@ -62,6 +62,14 @@ class EdgeWrite(BaseModel):
     source_memory_id: str | None = None
 
 
+class ProcessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=100000, description="Original text retained as processing context; source_id identifies its durable source.")
+    source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
+    candidates: list[dict] = Field(min_length=1, max_length=500, description="Structured facts emitted by the caller's local extractor. Each item requires subject_id or resolvable subject_name, predicate, and object value.")
+    confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
@@ -469,6 +477,41 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     await asyncio.sleep(0.5)
         return StreamingResponse(generate(), media_type="text/event-stream",
                                  headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+    @app.post(
+        "/v1/memories/process", status_code=200, tags=["Memory"],
+        summary="Process extracted facts into canonical memories",
+        description=("Runs deterministic validation, confidence filtering, exact-fact deduplication, "
+                     "provenance linking, entity alias resolution and bitemporal fact replacement. "
+                     "The caller supplies structured candidates from its own local model/rules extractor; "
+                     "this endpoint does not pretend to extract facts from arbitrary text by itself."),
+    )
+    def process_memories(item: ProcessRequest, t: str = Depends(auth)):
+        from .processing import MemoryProcessor
+        db = store_factory()
+        try:
+            processor = MemoryProcessor(
+                db,
+                confidence_threshold=item.confidence_threshold,
+                entity_resolver=lambda tenant_id, name: db.resolve_entity(
+                    tenant_id=tenant_id, name=name),
+            )
+            report = processor.process(
+                tenant_id=t, text=item.text, source_id=item.source_id,
+                extractor=lambda _text: item.candidates,
+            )
+            return {
+                "tenant_id": t,
+                "created": report.created,
+                "duplicates": report.duplicates,
+                "rejected": report.rejected,
+                "replaced": report.replaced,
+                "embedding_failures": report.embedding_failures,
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        finally:
+            db.close()
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

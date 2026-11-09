@@ -152,6 +152,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     @app.get(
         "/v1/memories/{subject_id}", tags=["Memory"], summary="Recall claims for a subject",
         response_model=MemoryReadResponse,
+        response_model_exclude_none=True,
         description=(
             "Returns claims valid at valid_at as known at known_at. Both timestamps "
             "must include a timezone. Omitted timestamps default to the current time."

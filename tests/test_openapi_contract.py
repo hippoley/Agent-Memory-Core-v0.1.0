@@ -1,6 +1,8 @@
 """Public OpenAPI/Swagger shape and security regression tests."""
 import json
 from pathlib import Path
+import pytest
+pytest.importorskip("fastapi")
 from agent_memory_core.api import create_app
 
 EXPECTED={

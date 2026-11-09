@@ -57,11 +57,20 @@ class PostgresMemory:
                     "UPDATE memory_claims SET superseded_at=%s WHERE id=%s",
                     (mutation_time,replaces_id,))
             self.conn.execute(
+                """INSERT INTO memory_sources(tenant_id,source_id,source_type,trust_level)
+                   VALUES (%s,%s,'external','unverified')
+                   ON CONFLICT (tenant_id,source_id) DO NOTHING""",
+                (tenant_id,source_id))
+            self.conn.execute(
                 """INSERT INTO memory_claims(id,tenant_id,subject_id,predicate,value,source_id,
                    valid_from,valid_to,replaces_id,object_sha256,recorded_at)
                    VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
                 (mid,tenant_id,subject_id,predicate,json.dumps(value,ensure_ascii=False),
                  source_id,valid_from,valid_to,replaces_id,object_sha256,mutation_time))
+            self.conn.execute(
+                """INSERT INTO memory_claim_sources(tenant_id,claim_id,source_id,confidence)
+                   VALUES (%s,%s,%s,1.0) ON CONFLICT DO NOTHING""",
+                (tenant_id,mid,source_id))
             event_payload = {"memory_id": str(mid), "subject_id": subject_id,
                              "predicate": predicate, "source_id": source_id}
             packed = json.dumps(event_payload, ensure_ascii=False, sort_keys=True)
@@ -169,6 +178,41 @@ class PostgresMemory:
                FROM scoped ORDER BY distance,memory_id LIMIT %s""",
             (tenant_id,model_id,known_at,known_at,valid_at,valid_at,literal,limit))
         return [(r[0],float(r[1])) for r in rows]
+
+    def link_claim_source(self, *, tenant_id: str, memory_id: str,
+                          source_id: str, confidence: float = 1.0) -> bool:
+        if (not tenant_id or not memory_id or not source_id
+                or not 0.0 <= confidence <= 1.0):
+            raise ValueError("Invalid claim source link")
+        with self.conn.transaction():
+            claim = self.conn.execute(
+                "SELECT 1 FROM memory_claims WHERE tenant_id=%s AND id=%s",
+                (tenant_id,memory_id)).fetchone()
+            if not claim:
+                raise PermissionError("Memory does not belong to requested tenant")
+            self.conn.execute(
+                """INSERT INTO memory_sources(tenant_id,source_id,source_type,trust_level)
+                   VALUES (%s,%s,'external','unverified')
+                   ON CONFLICT (tenant_id,source_id) DO NOTHING""",
+                (tenant_id,source_id))
+            result = self.conn.execute(
+                """INSERT INTO memory_claim_sources(tenant_id,claim_id,source_id,confidence)
+                   VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (tenant_id,memory_id,source_id,confidence))
+        return result.rowcount == 1
+
+    def sources_for_memory(self, *, tenant_id: str, memory_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            """SELECT s.source_id,s.source_type,s.uri,s.object_sha256,s.trust_level,
+                      s.metadata,cs.confidence,cs.linked_at
+               FROM memory_claim_sources cs
+               JOIN memory_sources s USING (tenant_id,source_id)
+               WHERE cs.tenant_id=%s AND cs.claim_id=%s
+               ORDER BY cs.linked_at,s.source_id""",
+            (tenant_id,memory_id))
+        columns=("source_id","source_type","uri","object_sha256",
+                 "trust_level","metadata","confidence","linked_at")
+        return [dict(zip(columns,row)) for row in rows]
 
     def upsert_entity(self, *, tenant_id: str, entity_id: str,
                       entity_type: str, canonical_name: str,

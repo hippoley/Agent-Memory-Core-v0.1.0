@@ -3,6 +3,13 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import uuid5, NAMESPACE_URL
 import os
+
+
+def _database_dsn() -> str:
+    dsn = os.getenv("MEMORY_DSN") or os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        raise RuntimeError("MEMORY_DSN is required by Temporal Activities")
+    return dsn
 try:
     from temporalio import activity, workflow
 except ImportError as exc:
@@ -11,7 +18,7 @@ except ImportError as exc:
 @activity.defn(name="verify_memory_record")
 def verify_memory_record(request: dict) -> dict:
     from .postgres import PostgresMemory
-    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    db=PostgresMemory(_database_dsn())
     try:
         row=db.conn.execute(
             """SELECT id::text,subject_id,predicate,source_id,superseded_at

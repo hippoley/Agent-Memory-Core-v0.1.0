@@ -13,11 +13,11 @@ The repository is a **working local research prototype**, NOT a secure productio
 | G6 | Graph deletion/reconciliation and rebuilding | Immutable-edge projection only | ◻ Incomplete |
 | G7 | Local embeddings, retrieval quality and latency benchmarks | Fixed 384-dim profile, no local encoder or Recall@k | ◻ Incomplete |
 | G8 | Real sensor time-series partitioning and object lifecycle | Observation schema and SHA-256 store only | ◻ Incomplete |
-| G9 | Temporal / Restate / WindowPilot adapters | Boundary documented; no runtime adapters | ◻ Not started |
+| G9 | Temporal / Restate / WindowPilot adapters | Temporal SDK Workflow + real local Worker/Activities + PostgreSQL idempotent receipt CI; Restate/WindowPilot not implemented | 🟡 Temporal prototype verified |
 | G11 | Mem0-inspired extraction and multi-signal retrieval | Architecture decision recorded; pipeline not yet implemented | ◻ Planned |
 | G12 | Realtime outbox + change feed + snapshot query | PostgreSQL events exist; durable outbox/subscription API missing | ◻ Planned |
-| G13 | Temporal durable orchestration adapter | Optional adapter only; no Temporal server dependency in core | ◻ Planned |
-| G10 | Interop spec + external reproducer | Independent external verification absent | ◻ Not started |
+| G13 | Temporal durable orchestration adapter | Optional SDK adapter; real local Temporal dev service CI, no Temporal dependency in core | 🟡 Prototype verified |
+| G10 | Interop spec + external reproducer | Versioned MemoryPort + local REST contract, authenticated tenant-scoped API tests; external adopter absent | 🟡 Prototype verified |
 
 ## Verified version profile
 
@@ -53,3 +53,30 @@ durable workflow control plane for long-running/retryable processes, never a
 synchronous retrieval dependency. Mem0 contributes extraction, deduplication,
 entity-aware and multi-signal retrieval patterns, not a required platform or
 a second source of truth.
+
+
+## Composability and public API gate (2026-11-09)
+
+- `MemoryPort` and capability discovery define a versioned public boundary.
+- Local REST routes: health, capability discovery, claim write, claim recall,
+  and optional hybrid search. REST-to-real-PostgreSQL write/read has a CI test.
+- Hybrid retrieval records vector/AGE degradation and continues with canonical
+  SQL; canonical SQL failure remains visible and is not silently hidden.
+- Temporal workflow/activities are optional; ordinary memory API does not
+  require a Temporal service.
+- Latest verified profile: unit, API contract, real Postgres/pgvector/AGE,
+  end-to-end data-flow and Temporal integration workflows are green on the
+  relevant commits. Re-run all workflows on the same release tag before cutting
+  a release; green historical runs on different commits are not one atomic
+  release qualification.
+
+Remaining critical gaps:
+1. Run a single release-candidate commit through every workflow.
+2. Add explicit kill/restart fault injection for AGE, vector, Temporal and object
+   backend, with measured recovery and no silent data loss.
+3. Add object backend protocol and external S3-compatible implementation.
+4. Complete public graph/object/time-series endpoints and SDK contract.
+5. Tenant isolation at DB boundary (RLS), key rotation, TLS, rate limiting,
+   audit, backup/restore and retention/erasure.
+6. Chinese retrieval benchmark: Recall@k, MRR/nDCG, p50/p95 latency, memory,
+   CPU and integration overhead on the same corpus.

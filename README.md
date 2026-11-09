@@ -31,10 +31,10 @@ See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sq
 - Complete bitemporal interval revision semantics
 - Automatic local embedding model, embedding model/version lifecycle and relevance evaluation
 - Full historical graph snapshots, orphan-vertex garbage collection and general graph rebuild/migration
-- Temporal / Restate integration
+- Restate and WindowPilot adapters; Temporal has an optional SDK workflow/worker prototype with real PostgreSQL Activities, but not a production deployment
 - Production-grade deletion, retention, backup, and observability
 
-## Quick start
+## Public interface prototype\n\nAn optional local REST gateway exposes `/v1/health`, `/v1/capabilities`, `/v1/memories`, and `/v1/search`. Install `.[api,postgres]`, set `MEMORY_DSN`, `MEMORY_API_KEY` (24+ characters), and `MEMORY_TENANT_ID`, then run `uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765`. The gateway is a single-tenant local prototype; it is not safe for public multi-tenant deployment. The search endpoint accepts caller-generated embeddings and reports degraded optional channels.\n\n## Quick start
 
 ```bash
 python -m pip install -e '.[dev,postgres]'
@@ -81,6 +81,4 @@ the service to untrusted networks.
 The runnable [end_to_end.py](examples/end_to_end.py) writes real sample entities,
 source provenance, a claim, graph edges, a time-series observation, an outbox
 event and a content-addressed object into the local stack, then queries AGE.
-Temporal is included in the target architecture as an optional open-source
-durable-execution adapter, but its SDK worker/service integration is not yet
-implemented.
+Temporal has an optional SDK workflow/worker adapter. GitHub Actions starts a real local Temporal development service and verifies PostgreSQL Activities plus idempotent receipts. This is an integration prototype, not a production Temporal cluster or complete execution API.

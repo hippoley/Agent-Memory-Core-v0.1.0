@@ -22,13 +22,13 @@ uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765
 
 The API cannot import or require Temporal, so it keeps serving core SQL
 memory when Temporal is not installed. Capability declarations conservatively
-report graph/vector/Temporal as unavailable until an adapter is configured.
+report graph/vector/Temporal as unavailable unless the application explicitly configures the corresponding adapter.
 
 **Not suitable for public multi-tenant deployment.** Missing RLS, TLS,
 rate-limits, identity lifecycle, object permissioning, deployment isolation,
 full lifecycle tests and meaningful availability SLOs.
 
-Investment conformance benchmark must compare 5 variants on the same dataset:
+The hybrid search implementation catches optional vector/AGE failures and preserves canonical SQL search; canonical SQL failures propagate. A fake-adapter resilience test and real PostgreSQL triple-store test cover these paths.\n\nInvestment conformance benchmark must compare 5 variants on the same dataset:
 SQL-only, SQL+vector, SQL+graph, all three and all three+Temporal.
 Combined value must exceed integration and operations costs, and be supported
 by external use and eventual actual paid pilots.

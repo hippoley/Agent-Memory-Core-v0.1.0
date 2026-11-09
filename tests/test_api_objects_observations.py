@@ -14,8 +14,31 @@ class FakeDB:
         self.entities = {}
         self.edges = []
         self.embedding_rows = []
+        self.memories = []
+        self.source_links = []
     def close(self):
         pass
+    def remember(self, **kwargs):
+        from datetime import datetime, timezone
+        old=kwargs.get("replaces_id")
+        if old:
+            for row in self.memories:
+                if row["id"]==old:
+                    row["superseded_at"]=datetime.now(timezone.utc)
+        mid=f"memory-{len(self.memories)+1}"
+        self.memories.append({"id":mid,"tenant_id":kwargs["tenant_id"],
+            "subject_id":kwargs["subject_id"],"predicate":kwargs["predicate"],
+            "value":kwargs["value"],"source_id":kwargs["source_id"],
+            "superseded_at":None})
+        return mid
+    def recall(self, *, tenant_id, subject_id, predicate=None, valid_at=None, known_at=None):
+        return [row for row in reversed(self.memories)
+            if row["tenant_id"]==tenant_id and row["subject_id"]==subject_id
+            and (predicate is None or row["predicate"]==predicate)
+            and row["superseded_at"] is None]
+    def link_claim_source(self, **kwargs):
+        self.source_links.append(kwargs)
+        return True
     def record_observation(self, **kwargs):
         key=(kwargs["tenant_id"],kwargs["device_id"],kwargs["source_event_id"])
         old=self.observations_data.get(key)
@@ -220,3 +243,57 @@ def test_memory_provenance_sources_are_exposed(tmp_path):
     response=client.get("/v1/memories/memory-1/sources",headers=headers)
     assert response.status_code==200
     assert response.json()["sources"][0]["source_id"]=="conversation-1"
+
+
+def test_observation_event_time_aggregation_api(tmp_path):
+    client,headers=make_client(tmp_path)
+    for event_id,stamp,value in [
+        ("evt-a","2026-11-09T10:00:00+08:00",10.0),
+        ("evt-b","2026-11-09T11:00:00+08:00",20.0),
+        ("evt-c","2026-11-09T12:00:00+08:00",30.0),
+    ]:
+        body={"device_id":"sensor-1","source_event_id":event_id,
+              "observed_at":stamp,"property":"co2","value":value,
+              "unit":"ppm","source_id":"sensor-gateway"}
+        assert client.post("/v1/observations",json=body,headers=headers).status_code==201
+    response=client.get(
+        "/v1/observations/sensor-1/aggregate",
+        params={"property":"co2","start_at":"2026-11-09T10:00:00+08:00",
+                "end_at":"2026-11-09T12:00:00+08:00"},headers=headers)
+    assert response.status_code==200,response.text
+    assert response.json()["aggregate"]["count"]==2
+    assert response.json()["aggregate"]["min"]==10.0
+    assert response.json()["aggregate"]["max"]==20.0
+    assert response.json()["aggregate"]["avg"]==15.0
+
+
+def test_memory_processing_endpoint_deduplicates_and_versions_facts(tmp_path):
+    client,headers=make_client(tmp_path)
+    response=client.post("/v1/memories/process",headers=headers,json={
+        "text":"The bedroom should be quiet, now prefer normal noise.",
+        "source_id":"conversation:session-42",
+        "confidence_threshold":0.65,
+        "candidates":[
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"quiet"},"confidence":0.99},
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"quiet"},"confidence":0.97},
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"normal"},"confidence":0.91},
+            {"subject_id":"bedroom-1","predicate":"noise_preference",
+             "value":{"level":"loud"},"confidence":0.2}
+        ]})
+    assert response.status_code==200,response.text
+    body=response.json()
+    assert len(body["created"])==2
+    assert body["duplicates"]==1
+    assert body["rejected"]==1
+    assert len(body["replaced"])==1
+
+
+def test_memory_processing_rejects_missing_provenance(tmp_path):
+    client,headers=make_client(tmp_path)
+    response=client.post("/v1/memories/process",headers=headers,json={
+        "text":"hello","source_id":"","candidates":[
+            {"subject_id":"room-1","predicate":"p","value":{"x":1}}]})
+    assert response.status_code==422

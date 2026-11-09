@@ -37,6 +37,20 @@ def test_real_postgres_pgvector_age():
         with pytest.raises(PermissionError):
             db.store_embedding(tenant_id="wrong-"+tenant,memory_id=mid,model_id="test384",vector=vec)
         assert db.vector_search(tenant_id=tenant,model_id="test384",vector=vec)[0][0]==mid
+        # 512-dimensional BGE-small-zh-v1.5 profile compatibility (fixture only).
+        vec512=[0.0]*512
+        vec512[0]=1.0
+        db.store_embedding(tenant_id=tenant,memory_id=mid,
+                           model_id="BAAI/bge-small-zh-v1.5",vector=vec512)
+        assert db.vector_search(tenant_id=tenant,
+            model_id="BAAI/bge-small-zh-v1.5",vector=vec512)[0][0]==mid
+        with pytest.raises(ValueError):
+            db.vector_search(tenant_id=tenant,
+                model_id="BAAI/bge-small-zh-v1.5",vector=vec)
+        with pytest.raises(ValueError):
+            db.store_embedding(tenant_id=tenant,memory_id=mid,
+                model_id="BAAI/bge-small-zh-v1.5",vector=vec)
+
 
         db.add_edge(tenant_id=tenant,from_entity="room-1",predicate="HAS_WINDOW",to_entity="window-1",
                     source_memory_id=mid)

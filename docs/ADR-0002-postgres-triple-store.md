@@ -57,3 +57,13 @@ versions. Full effective-date interval splitting remains a separate gate.
 
 The index is exact by default to avoid filtered HNSW neighbor starvation;
 tenant-partitioned ANN requires Recall@k/P95 evidence before activation.
+
+## Embedding profile compatibility
+
+The legacy SQL table has `vector(384)`. The local Chinese candidate
+`BAAI/bge-small-zh-v1.5` outputs 512 dimensions. Both profiles now have
+separate columns/indexes and a per-tenant model-dimension registry. A single
+model ID cannot silently switch dimensions. Tests use fixture vectors, not
+actual model inference or retrieval-quality benchmarks.
+
+See https://huggingface.co/BAAI/bge-small-zh-v1.5 for 512-dimension model.

@@ -31,6 +31,20 @@ CREATE TABLE IF NOT EXISTS memory_events (
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (tenant_id,event_id)
 );
+CREATE TABLE IF NOT EXISTS memory_embedding_models (
+  tenant_id text NOT NULL,
+  model_id text NOT NULL,
+  dimensions integer NOT NULL CHECK (dimensions IN (384,512)),
+  PRIMARY KEY (tenant_id,model_id)
+);
+CREATE TABLE IF NOT EXISTS memory_embeddings_512 (
+  memory_id uuid NOT NULL REFERENCES memory_claims(id) ON DELETE CASCADE,
+  model_id text NOT NULL,
+  embedding vector(512) NOT NULL,
+  PRIMARY KEY(memory_id,model_id)
+);
+CREATE INDEX IF NOT EXISTS memory_embeddings_512_hnsw
+  ON memory_embeddings_512 USING hnsw (embedding vector_cosine_ops);
 CREATE TABLE IF NOT EXISTS memory_embeddings (
   memory_id uuid NOT NULL REFERENCES memory_claims(id) ON DELETE CASCADE,
   model_id text NOT NULL,

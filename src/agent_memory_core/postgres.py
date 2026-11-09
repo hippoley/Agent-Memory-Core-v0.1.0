@@ -82,18 +82,39 @@ class PostgresMemory:
                 "recorded_at","superseded_at","object_sha256")
         return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
 
+    @staticmethod
+    def _embedding_table(dimension: int) -> str:
+        # Table identifiers are deliberately chosen from an internal whitelist.
+        if dimension == 384:
+            return "memory_embeddings"
+        if dimension == 512:
+            return "memory_embeddings_512"
+        raise ValueError("Unsupported embedding dimension")
+
     def store_embedding(self, *, tenant_id: str, memory_id: str,
                         model_id: str, vector: list[float]) -> None:
-        if not tenant_id or not model_id or len(vector) != 384:
-            raise ValueError("Tenant, model and 384-dimensional vector required")
+        if not tenant_id or not model_id:
+            raise ValueError("Tenant and embedding model required")
         literal = vector_literal(vector)
+        dimension = len(vector)
+        table = self._embedding_table(dimension)
         with self.conn.transaction():
+            self.conn.execute(
+                """INSERT INTO memory_embedding_models(tenant_id,model_id,dimensions)
+                   VALUES (%s,%s,%s) ON CONFLICT (tenant_id,model_id) DO NOTHING""",
+                (tenant_id,model_id,dimension))
+            known_dimension = self.conn.execute(
+                """SELECT dimensions FROM memory_embedding_models
+                   WHERE tenant_id=%s AND model_id=%s FOR UPDATE""",
+                (tenant_id,model_id)).fetchone()[0]
+            if known_dimension != dimension:
+                raise ValueError("Embedding model ID is already bound to another dimension")
             result = self.conn.execute(
-                """INSERT INTO memory_embeddings(memory_id,model_id,embedding)
-                   SELECT id,%s,%s::vector FROM memory_claims
-                   WHERE id=%s AND tenant_id=%s
-                   ON CONFLICT (memory_id,model_id)
-                   DO UPDATE SET embedding=EXCLUDED.embedding""",
+                f"""INSERT INTO {table}(memory_id,model_id,embedding)
+                    SELECT id,%s,%s::vector FROM memory_claims
+                    WHERE id=%s AND tenant_id=%s
+                    ON CONFLICT (memory_id,model_id)
+                    DO UPDATE SET embedding=EXCLUDED.embedding""",
                 (model_id,literal,memory_id,tenant_id))
             if result.rowcount != 1:
                 raise PermissionError("Memory does not belong to requested tenant")
@@ -101,21 +122,30 @@ class PostgresMemory:
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
                       limit: int = 10, valid_at: datetime | None = None,
                       known_at: datetime | None = None) -> list[tuple[str,float]]:
-        """Exact bitemporal vector retrieval within one tenant.
+        """Exact, tenant- and bitemporal-scoped cosine search.
 
-        Materialize the canonical time/tenant scoped candidates BEFORE scoring:
-        naive ANN+WHERE postfiltering can silently under-return neighbors, and
-        filtering by *current* supersession would break historical as-of search.
+        Legacy 384-dimensional models and Chinese 512-dimensional models use
+        separate tables/ANN indexes; the model registry prevents accidental
+        mixing of vector dimensions under one tenant/model ID.
         """
         if not tenant_id or not model_id or not (1 <= limit <= 100):
             raise ValueError("Invalid tenant, embedding model or limit")
-        known_at = aware(known_at or datetime.now(timezone.utc))
-        valid_at = aware(valid_at or known_at)
         literal = vector_literal(vector)
-        rows = self.conn.execute(
-            """WITH scoped AS MATERIALIZED (
-                 SELECT e.memory_id, e.embedding
-                 FROM memory_embeddings e
+        dimension=len(vector)
+        table=self._embedding_table(dimension)
+        known_at=aware(known_at or datetime.now(timezone.utc))
+        valid_at=aware(valid_at or known_at)
+        profile=self.conn.execute(
+            """SELECT dimensions FROM memory_embedding_models
+               WHERE tenant_id=%s AND model_id=%s""",
+            (tenant_id,model_id)).fetchone()
+        if profile is None:
+            return []
+        if profile[0] != dimension:
+            raise ValueError("Query dimension disagrees with registered embedding model")
+        rows=self.conn.execute(
+            f"""WITH scoped AS MATERIALIZED (
+                 SELECT e.memory_id,e.embedding FROM {table} e
                  JOIN memory_claims c ON c.id=e.memory_id
                  WHERE c.tenant_id=%s AND e.model_id=%s
                    AND c.recorded_at<=%s

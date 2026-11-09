@@ -48,7 +48,7 @@ class SearchRequest(BaseModel):
 
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
-               search_factory=None, capability_flags=None):
+               search_factory=None, object_store_factory=None, capability_flags=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")

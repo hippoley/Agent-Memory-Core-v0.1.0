@@ -30,7 +30,7 @@
 | GET | `/v1/events` | 事件游标回放 |
 | GET | `/v1/events/stream` | SSE 实时事件流 |
 
-Temporal 目前是独立 SDK Workflow 原型，不提供通用 Workflow REST 生命周期 API。
+Temporal 目前提供一个有限的记忆验证 Workflow REST 生命周期（启动、状态查询、取消请求）；Worker 仍需独立部署，不是通用工作流编排平台。
 
 ## 二、安装与启动
 
@@ -245,3 +245,35 @@ pytest -q -m integration
 ## 七、生产部署前仍需完成
 
 数据库 RLS、密钥轮换/撤销、TLS、速率限制、审计、对象保留与删除、备份恢复、Outbox 死信与投影任务拆分、Temporal Worker 运行治理、记忆加工并发幂等、中文检索/抽取评测，以及 p50/p95 和故障恢复测试。
+
+
+### 9. Temporal 记忆验证工作流
+
+API 与 Worker 分开运行。配置 API：
+
+```bash
+export MEMORY_TEMPORAL_ADDRESS=localhost:7233
+export MEMORY_TEMPORAL_NAMESPACE=default
+export MEMORY_TEMPORAL_TASK_QUEUE=agent-memory-core
+```
+
+另起一个 Worker 进程：
+
+```bash
+python -m pip install -e '.[temporal,postgres]'
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.temporal_worker
+```
+
+启动记忆验证：
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/workflows/memory-verifications \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"memory_id":"<existing-claim-uuid>","workflow_id":"verify-claim-001"}'
+```
+
+响应中的 workflow_id 已由服务端加上租户前缀。后续使用完整 ID 调用 `GET /v1/workflows/{workflow_id}` 查询，或调用 `POST /v1/workflows/{workflow_id}/cancel` 请求取消。跨租户 workflow ID 会返回 404。
+
+目前只注册了 VerifyMemoryWorkflow。尚未实现任意 Workflow 注册、Signal/Update、通用长期任务调度、Worker 自动扩缩容和生产 Temporal 集群运维。取消工作流也不等于回滚已发生的外部副作用。

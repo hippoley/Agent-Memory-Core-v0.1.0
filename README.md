@@ -82,3 +82,14 @@ The runnable [end_to_end.py](examples/end_to_end.py) writes real sample entities
 source provenance, a claim, graph edges, a time-series observation, an outbox
 event and a content-addressed object into the local stack, then queries AGE.
 Temporal has an optional SDK workflow/worker adapter. GitHub Actions starts a real local Temporal development service and verifies PostgreSQL Activities plus idempotent receipts. This is an integration prototype, not a production Temporal cluster or complete execution API.
+
+
+## Swagger/OpenAPI for third-party integration
+
+- **[中文接入教程与 API 状态说明](docs/SWAGGER_GUIDE.zh-CN.md)**
+- Live interactive UI: `http://127.0.0.1:8765/docs` after local launch.
+- Machine-readable OpenAPI: `http://127.0.0.1:8765/openapi.json`.
+- Regenerate offline: `python scripts/export_openapi.py docs/openapi.generated.json`.
+- GitHub Actions `public-api-contract` runs generated schema/security tests and uploads the JSON file as an artifact.
+
+The contract is intentionally limited to implemented routes; graph, objects, time-series writes and Temporal workflows currently require Python modules, not HTTP. See the Chinese guide for complete examples and exclusions.

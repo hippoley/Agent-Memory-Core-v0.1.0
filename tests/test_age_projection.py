@@ -32,3 +32,10 @@ def test_no_dynamic_edge_type():
                               predicate="NOT_A_LABEL",to_entity="b")
     assert "r.predicate" in stmt
     assert "[:NOT_A_LABEL]" not in stmt
+
+def test_delete_cypher_escaped_fixed_label():
+    from agent_memory_core.age_graph import edge_delete_cypher
+    stmt=edge_delete_cypher(tenant_id='t"\\n',edge_id='id} DELETE ALL')
+    assert "MATCH ()-[r:MEMORY_REL" in stmt
+    assert "DELETE r RETURN r" in stmt
+    assert 'id} DELETE ALL' in stmt

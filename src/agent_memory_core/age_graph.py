@@ -49,6 +49,16 @@ def edge_upsert_cypher(*, tenant_id: str, edge_id: str, from_entity: str,
     )
 
 
+def edge_delete_cypher(*, tenant_id: str, edge_id: str) -> str:
+    """Delete only the typed edge addressed by tenant and canonical edge ID."""
+    tenant=_cypher_string(tenant_id)
+    eid=_cypher_string(edge_id)
+    return (
+        f"MATCH ()-[r:MEMORY_REL {{edge_id: {eid}, tenant_id: {tenant}}}]->() "
+        "DELETE r RETURN r"
+    )
+
+
 def graph_neighbors_cypher(*, tenant_id: str, from_entity: str, hops: int = 1) -> str:
     """Traversal with bounded, validated hop count; no user-controlled label names."""
     if hops not in (1, 2):
@@ -127,7 +137,12 @@ class AgeProjection:
                 edge = self.conn.execute("""
                     SELECT e.edge_id::text, e.from_entity, e.predicate, e.to_entity
                     FROM memory_edges e
-                    WHERE e.tenant_id=%s
+                    WHERE e.tenant_id=%s AND e.retired_at IS NULL
+                      AND (e.source_memory_id IS NULL
+                           OR EXISTS (
+                               SELECT 1 FROM memory_claims c
+                               WHERE c.id=e.source_memory_id
+                                 AND c.superseded_at IS NULL))
                       AND NOT EXISTS (SELECT 1 FROM memory_graph_projection p
                                       WHERE p.edge_id=e.edge_id)
                     ORDER BY e.recorded_at,e.edge_id
@@ -154,6 +169,39 @@ class AgeProjection:
                 )
                 projected += 1
         return ProjectionProgress(attempted=limit, projected=projected)
+
+    def reconcile_invalidated(self, *, tenant_id: str, limit: int = 100) -> int:
+        """Remove projected edges that were retired or whose evidence was superseded.
+
+        Same-transaction AGE DELETE and ledger DELETE permit replay after a crash.
+        This does not garbage-collect orphaned vertices and does not support
+        historical AGE snapshots.
+        """
+        if not tenant_id or not (1 <= limit <= 1000):
+            raise ValueError("Invalid tenant or limit")
+        removed=0
+        for _ in range(limit):
+            with self.conn.transaction():
+                row=self.conn.execute("""
+                    SELECT e.edge_id::text
+                    FROM memory_edges e
+                    JOIN memory_graph_projection p ON p.edge_id=e.edge_id
+                    LEFT JOIN memory_claims c ON c.id=e.source_memory_id
+                    WHERE e.tenant_id=%s
+                      AND (e.retired_at IS NOT NULL
+                           OR (e.source_memory_id IS NOT NULL
+                               AND c.superseded_at IS NOT NULL))
+                    ORDER BY e.recorded_at,e.edge_id
+                    LIMIT 1 FOR UPDATE OF e SKIP LOCKED
+                """,(tenant_id,)).fetchone()
+                if row is None:
+                    break
+                edge_id=row[0]
+                self._cypher(edge_delete_cypher(tenant_id=tenant_id, edge_id=edge_id))
+                self.conn.execute(
+                    "DELETE FROM memory_graph_projection WHERE edge_id=%s",(edge_id,))
+                removed+=1
+        return removed
 
     def neighbors(self, *, tenant_id: str, from_entity: str, hops: int = 1) -> list[str]:
         if not tenant_id or not from_entity:

@@ -35,3 +35,15 @@ The API bounds traversal to one or two hops.
 Apache AGE documents Cypher MERGE and SQL transaction integration:
 https://age.apache.org/age-manual/master/clauses/merge.html
 https://age.apache.org/age-manual/master/intro/cypher.html
+
+## Lifecycle invalidation
+
+Sourced relations become invalid after `memory_claims.superseded_at` is set.
+Explicitly retired edges set `memory_edges.retired_at`. Projection skips both
+classes and `reconcile_invalidated(tenant_id)` removes invalid relationships
+and their ledger rows in one PostgreSQL transaction. The operation is retryable.
+It must be scheduled before relying on graph traversal for fresh data.
+
+Limitations: old graph snapshots are not preserved, orphaned vertices remain,
+hard-deleting canonical edges is unsupported, and no independent verification
+of physical device states is implied.

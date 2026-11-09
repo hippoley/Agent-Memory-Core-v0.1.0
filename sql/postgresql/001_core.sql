@@ -49,8 +49,10 @@ CREATE TABLE IF NOT EXISTS memory_edges (
   predicate text NOT NULL,
   to_entity text NOT NULL,
   source_memory_id uuid REFERENCES memory_claims(id),
-  recorded_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  retired_at timestamptz
 );
+ALTER TABLE memory_edges ADD COLUMN IF NOT EXISTS retired_at timestamptz;
 CREATE INDEX IF NOT EXISTS memory_edges_adj
 ON memory_edges(tenant_id,from_entity,predicate,to_entity);
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from .vector_validation import vector_literal
 from uuid import uuid4
 import json
 
@@ -84,7 +85,7 @@ class PostgresMemory:
                         model_id: str, vector: list[float]) -> None:
         if not tenant_id or not model_id or len(vector) != 384:
             raise ValueError("Tenant, model and 384-dimensional vector required")
-        literal = "[" + ",".join(str(float(x)) for x in vector) + "]"
+        literal = vector_literal(vector)
         with self.conn.transaction():
             result = self.conn.execute(
                 """INSERT INTO memory_embeddings(memory_id,model_id,embedding)
@@ -98,16 +99,26 @@ class PostgresMemory:
 
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
                       limit: int = 10) -> list[tuple[str,float]]:
-        if len(vector)!=384 or not (1<=limit<=100):
-            raise ValueError("Invalid vector dimension or limit")
-        literal = "[" + ",".join(str(float(x)) for x in vector) + "]"
-        # Join before returning any candidate, then enforce tenant filter.
+        """Exact correctness path: tenant filtering precedes distance ordering.
+
+        A shared HNSW index can under-return under selective tenant filters.
+        This materialized subset deliberately avoids approximate candidate
+        starvation until tenant-aware ANN has real Recall@k benchmarks.
+        """
+        if not tenant_id or not model_id or not (1 <= limit <= 100):
+            raise ValueError("Invalid tenant, embedding model or limit")
+        literal = vector_literal(vector)
         rows = self.conn.execute(
-            """SELECT c.id::text, (e.embedding <=> %s::vector) AS distance
-               FROM memory_embeddings e JOIN memory_claims c ON c.id=e.memory_id
-               WHERE c.tenant_id=%s AND e.model_id=%s AND c.superseded_at IS NULL
-               ORDER BY e.embedding <=> %s::vector LIMIT %s""",
-            (literal, tenant_id, model_id, literal, limit))
+            """WITH scoped AS MATERIALIZED (
+                 SELECT e.memory_id, e.embedding
+                 FROM memory_embeddings e
+                 JOIN memory_claims c ON c.id=e.memory_id
+                 WHERE c.tenant_id=%s AND e.model_id=%s
+                   AND c.superseded_at IS NULL
+               )
+               SELECT memory_id::text, embedding <=> %s::vector AS distance
+               FROM scoped ORDER BY distance,memory_id LIMIT %s""",
+            (tenant_id,model_id,literal,limit))
         return [(r[0],float(r[1])) for r in rows]
 
     def add_edge(self, *, tenant_id: str, from_entity: str, predicate: str,
@@ -128,6 +139,21 @@ class PostgresMemory:
                 (eid,tenant_id,from_entity,predicate,to_entity,source_memory_id))
         return str(eid)
 
+
+    def retire_edge(self, *, tenant_id: str, edge_id: str) -> bool:
+        """Logically retire an edge; AGE projection reconciliation is separate.
+
+        No physical graph deletion happens here. Call AgeProjection.reconcile_invalidated
+        after this and whenever sourced memories are superseded.
+        """
+        if not tenant_id or not edge_id:
+            raise ValueError("Tenant and edge ID are required")
+        with self.conn.transaction():
+            row = self.conn.execute(
+                """UPDATE memory_edges SET retired_at=clock_timestamp()
+                   WHERE tenant_id=%s AND edge_id=%s AND retired_at IS NULL
+                   RETURNING edge_id""", (tenant_id,edge_id)).fetchone()
+        return row is not None
 
     def record_observation(self, *, tenant_id: str, device_id: str,
                            source_event_id: str, observed_at: datetime,
@@ -186,5 +212,5 @@ class PostgresMemory:
     def outgoing_edges(self, *, tenant_id: str, from_entity: str) -> list[tuple[str,str]]:
         return list(self.conn.execute(
             """SELECT predicate,to_entity FROM memory_edges
-               WHERE tenant_id=%s AND from_entity=%s ORDER BY predicate,to_entity""",
+               WHERE tenant_id=%s AND from_entity=%s AND retired_at IS NULL ORDER BY predicate,to_entity""",
             (tenant_id,from_entity)))

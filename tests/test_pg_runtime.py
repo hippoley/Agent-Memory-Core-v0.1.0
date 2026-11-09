@@ -95,5 +95,24 @@ def test_real_postgres_pgvector_age():
                     source_memory_id=mid)
         assert age.project_pending(tenant_id=tenant).projected==1
         assert special in age.neighbors(tenant_id=tenant,from_entity="room-1")
+
+        # Superseding the sourced claim invalidates graph relationships.
+        db.remember(tenant_id=tenant,subject_id="room-1",predicate="preference",
+                    value={"text":"prefer ventilation"},source_id="user-correction",
+                    valid_from=datetime(2026,11,8,tzinfo=timezone.utc),
+                    replaces_id=mid)
+        assert age.reconcile_invalidated(tenant_id=tenant) == 3
+        assert age.neighbors(tenant_id=tenant,from_entity="room-1") == []
+        assert age.project_pending(tenant_id=tenant).projected == 0
+
+        # Explicit retirement is also a monotonic, repeat-safe operation.
+        new_edge=db.add_edge(tenant_id=tenant,from_entity="room-1",
+                             predicate="WINDOW",to_entity="window-current")
+        assert age.project_pending(tenant_id=tenant).projected == 1
+        assert "window-current" in age.neighbors(tenant_id=tenant,from_entity="room-1")
+        assert db.retire_edge(tenant_id=tenant,edge_id=new_edge)
+        assert not db.retire_edge(tenant_id=tenant,edge_id=new_edge)
+        assert age.reconcile_invalidated(tenant_id=tenant) == 1
+        assert "window-current" not in age.neighbors(tenant_id=tenant,from_entity="room-1")
     finally:
         db.close()

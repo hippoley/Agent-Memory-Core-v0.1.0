@@ -12,6 +12,10 @@ EXPECTED={
     "/v1/memories":{"post"},
     "/v1/memories/{subject_id}":{"get"},
     "/v1/search":{"post"},
+    "/v1/objects":{"put"},
+    "/v1/objects/{digest}":{"get"},
+    "/v1/observations":{"post"},
+    "/v1/observations/{device_id}":{"get"},
 }
 
 def spec():
@@ -55,7 +59,7 @@ def test_response_and_request_models_are_described():
 
 def test_no_unimplemented_operations_exposed():
     exposed=set(spec()["paths"])
-    for prefix in ("/v1/objects","/v1/workflows","/v1/knowledge-bases",
+    for prefix in ("/v1/workflows","/v1/knowledge-bases",
                    "/v1/graph","/v1/documents","/v1/stream"):
         assert not any(p.startswith(prefix) for p in exposed)
 

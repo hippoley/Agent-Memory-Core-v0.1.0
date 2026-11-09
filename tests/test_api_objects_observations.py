@@ -29,13 +29,26 @@ class FakeDB:
             "event_type":"memory.observation.recorded","payload":{"device_id":kwargs["device_id"]},
             "recorded_at":kwargs["observed_at"]})
         return True
-    def observations(self, *, tenant_id, device_id, property, limit=100):
+    def observations(self, *, tenant_id, device_id, property, limit=100, start_at=None, end_at=None):
         rows=[]
         for (t,d,e),v in self.observations_data.items():
             if (t,d)==(tenant_id,device_id) and v[1]==property:
                 rows.append({"source_event_id":e,"observed_at":v[0],"property":v[1],
                              "measured_value":v[2],"unit":v[3],"source_id":v[4]})
+        if start_at is not None:
+            rows=[r for r in rows if r["observed_at"] >= start_at]
+        if end_at is not None:
+            rows=[r for r in rows if r["observed_at"] < end_at]
         return rows[:limit]
+    def aggregate_observations(self, *, tenant_id, device_id, property, start_at, end_at):
+        import statistics
+        values=[v[2] for (t,d,_),v in self.observations_data.items()
+                if t==tenant_id and d==device_id and v[1]==property
+                and v[0]>=start_at and v[0]<end_at]
+        return {"count":len(values),"min":min(values) if values else None,
+                "max":max(values) if values else None,
+                "avg":statistics.mean(values) if values else None,
+                "start_at":start_at,"end_at":end_at}
     def upsert_entity(self, **kwargs):
         self.entities[kwargs["entity_id"]]=kwargs
     def resolve_entity(self, *, tenant_id, name):

@@ -52,13 +52,30 @@ def object_store_factory():
     raise RuntimeError("MEMORY_OBJECT_BACKEND must be 'local' or 's3'")
 
 
+
+async def temporal_client_factory():
+    try:
+        from temporalio.client import Client
+    except ImportError as exc:
+        raise RuntimeError("Install agent-memory-core[temporal]") from exc
+    address=os.getenv("MEMORY_TEMPORAL_ADDRESS")
+    if not address:
+        raise RuntimeError("MEMORY_TEMPORAL_ADDRESS is not configured")
+    return await Client.connect(
+        address,
+        namespace=os.getenv("MEMORY_TEMPORAL_NAMESPACE","default"),
+    )
+
+
 flags = {
     "semantic": os.getenv("MEMORY_ENABLE_VECTOR", "0") == "1",
     "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1",
     "objects": True,
-    "temporal": False,
+    "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
 }
 
 app = create_app(search_factory=search_factory,
                  object_store_factory=object_store_factory,
-                 capability_flags=flags)
+                 capability_flags=flags,
+                 temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
+                 temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE"))

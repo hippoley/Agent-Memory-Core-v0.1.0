@@ -34,7 +34,20 @@ See [ADR-0002](docs/ADR-0002-postgres-triple-store.md) and [PostgreSQL setup](sq
 - Restate and WindowPilot adapters; Temporal has an optional SDK workflow/worker prototype with real PostgreSQL Activities, but not a production deployment
 - Production-grade deletion, retention, backup, and observability
 
-## Public interface prototype\n\nAn optional local REST gateway exposes `/v1/health`, `/v1/capabilities`, `/v1/memories`, and `/v1/search`. Install `.[api,postgres]`, set `MEMORY_DSN`, `MEMORY_API_KEY` (24+ characters), and `MEMORY_TENANT_ID`, then run `uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765`. The gateway is a single-tenant local prototype; it is not safe for public multi-tenant deployment. The search endpoint accepts caller-generated embeddings and reports degraded optional channels.\n\n## Quick start
+## Public interface prototype\n\nAn optional local REST gateway exposes `/v1/health`, `/v1/capabilities`, `/v1/memories`, and `/v1/search`. Install `.[api,postgres]`, set `MEMORY_DSN`, `MEMORY_API_KEY` (24+ characters), and `MEMORY_TENANT_ID`, then run `uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8765`. The gateway is a single-tenant local prototype; it is not safe for public multi-tenant deployment. The search endpoint accepts caller-generated embeddings and reports degraded optional channels.\n\n## Third-party API and Swagger
+
+The authenticated REST prototype publishes Swagger UI at `/docs`, ReDoc at
+`/redoc`, and the generated OpenAPI 3.x contract at `/openapi.json` when
+the service is running. See [API Reference and Third-party Integration Guide](docs/API-REFERENCE.md)
+for installation, credentials, curl examples, bitemporal queries, hybrid search,
+and a precise list of backend features not yet exposed over HTTP.
+
+The public HTTP surface is currently limited to health/readiness, capability
+discovery, claim write/read, and configured hybrid search. It is not yet a
+complete external API for embedding ingestion, graph edge management, objects,
+observations, realtime subscriptions or Temporal workflows.
+
+## Quick start
 
 ```bash
 python -m pip install -e '.[dev,postgres]'

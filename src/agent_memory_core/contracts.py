@@ -11,14 +11,19 @@ class Capability:
     available: bool
     reason: str = ""
 
-def capabilities(*,graph=False,semantic=False,temporal=False,objects=False):
+def capabilities(*,graph=False,semantic=False,temporal=False,objects=False,
+                 observations=True,events=True,processing=True):
     return [asdict(x) for x in (
         Capability("memory.claims",True),
         Capability("memory.bitemporal",True),
-        Capability("memory.vector",semantic,"local encoder/adapter required" if not semantic else ""),
+        Capability("memory.processing",processing,"structured extractor candidates required" if processing else "memory processing is disabled"),
+        Capability("memory.vector",semantic,"caller-generated embeddings; vector index disabled" if not semantic else ""),
         Capability("memory.graph",graph,"AGE adapter not enabled" if not graph else ""),
         Capability("memory.objects",objects,"object adapter not enabled" if not objects else ""),
-        Capability("workflow.temporal",temporal,"Temporal adapter not enabled" if not temporal else "")
+        Capability("memory.observations",observations,"observation API is disabled" if not observations else ""),
+        Capability("events.replay",events,"durable event replay is disabled" if not events else ""),
+        Capability("events.sse",events,"SSE event stream is disabled" if not events else ""),
+        Capability("workflow.temporal",temporal,"Temporal worker is not enabled" if not temporal else "")
     )]
 
 class MemoryPort(Protocol):

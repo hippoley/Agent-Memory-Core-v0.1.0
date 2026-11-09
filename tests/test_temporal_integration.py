@@ -26,17 +26,19 @@ def test_temporal_postgres_and_idempotent_receipt():
                 source_id="user-1",valid_from=datetime(2026,11,1,tzinfo=timezone.utc))
         finally:
             db.close()
+        from concurrent.futures import ThreadPoolExecutor
         async with await WorkflowEnvironment.start_local() as env:
             queue="memory-"+uuid4().hex
-            async with Worker(env.client,task_queue=queue,
-                workflows=[VerifyMemoryWorkflow],
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                async with Worker(env.client,task_queue=queue,
+                activity_executor=executor,workflows=[VerifyMemoryWorkflow],
                 activities=[verify_memory_record,write_memory_verification_receipt]):
-                request={"tenant_id":tenant,"memory_id":claim}
-                a=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
-                    id="verify-"+claim,task_queue=queue)
-                b=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
-                    id="reverify-"+claim,task_queue=queue)
-                assert a==b and a["active"] and a["source_id"]=="user-1"
+                    request={"tenant_id":tenant,"memory_id":claim}
+                    a=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
+                        id="verify-"+claim,task_queue=queue)
+                    b=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
+                        id="reverify-"+claim,task_queue=queue)
+                    assert a==b and a["active"] and a["source_id"]=="user-1"
         db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
         try:
             n=db.conn.execute(

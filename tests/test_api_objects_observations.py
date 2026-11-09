@@ -147,3 +147,18 @@ def test_durable_event_replay_uses_cursor_and_auth(tmp_path):
     second=client.get("/v1/events",params={"after":cursor,"limit":10},headers=headers)
     assert [e["event_id"] for e in second.json()["items"]]==["event-2"]
     assert client.get("/v1/events").status_code==401
+
+
+def test_sse_stream_emits_event_id_and_replay_payload(tmp_path):
+    client,headers=make_client(tmp_path)
+    body={"device_id":"window-1","source_event_id":"event-stream-1",
+          "observed_at":"2026-11-09T10:00:00+08:00","property":"angle",
+          "value":35.0,"unit":"degree","source_id":"gateway-1"}
+    assert client.post("/v1/observations",json=body,headers=headers).status_code==201
+    with client.stream("GET","/v1/events/stream",headers=headers) as response:
+        assert response.status_code==200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        lines=response.iter_lines()
+        assert next(lines)=="id: event-stream-1"
+        assert next(lines)=="event: memory.observation.recorded"
+        assert next(lines).startswith("data: ")

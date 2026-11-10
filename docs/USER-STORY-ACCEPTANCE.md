@@ -15,12 +15,12 @@
 | S01 接入 | 无凭证拒绝，有效 key 访问 readiness | `test_user_story_e2e.py`, `test_sdk_contract.py` | 已有真实 API 测试 |
 | S02 中文理解 | 口语→本地模型→有主体/谓词/值/来源的候选，不虚构 | `test_local_extractor.py`, `scripts/evaluate_local_extractor.py` | 本地 Ollama 适配器与严格候选 Schema 已测；200 条人工裁定语料上的真实模型质量**未测**，不得标 Done |
 | S03 原子写入 | 请求结束后新连接能读到事实、来源、时间和 outbox | `test_user_story_e2e.py`, `test_pg_runtime.py` | 真 PostgreSQL 测试 |
-| S04 加工纠正 | 去重、否定、冲突、实体消歧、历史版本均正确 | `test_processing.py`, `test_user_story_e2e.py` | 仅结构化候选纠正；复杂否定**未完成** |
+| S04 加工纠正 | 去重、否定、冲突、实体消歧、历史版本均正确 | `test_processing.py`, `test_processing_concurrency.py`, `test_user_story_e2e.py` | PostgreSQL 同键候选现以 advisory lock 原子去重/版本化，并保留多来源证据；真实模型复杂否定、指代及歧义质量**未完成** |
 | S05 投影 | FTS、向量、AGE 独立任务，成功状态不能互相冒充 | `test_concrete_projections.py`, `test_projection_deliveries.py` | 真实数据库路径，质量另测 |
 | S06 检索 | 正确当前记忆、证据、双时间，跨渠道排序可解释 | `test_user_story_e2e.py`, `test_hybrid.py`, `scripts/evaluate_retrieval.py` | SQL/FTS/vector/AGE 机制可测；200 条中文查询集上的 Recall@5、MRR@10 **未测** |
 | S07 纠正 | 当前仅新事实；known_at=纠正前仍返回旧事实 | `test_user_story_e2e.py` | 真实数据库测试 |
 | S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_webhooks_integration.py`, `test_webhook_api_integration.py`, `test_sdk_contract.py` | Webhook 订阅、签名、退避、死信、重放已实现；真实 PG 集成 CI 通过；外部真实接收端尚未实测 |
-| S09 故障恢复 | DB/Worker 故障后任务可重试、DLQ 重放、无静默丢数据 | `test_projection_deliveries.py`, `test_outbox_runtime.py` | 投影与事务 Outbox 已有有界重试、死信及人工重放；真实进程杀死、数据库重启、积压恢复与备份恢复**未完成** |
+| S09 故障恢复 | DB/Worker 故障后任务可重试、DLQ 重放、无静默丢数据 | `test_projection_deliveries.py`, `test_outbox_runtime.py`, `test_outbox_api_integration.py` | 投影与事务 Outbox 有界重试、死信、事务回滚和租户级 API 重放已有真实 PG 测试；真实进程杀死、数据库重启、积压恢复与备份恢复**未完成** |
 | S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py` | API 层已测；DB RLS **未实现** |
 
 ## Release Gate — 明确区分目标与实测
@@ -50,7 +50,11 @@ python -m pip install -e '.[dev,postgres,api,temporal]'
 docker compose up -d --build --wait
 export MEMORY_TEST_DSN=postgresql://memory:local-dev-only@127.0.0.1:55432/memory
 pytest -q -m integration tests/test_user_story_e2e.py tests/test_projection_deliveries.py tests/test_concrete_projections.py
-pytest -q tests/test_sdk_contract.py tests/test_local_extractor.py
+pytest -q tests/test_sdk_contract.py tests/test_local_extractor.py tests/test_benchmark_metrics.py tests/test_retrieval_metrics.py
+# Real local-model evaluation: requires a 200+ case human-adjudicated JSONL corpus and installed Ollama model
+MEMORY_LOCAL_OLLAMA_MODEL=<local-model> python scripts/evaluate_local_extractor.py --dataset <zh-corpus.jsonl>
+# Real HTTP retrieval evaluation: requires 200+ judged queries against an isolated local service
+MEMORY_API_KEY=<test-key> python scripts/evaluate_retrieval.py --dataset <retrieval-corpus.jsonl>
 ```
 
 任何关键集成测试未运行或被 skip，都不计入完成。不得因为短期 CI 全绿就宣称

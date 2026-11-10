@@ -77,25 +77,34 @@ class MemoryProcessor:
                 continue
             try:
                 canonical = self._canonical(value)
-                clock = getattr(self.store, "current_time", None)
-                now = clock() if callable(clock) else datetime.now(timezone.utc)
-                active = self.store.recall(
-                    tenant_id=tenant_id, subject_id=subject,
-                    predicate=predicate, valid_at=now, known_at=now)
-                exact = next((row for row in active
-                              if self._canonical(row["value"]) == canonical), None)
-                if exact is not None:
-                    link_source = getattr(self.store, "link_claim_source", None)
-                    if callable(link_source):
-                        link_source(tenant_id=tenant_id,memory_id=exact["id"],
-                                    source_id=source_id,confidence=float(confidence))
-                    report.duplicates += 1
-                    continue
-                replaces_id = active[0]["id"] if active else None
-                memory_id = self.store.remember(
-                    tenant_id=tenant_id, subject_id=subject, predicate=predicate,
-                    value=value, source_id=source_id, valid_from=now,
-                    replaces_id=replaces_id)
+                atomic_apply = getattr(self.store, "apply_candidate", None)
+                if callable(atomic_apply):
+                    memory_id, replaces_id, duplicate = atomic_apply(
+                        tenant_id=tenant_id, subject_id=subject, predicate=predicate,
+                        value=value, source_id=source_id, confidence=float(confidence))
+                    if duplicate:
+                        report.duplicates += 1
+                        continue
+                else:
+                    clock = getattr(self.store, "current_time", None)
+                    now = clock() if callable(clock) else datetime.now(timezone.utc)
+                    active = self.store.recall(
+                        tenant_id=tenant_id, subject_id=subject,
+                        predicate=predicate, valid_at=now, known_at=now)
+                    exact = next((row for row in active
+                                  if self._canonical(row["value"]) == canonical), None)
+                    if exact is not None:
+                        link_source = getattr(self.store, "link_claim_source", None)
+                        if callable(link_source):
+                            link_source(tenant_id=tenant_id,memory_id=exact["id"],
+                                        source_id=source_id,confidence=float(confidence))
+                        report.duplicates += 1
+                        continue
+                    replaces_id = active[0]["id"] if active else None
+                    memory_id = self.store.remember(
+                        tenant_id=tenant_id, subject_id=subject, predicate=predicate,
+                        value=value, source_id=source_id, valid_from=now,
+                        replaces_id=replaces_id)
                 report.created.append(memory_id)
                 if replaces_id:
                     report.replaced.append(replaces_id)

@@ -6,6 +6,7 @@ identical active facts, versions changed facts, and optionally indexes vectors.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
@@ -101,35 +102,40 @@ class MemoryProcessor:
                 report.rejected += 1
                 continue
             try:
-                canonical = self._canonical(value)
-                clock = getattr(self.store, "current_time", None)
-                now = clock() if callable(clock) else datetime.now(timezone.utc)
-                active = self.store.recall(
-                    tenant_id=tenant_id, subject_id=subject,
-                    predicate=predicate, valid_at=now, known_at=now)
-                exact = next((row for row in active
-                              if self._canonical(row["value"]) == canonical), None)
-                if exact is not None:
-                    link_source = getattr(self.store, "link_claim_source", None)
-                    if callable(link_source):
-                        link_source(tenant_id=tenant_id,memory_id=exact["id"],
-                                    source_id=source_id,confidence=float(confidence))
-                    report.duplicates += 1
-                    continue
-                # Multi-valued relations co-exist; single-valued conflicts
-                # must not replace an arbitrary active record.
-                if cardinality == "one" and len(active) > 1:
-                    report.ambiguous += 1
-                    report.rejected += 1
-                    continue
-                replaces_id = active[0]["id"] if active and cardinality == "one" else None
-                memory_id = self.store.remember(
-                    tenant_id=tenant_id, subject_id=subject, predicate=predicate,
-                    value=value, source_id=source_id, valid_from=now,
-                    replaces_id=replaces_id)
-                report.created.append(memory_id)
-                if replaces_id:
-                    report.replaced.append(replaces_id)
+                boundary = getattr(self.store, "fact_transaction", None)
+                context = (boundary(tenant_id=tenant_id, subject_id=subject,
+                                    predicate=predicate)
+                           if callable(boundary) else nullcontext())
+                with context:
+                    canonical = self._canonical(value)
+                    clock = getattr(self.store, "current_time", None)
+                    now = clock() if callable(clock) else datetime.now(timezone.utc)
+                    active = self.store.recall(
+                        tenant_id=tenant_id, subject_id=subject,
+                        predicate=predicate, valid_at=now, known_at=now)
+                    exact = next((row for row in active
+                                  if self._canonical(row["value"]) == canonical), None)
+                    if exact is not None:
+                        link_source = getattr(self.store, "link_claim_source", None)
+                        if callable(link_source):
+                            link_source(tenant_id=tenant_id,memory_id=exact["id"],
+                                        source_id=source_id,confidence=float(confidence))
+                        report.duplicates += 1
+                        continue
+                    # Multi-valued relations co-exist; single-valued conflicts
+                    # must not replace an arbitrary active record.
+                    if cardinality == "one" and len(active) > 1:
+                        report.ambiguous += 1
+                        report.rejected += 1
+                        continue
+                    replaces_id = active[0]["id"] if active and cardinality == "one" else None
+                    memory_id = self.store.remember(
+                        tenant_id=tenant_id, subject_id=subject, predicate=predicate,
+                        value=value, source_id=source_id, valid_from=now,
+                        replaces_id=replaces_id)
+                    report.created.append(memory_id)
+                    if replaces_id:
+                        report.replaced.append(replaces_id)
                 if self.embedder is not None:
                     try:
                         model_id, vector = self.embedder(candidate)

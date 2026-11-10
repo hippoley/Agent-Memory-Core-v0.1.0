@@ -79,9 +79,11 @@ class ProjectionOutboxWorker:
         self.conn = conn
 
     def consume(self, *, consumer_id: str, event_type: str, handler,
-                limit: int = 20, max_attempts: int = 5) -> int:
+                limit: int = 20, max_attempts: int = 5,
+                tenant_id: str | None = None) -> int:
         if (not consumer_id or not event_type or not 1 <= limit <= 100
-                or not 1 <= max_attempts <= 100):
+                or not 1 <= max_attempts <= 100
+                or (tenant_id is not None and not tenant_id)):
             raise ValueError("Valid consumer, event type, limit, and retry budget required")
         # Register outstanding events for this consumer without touching
         # another consumer's acknowledgement, including already-processed
@@ -90,13 +92,16 @@ class ProjectionOutboxWorker:
             self.conn.execute(
                 """INSERT INTO memory_outbox_deliveries(event_id,consumer_id)
                    SELECT o.event_id,%s FROM memory_outbox o
-                   WHERE o.event_type=%s AND NOT EXISTS (
-                     SELECT 1 FROM memory_outbox_deliveries d
-                     WHERE d.event_id=o.event_id AND d.consumer_id=%s
-                   )
+                   WHERE o.event_type=%s
+                     AND (%s::text IS NULL OR o.tenant_id=%s)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM memory_outbox_deliveries d
+                       WHERE d.event_id=o.event_id AND d.consumer_id=%s
+                     )
                    ORDER BY o.created_at,o.event_id LIMIT %s
                    ON CONFLICT(event_id,consumer_id) DO NOTHING""",
-                (consumer_id,event_type,consumer_id,min(limit*10,1000)),
+                (consumer_id,event_type,tenant_id,tenant_id,
+                 consumer_id,min(limit*10,1000)),
             )
         processed = 0
         for _ in range(limit):
@@ -108,12 +113,13 @@ class ProjectionOutboxWorker:
                            FROM memory_outbox_deliveries d
                            JOIN memory_outbox o ON o.event_id=d.event_id
                            WHERE d.consumer_id=%s AND o.event_type=%s
+                             AND (%s::text IS NULL OR o.tenant_id=%s)
                              AND d.delivered_at IS NULL
                              AND d.dead_letter_at IS NULL
                              AND d.available_at<=clock_timestamp()
                            ORDER BY o.created_at,d.event_id
                            LIMIT 1 FOR UPDATE OF d SKIP LOCKED""",
-                        (consumer_id,event_type),
+                        (consumer_id,event_type,tenant_id,tenant_id),
                     ).fetchone()
                     if row is None:
                         break

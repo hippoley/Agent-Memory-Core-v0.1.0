@@ -8,6 +8,25 @@ This document is the source-oriented guide for the current public HTTP facade.
 The generated contract is available at `/openapi.json` and Swagger UI at
 `/docs`. Optional channels must be checked through `GET /v1/capabilities`.
 
+## SDK failure contract
+
+`MemoryClient` wraps HTTP and transport failures into `MemoryAPIError`:
+
+| code | status_code | meaning |
+|---|---:|---|
+| `UNAUTHENTICATED`, `FORBIDDEN` | 401 / 403 | API credential missing or rejected |
+| `NOT_FOUND`, `CONFLICT`, `VALIDATION_ERROR` | 404 / 409 / 422 | Request cannot be fulfilled as supplied |
+| `RATE_LIMITED`, `UNAVAILABLE` | 429 / 503 | Retry only with a bounded retry policy |
+| `TIMEOUT` | 0 | Local transport timed out before an HTTP response |
+| `TRANSPORT_ERROR` | 0 | Connection/DNS/transport failure before an HTTP response |
+| `INVALID_RESPONSE` | response status | Success response did not contain valid JSON |
+
+`status_code=0` means no HTTP status was received. Do **not** automatically
+retry writes without an `Idempotency-Key`: an operation may have committed
+before its response was lost. Error messages intentionally omit API key material.
+SDK path identifiers cannot contain slash, backslash, or dot-only traversal,
+and Unicode/reserved characters are escaped as a single segment.
+
 ## 1. Runtime documentation
 
 When the service is running:

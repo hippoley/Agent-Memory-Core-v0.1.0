@@ -71,7 +71,12 @@ def test_signed_webhook_delivery_and_tenant_scoped_revocation():
             """SELECT subscription_id::text,event_id::text FROM memory_webhook_deliveries
                WHERE subscription_id=%s::uuid""",(sub["subscription_id"],)).fetchall()
         assert len(queued)==1 and queued[0][1]==mid,queued
-        assert worker.consume(limit=10)==1
+        attempted=worker.consume(limit=10)
+        final_state=db.conn.execute(
+            """SELECT delivery_id::text,status,attempts,lease_until,delivered_at
+               FROM memory_webhook_deliveries WHERE subscription_id=%s::uuid
+               ORDER BY created_at""",(sub["subscription_id"],)).fetchall()
+        assert attempted==1,(attempted,received,final_state)
         assert len(received)==1
         state=db.conn.execute(
             """SELECT status,attempts,response_status FROM memory_webhook_deliveries

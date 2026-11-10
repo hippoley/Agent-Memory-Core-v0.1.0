@@ -203,3 +203,54 @@ def test_fts_projector_rebuildable_tenant_scoped_and_bitemporal():
             (mid,)).fetchone()[0]==1
     finally:
         db.close()
+
+
+@pytest.mark.integration
+def test_age_outbox_auto_projects_retires_and_reconciles_sourced_edges():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real AGE/PostgreSQL required")
+    from datetime import datetime, timezone
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.age_graph import AgeProjection, project_age_from_outbox
+    from agent_memory_core.outbox import ProjectionOutboxWorker
+    tenant = "age-outbox-" + uuid4().hex
+    db = PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        db.migrate()
+        for entity_id, kind in (("room","room"),("window-a","device"),
+                                ("window-b","device")):
+            db.upsert_entity(tenant_id=tenant, entity_id=entity_id,
+                entity_type=kind, canonical_name=entity_id)
+        mid=db.remember(tenant_id=tenant,subject_id="room",
+            predicate="status",value={"mode":"old"},source_id="source",
+            valid_from=datetime(2026,11,1,tzinfo=timezone.utc))
+        edge_a=db.add_edge(tenant_id=tenant,from_entity="room",
+            predicate="HAS_WINDOW",to_entity="window-a",source_memory_id=mid)
+        edge_b=db.add_edge(tenant_id=tenant,from_entity="room",
+            predicate="HAS_WINDOW",to_entity="window-b")
+        graph=AgeProjection(db.conn)
+        graph.initialize()
+        worker=ProjectionOutboxWorker(db.conn)
+        assert graph.neighbors(tenant_id=tenant,from_entity="room")==[]
+        assert worker.consume(consumer_id="age-test-v1",event_type="memory.edge.created",
+              handler=project_age_from_outbox,limit=20)>=2
+        assert set(graph.neighbors(tenant_id=tenant,from_entity="room")) == {
+            "window-a","window-b"}
+        assert worker.consume(consumer_id="age-test-v1",event_type="memory.edge.created",
+              handler=project_age_from_outbox,limit=20)==0
+        assert db.retire_edge(tenant_id=tenant,edge_id=edge_b)
+        assert worker.consume(consumer_id="age-test-v1",event_type="memory.edge.retired",
+              handler=project_age_from_outbox,limit=20)==1
+        assert graph.neighbors(tenant_id=tenant,from_entity="room")==["window-a"]
+        db.remember(tenant_id=tenant,subject_id="room",predicate="status",
+            value={"mode":"new"},source_id="correction",
+            valid_from=datetime(2026,11,1,tzinfo=timezone.utc),replaces_id=mid)
+        assert worker.consume(consumer_id="age-test-v1",event_type="memory.claim.created",
+              handler=project_age_from_outbox,limit=20)>=1
+        assert graph.neighbors(tenant_id=tenant,from_entity="room")==[]
+        assert db.conn.execute(
+            "SELECT count(*) FROM memory_graph_projection WHERE edge_id IN (%s,%s)",
+            (edge_a,edge_b)).fetchone()[0]==0
+        assert worker.status(consumer_id="age-test-v1",tenant_id=tenant)["dead_letter"]==0
+    finally:
+        db.close()

@@ -30,3 +30,35 @@ fail because the image version changes, pin both base image and matching
 
 This is not production deployment. The password is a local development example.
 Run on loopback and never publish as an internet-accessible service.
+
+## Concurrency and projection verification (draft PR #2)
+
+Run against a **disposable test database** with the extensions/migrations installed:
+
+```bash
+export MEMORY_TEST_DSN='postgresql://...'
+python scripts/benchmark_memory_concurrency.py --agents 100 --concurrency 16
+```
+
+The output reports request throughput, P50/P95 latency, active claim count,
+and whether all 100 independent provenance links survived. This represents
+100 Agent requests with at most 16 concurrent connections, **not** 100
+simultaneous database connections; raise `--concurrency` only when the test
+server's PostgreSQL connection limit is configured accordingly.
+
+For the FTS worker (after `db.migrate()`):
+
+```bash
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.projection_worker --once
+python -m agent_memory_core.projection_worker --batch-size 20 --poll-seconds 1
+```
+
+Monitor independent consumer status through
+`ProjectionOutboxWorker(db.conn).status(consumer_id="fts-v1", tenant_id="home")`.
+A failed or lagging projection does not alter canonical memory; diagnose
+`pending`, `dead_letter`, and `oldest_pending_seconds` before requeueing.
+
+**Do not** reuse these development credentials or benchmark tenants in a
+production system. Backup/restore, endpoint RLS, worker supervision and
+sustained 100-connection load have not been established by this script.

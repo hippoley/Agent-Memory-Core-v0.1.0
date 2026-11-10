@@ -523,30 +523,40 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                      "The caller supplies structured candidates from its own local model/rules extractor; "
                      "this endpoint does not pretend to extract facts from arbitrary text by itself."),
     )
-    def process_memories(item: ProcessRequest, t: str = Depends(auth)):
+    def process_memories(item: ProcessRequest, t: str = Depends(auth),
+                         idempotency_key: str | None = Header(
+                             default=None, alias="Idempotency-Key")):
         from .processing import MemoryProcessor
         db = store_factory()
         try:
-            processor = MemoryProcessor(
-                db,
-                confidence_threshold=item.confidence_threshold,
-                entity_resolver=lambda tenant_id, name: db.resolve_entity(
-                    tenant_id=tenant_id, name=name),
-            )
-            report = processor.process(
-                tenant_id=t, text=item.text, source_id=item.source_id,
-                extractor=lambda _text: item.candidates,
-            )
-            return {
-                "tenant_id": t,
-                "created": report.created,
-                "duplicates": report.duplicates,
-                "rejected": report.rejected,
-                "replaced": report.replaced,
-                "embedding_failures": report.embedding_failures,
-                "ambiguous": report.ambiguous,
-            }
+            def apply():
+                processor = MemoryProcessor(
+                    db,
+                    confidence_threshold=item.confidence_threshold,
+                    entity_resolver=lambda tenant_id, name: db.resolve_entity(
+                        tenant_id=tenant_id, name=name),
+                )
+                report = processor.process(
+                    tenant_id=t, text=item.text, source_id=item.source_id,
+                    extractor=lambda _text: item.candidates,
+                )
+                return {
+                    "tenant_id": t,
+                    "created": report.created,
+                    "duplicates": report.duplicates,
+                    "rejected": report.rejected,
+                    "replaced": report.replaced,
+                    "embedding_failures": report.embedding_failures,
+                    "ambiguous": report.ambiguous,
+                }
+            if idempotency_key is not None:
+                return db.process_idempotent(
+                    tenant_id=t, idempotency_key=idempotency_key,
+                    request=item.model_dump(), operation=apply)
+            return apply()
         except ValueError as exc:
+            if "Idempotency key reused" in str(exc):
+                raise HTTPException(status_code=409, detail=str(exc))
             raise HTTPException(status_code=422, detail=str(exc))
         finally:
             db.close()

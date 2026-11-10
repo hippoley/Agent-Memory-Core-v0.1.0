@@ -97,9 +97,9 @@ class PostgresMemory:
             # claim and outbox event. A crash cannot leave an event undispatched.
             self.conn.execute(
                 """INSERT INTO memory_projection_deliveries(event_id,channel)
-                   VALUES (%s,'fts'),(%s,'vector')
+                   VALUES (%s,'fts'),(%s,'vector'),(%s,'graph')
                    ON CONFLICT(event_id,channel) DO NOTHING""",
-                (mid,mid))
+                (mid,mid,mid))
         return str(mid)
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,

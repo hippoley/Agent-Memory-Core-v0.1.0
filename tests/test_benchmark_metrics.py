@@ -1,4 +1,11 @@
-from scripts.evaluate_local_extractor import score
+from pathlib import Path
+import importlib.util
+
+_path=Path(__file__).resolve().parents[1]/"scripts"/"evaluate_local_extractor.py"
+_spec=importlib.util.spec_from_file_location("evaluate_local_extractor",_path)
+_module=importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
+score=_module.score
 
 
 def test_extractor_benchmark_reports_fact_f1_and_correction_accuracy():

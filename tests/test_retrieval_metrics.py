@@ -1,5 +1,12 @@
+from pathlib import Path
+import importlib.util
 import pytest
-from scripts.evaluate_retrieval import score_query
+
+_path=Path(__file__).resolve().parents[1]/"scripts"/"evaluate_retrieval.py"
+_spec=importlib.util.spec_from_file_location("evaluate_retrieval",_path)
+_module=importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
+score_query=_module.score_query
 
 
 def test_retrieval_metrics_use_document_recall_and_reciprocal_rank():

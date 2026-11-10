@@ -228,3 +228,92 @@ def test_postgres_processor_relation_cardinality_is_not_model_controlled():
         assert {v["value"]["target_id"] for v in current} == {"a","b"}
     finally:
         db.close()
+
+
+def test_read_before_remember_commits_durably_after_close():
+    """Regression: an implicit read transaction must not swallow a nested write."""
+    tenant = "tx-boundary-" + uuid4().hex
+    db = PostgresMemory(DSN)
+    try:
+        db.migrate()
+        assert db.predicate_cardinality(tenant_id=tenant, predicate="preference") == "one"
+        assert db.resolve_entity(tenant_id=tenant, name="unknown") is None
+        now = db.current_time()
+        assert db.recall(tenant_id=tenant, subject_id="room", predicate="preference") == []
+        mid = db.remember(tenant_id=tenant, subject_id="room",
+                          predicate="preference", value={"level":"quiet"},
+                          source_id="conversation", valid_from=now)
+    finally:
+        db.close()
+    reopened = PostgresMemory(DSN)
+    try:
+        assert [r["id"] for r in reopened.recall(
+            tenant_id=tenant, subject_id="room", predicate="preference")] == [mid]
+        assert reopened.conn.execute(
+            "SELECT count(*) FROM memory_outbox WHERE tenant_id=%s AND aggregate_id=%s",
+            (tenant, mid)).fetchone()[0] == 1
+    finally:
+        reopened.close()
+
+
+def test_direct_store_cannot_bypass_single_value_cardinality():
+    tenant = "single-policy-" + uuid4().hex
+    db = PostgresMemory(DSN)
+    try:
+        db.migrate()
+        now = db.current_time()
+        first = db.remember(tenant_id=tenant, subject_id="room",
+                            predicate="preference", value={"v":1},
+                            source_id="first", valid_from=now)
+        with pytest.raises(ValueError, match="Single-valued predicate"):
+            db.remember(tenant_id=tenant, subject_id="room",
+                        predicate="preference", value={"v":2},
+                        source_id="second", valid_from=now)
+        with pytest.raises(ValueError, match="Cannot change cardinality"):
+            db.set_predicate_cardinality(tenant_id=tenant,
+                                         predicate="preference",cardinality="many")
+        second = db.remember(tenant_id=tenant, subject_id="room",
+                             predicate="preference", value={"v":2},
+                             source_id="correction", valid_from=now,
+                             replaces_id=first)
+        assert len(db.recall(tenant_id=tenant,subject_id="room",
+                             predicate="preference")) == 1
+        assert db.recall(tenant_id=tenant,subject_id="room",
+                         predicate="preference")[0]["id"] == second
+    finally:
+        db.close()
+
+
+def test_competing_first_writes_are_serialized_across_connections():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    tenant = "race-" + uuid4().hex
+    init = PostgresMemory(DSN)
+    try:
+        init.migrate()
+    finally:
+        init.close()
+    barrier = Barrier(2)
+    def insert(value):
+        db = PostgresMemory(DSN)
+        try:
+            valid_from = db.current_time()
+            barrier.wait(timeout=10)
+            try:
+                return ("created", db.remember(
+                    tenant_id=tenant, subject_id="room", predicate="preference",
+                    value={"v":value}, source_id=f"agent-{value}",
+                    valid_from=valid_from))
+            except ValueError as exc:
+                return ("rejected", str(exc))
+        finally:
+            db.close()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a, b = list(pool.map(insert, (1, 2)))
+    assert sorted([a[0],b[0]]) == ["created","rejected"]
+    verify = PostgresMemory(DSN)
+    try:
+        assert len(verify.recall(tenant_id=tenant,subject_id="room",
+                                 predicate="preference")) == 1
+    finally:
+        verify.close()

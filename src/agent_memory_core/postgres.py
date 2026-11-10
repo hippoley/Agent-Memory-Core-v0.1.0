@@ -93,6 +93,13 @@ class PostgresMemory:
                    (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
                    VALUES (%s,%s,'claim',%s,'memory.claim.created',%s::jsonb)""",
                 (mid,tenant_id,str(mid),packed))
+            # Fanout tasks are created in the same transaction as the canonical
+            # claim and outbox event. A crash cannot leave an event undispatched.
+            self.conn.execute(
+                """INSERT INTO memory_projection_deliveries(event_id,channel)
+                   VALUES (%s,'fts'),(%s,'vector')
+                   ON CONFLICT(event_id,channel) DO NOTHING""",
+                (mid,mid))
         return str(mid)
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,

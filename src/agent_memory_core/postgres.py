@@ -159,6 +159,33 @@ class PostgresMemory:
             if result.rowcount != 1:
                 raise PermissionError("Memory does not belong to requested tenant")
 
+    def fulltext_search(self, *, tenant_id: str, query: str, limit: int = 50,
+                        valid_at: datetime | None = None,
+                        known_at: datetime | None = None) -> list[str]:
+        """Ranked FTS projection with canonical tenant and bitemporal filtering.
+
+        The simple dictionary is language-neutral but NOT a Chinese word
+        segmenter. Hybrid retrieval retains literal SQL fallback.
+        """
+        if not tenant_id or not query or not query.strip() or not 1 <= limit <= 100:
+            raise ValueError("Invalid fulltext search parameters")
+        known_at=aware(known_at or datetime.now(timezone.utc))
+        valid_at=aware(valid_at or known_at)
+        rows=self.conn.execute(
+            """SELECT s.memory_id::text
+               FROM memory_claim_search s
+               JOIN memory_claims c ON c.id=s.memory_id
+               WHERE c.tenant_id=%s AND s.tenant_id=%s
+                 AND s.document @@ websearch_to_tsquery('simple',%s)
+                 AND c.recorded_at<=%s
+                 AND (c.superseded_at IS NULL OR c.superseded_at>%s)
+                 AND c.valid_from<=%s AND (c.valid_to IS NULL OR c.valid_to>%s)
+               ORDER BY ts_rank_cd(s.document,websearch_to_tsquery('simple',%s))
+                        DESC,c.recorded_at DESC,s.memory_id
+               LIMIT %s""",
+            (tenant_id,tenant_id,query,known_at,known_at,valid_at,valid_at,query,limit))
+        return [row[0] for row in rows]
+
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
                       limit: int = 10, valid_at: datetime | None = None,
                       known_at: datetime | None = None) -> list[tuple[str,float]]:

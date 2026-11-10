@@ -506,6 +506,14 @@ class PostgresMemory:
                 """UPDATE memory_edges SET retired_at=clock_timestamp()
                    WHERE tenant_id=%s AND edge_id=%s AND retired_at IS NULL
                    RETURNING edge_id""", (tenant_id,edge_id)).fetchone()
+            if row is not None:
+                event_id = uuid4()
+                self.conn.execute(
+                    """INSERT INTO memory_outbox
+                       (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                       VALUES (%s,%s,'edge',%s,'memory.edge.retired',%s::jsonb)""",
+                    (event_id,tenant_id,edge_id,json.dumps({"edge_id":edge_id})),
+                )
         return row is not None
 
     def record_observation(self, *, tenant_id: str, device_id: str,

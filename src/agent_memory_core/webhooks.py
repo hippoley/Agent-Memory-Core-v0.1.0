@@ -105,7 +105,7 @@ class WebhookWorker:
             row=self.conn.execute(
                 """SELECT d.delivery_id::text,d.subscription_id::text,
                           d.event_id::text,d.tenant_id,s.target_url,
-                          o.event_type,o.payload,d.attempts
+                          o.event_type,o.payload,d.attempts+1
                    FROM memory_webhook_deliveries d
                    JOIN memory_webhook_subscriptions s
                      ON s.subscription_id=d.subscription_id

@@ -7,6 +7,11 @@ class FakeStore:
         self.rows=[]
         self.embeddings=[]
         self.sources=[]
+        self.policies={}
+    def predicate_cardinality(self, *, tenant_id, predicate):
+        return self.policies.get((tenant_id,predicate), "one")
+    def set_predicate_cardinality(self, *, tenant_id, predicate, cardinality):
+        self.policies[(tenant_id,predicate)] = cardinality
     def recall(self, *, tenant_id, subject_id, predicate, valid_at, known_at):
         return [r for r in reversed(self.rows)
                 if r["tenant_id"]==tenant_id and r["subject_id"]==subject_id
@@ -94,6 +99,7 @@ def test_processor_uses_canonical_entity_resolution():
 
 def test_multi_valued_relationships_coexist_and_deduplicate():
     store = FakeStore()
+    store.set_predicate_cardinality(tenant_id="home",predicate="HAS_WINDOW",cardinality="many")
     processor = MemoryProcessor(store)
     candidates = [
         {"subject_id": "living-room", "predicate": "HAS_WINDOW",
@@ -136,6 +142,7 @@ def test_unresolved_and_mismatched_entity_identity_is_not_written():
 def test_single_valued_conflict_does_not_pick_arbitrary_active_record():
     store = FakeStore()
     processor = MemoryProcessor(store)
+    store.set_predicate_cardinality(tenant_id="home",predicate="P",cardinality="many")
     seed = processor.process(
         tenant_id="home", text="two valid relations", source_id="s1",
         extractor=lambda _: [
@@ -144,6 +151,7 @@ def test_single_valued_conflict_does_not_pick_arbitrary_active_record():
             {"subject_id": "room", "predicate": "P", "value": {"v": 2},
              "cardinality": "many"},
         ])
+    store.set_predicate_cardinality(tenant_id="home",predicate="P",cardinality="one")
     report = processor.process(
         tenant_id="home", text="single-valued correction", source_id="s2",
         extractor=lambda _: [
@@ -165,3 +173,42 @@ def test_unknown_cardinality_is_rejected():
              "value": {"v": 1}, "cardinality": "untrusted"},
         ])
     assert report.rejected == 1
+
+
+def test_untrusted_extractor_cannot_upgrade_cardinality():
+    store = FakeStore()
+    processor = MemoryProcessor(store)
+    report = processor.process(
+        tenant_id="home", text="windows", source_id="s1",
+        extractor=lambda _: [
+            {"subject_id": "room", "predicate": "HAS_WINDOW",
+             "value": {"target_id": "window-a"}, "cardinality": "many"},
+        ])
+    assert report.created == []
+    assert report.rejected == 1
+    assert report.ambiguous == 1
+    store.set_predicate_cardinality(
+        tenant_id="home", predicate="HAS_WINDOW", cardinality="many")
+    approved = processor.process(
+        tenant_id="home", text="windows", source_id="s1",
+        extractor=lambda _: [
+            {"subject_id": "room", "predicate": "HAS_WINDOW",
+             "value": {"target_id": "window-a"}, "cardinality": "many"},
+        ])
+    assert len(approved.created) == 1
+
+
+def test_tenant_predicate_policies_do_not_cross_tenants():
+    store = FakeStore()
+    store.set_predicate_cardinality(tenant_id="home-a", predicate="HAS_WINDOW",
+                                    cardinality="many")
+    processor = MemoryProcessor(store)
+    candidate = lambda _: [{"subject_id":"room","predicate":"HAS_WINDOW",
+                             "value":{"target_id":"w1"},"cardinality":"many"}]
+    accepted = processor.process(tenant_id="home-a",text="yes",source_id="s1",
+                                 extractor=candidate)
+    rejected = processor.process(tenant_id="home-b",text="no",source_id="s1",
+                                 extractor=candidate)
+    assert len(accepted.created) == 1
+    assert rejected.created == []
+    assert rejected.ambiguous == 1

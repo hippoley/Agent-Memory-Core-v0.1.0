@@ -163,6 +163,38 @@ class PostgresMemory:
                 (tenant_id,idempotency_key,digest,json.dumps({"id":mid})))
             return mid
 
+    def apply_candidate(self, *, tenant_id: str, subject_id: str, predicate: str,
+                        value: dict, source_id: str, confidence: float = 1.0):
+        """Atomically deduplicate/version one candidate under a per-key advisory lock.
+
+        Concurrent processors for the same tenant/subject/predicate serialize
+        only their own key. Claim, provenance, outbox and projection fanout
+        commit together; exact duplicates add provenance without another event.
+        """
+        if not tenant_id or not subject_id or not predicate or not source_id:
+            raise ValueError("Missing candidate identity or provenance")
+        canonical=json.dumps(value,ensure_ascii=False,sort_keys=True,
+                             separators=(",",":"),allow_nan=False)
+        with self.conn.transaction():
+            lock_key="agent-memory-claim:"+tenant_id+"\\x1f"+subject_id+"\\x1f"+predicate
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",(lock_key,))
+            now=self.current_time()
+            active=self.recall(tenant_id=tenant_id,subject_id=subject_id,
+                predicate=predicate,valid_at=now,known_at=now)
+            exact=next((row for row in active
+                if json.dumps(row["value"],ensure_ascii=False,sort_keys=True,
+                              separators=(",",":"),allow_nan=False)==canonical),None)
+            if exact is not None:
+                self.link_claim_source(tenant_id=tenant_id,memory_id=exact["id"],
+                    source_id=source_id,confidence=float(confidence))
+                return exact["id"],None,True
+            replaces_id=active[0]["id"] if active else None
+            memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                predicate=predicate,value=value,source_id=source_id,
+                valid_from=now,replaces_id=replaces_id)
+            return memory_id,replaces_id,False
+
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:
         known_at = aware(known_at or datetime.now(timezone.utc))

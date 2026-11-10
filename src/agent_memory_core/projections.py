@@ -166,3 +166,13 @@ class PostgresProjectionHandlers:
                 ON CONFLICT(memory_id,model_id)
                 DO UPDATE SET embedding=EXCLUDED.embedding""",
             (memory_id,model_id,literal))
+
+
+    @staticmethod
+    def graph(conn, tenant_id, event_id, aggregate_id, event_type, payload):
+        """Project canonical tenant edges into AGE and reconcile invalidations."""
+        from .age_graph import AgeProjection
+        graph = AgeProjection(conn)
+        graph.initialize()
+        graph.project_pending(tenant_id=tenant_id,limit=1000)
+        graph.reconcile_invalidated(tenant_id=tenant_id,limit=1000)

@@ -28,7 +28,7 @@ class OutboxWorker:
                         """SELECT event_id,tenant_id,aggregate_id,payload
                            FROM memory_outbox
                            WHERE event_type=%s AND processed_at IS NULL AND dead_lettered_at IS NULL
-                             AND attempts < %s AND available_at <= clock_timestamp()
+                             AND attempts < LEAST(max_attempts,%s) AND available_at <= clock_timestamp()
                              AND (%s::text IS NULL OR tenant_id=%s)
                            ORDER BY created_at,event_id
                            LIMIT 1 FOR UPDATE SKIP LOCKED""",
@@ -52,7 +52,7 @@ class OutboxWorker:
                     self.conn.execute(
                         """UPDATE memory_outbox
                            SET attempts=attempts+1,
-                               dead_lettered_at=CASE WHEN attempts+1 >= %s THEN clock_timestamp() ELSE NULL END,
+                               dead_lettered_at=CASE WHEN attempts+1 >= LEAST(max_attempts,%s) THEN clock_timestamp() ELSE NULL END,
                                available_at=clock_timestamp() + (LEAST(3600,5 * power(2,LEAST(attempts,9))) * interval '1 second'),
                                last_error=%s
                            WHERE event_id=%s AND processed_at IS NULL AND dead_lettered_at IS NULL""",

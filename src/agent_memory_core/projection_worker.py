@@ -19,12 +19,25 @@ def main(argv=None):
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--backfill-age-tenant", default=None,
+                        help="Operator-only one-shot AGE repair for this tenant")
     args = parser.parse_args(argv)
     if not 1 <= args.batch_size <= 100 or not 0.1 <= args.poll_seconds <= 60:
         parser.error("batch-size must be 1..100; poll-seconds must be 0.1..60")
     dsn = os.environ.get("MEMORY_DSN")
     if not dsn:
         parser.error("MEMORY_DSN is required")
+    if args.backfill_age_tenant is not None:
+        from .age_graph import backfill_age_tenant
+        import json
+        db = PostgresMemory(dsn)
+        try:
+            result = backfill_age_tenant(db.conn, tenant_id=args.backfill_age_tenant,
+                                         batch_size=args.batch_size)
+        finally:
+            db.close()
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["complete"] else 1
     # Operator should run schema migrations before starting this worker.
     while True:
         db = PostgresMemory(dsn)

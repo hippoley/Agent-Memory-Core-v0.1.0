@@ -180,3 +180,51 @@ def test_real_postgres_pgvector_age():
         assert "window-current" not in age.neighbors(tenant_id=tenant,from_entity="room-1")
     finally:
         db.close()
+
+
+def test_persisted_predicate_policy_is_tenant_scoped():
+    tenant = "predicate-" + uuid4().hex
+    other = tenant + "-other"
+    db = PostgresMemory(DSN)
+    try:
+        db.migrate()
+        assert db.predicate_cardinality(tenant_id=tenant,predicate="HAS_WINDOW") == "one"
+        db.set_predicate_cardinality(
+            tenant_id=tenant,predicate="HAS_WINDOW",cardinality="many")
+        assert db.predicate_cardinality(tenant_id=tenant,predicate="HAS_WINDOW") == "many"
+        assert db.predicate_cardinality(tenant_id=other,predicate="HAS_WINDOW") == "one"
+        db.migrate()
+        assert db.predicate_cardinality(tenant_id=tenant,predicate="HAS_WINDOW") == "many"
+        with pytest.raises(ValueError):
+            db.set_predicate_cardinality(
+                tenant_id=tenant,predicate="HAS_WINDOW",cardinality="invalid")
+    finally:
+        db.close()
+
+
+def test_postgres_processor_relation_cardinality_is_not_model_controlled():
+    tenant = "relation-" + uuid4().hex
+    db = PostgresMemory(DSN)
+    try:
+        db.migrate()
+        from agent_memory_core.processing import MemoryProcessor
+        processor = MemoryProcessor(db)
+        def extraction(target):
+            return lambda _: [{"subject_id":"living-room","predicate":"HAS_WINDOW",
+                               "value":{"target_id":target},"cardinality":"many"}]
+        blocked=processor.process(tenant_id=tenant,text="window A",source_id="s1",
+                                  extractor=extraction("a"))
+        assert blocked.created == [] and blocked.ambiguous == 1
+        db.set_predicate_cardinality(
+            tenant_id=tenant,predicate="HAS_WINDOW",cardinality="many")
+        a=processor.process(tenant_id=tenant,text="window A",source_id="s1",
+                            extractor=extraction("a"))
+        b=processor.process(tenant_id=tenant,text="window B",source_id="s2",
+                            extractor=extraction("b"))
+        assert len(a.created) == len(b.created) == 1
+        assert not b.replaced
+        current=db.recall(tenant_id=tenant,subject_id="living-room",
+                          predicate="HAS_WINDOW")
+        assert {v["value"]["target_id"] for v in current} == {"a","b"}
+    finally:
+        db.close()

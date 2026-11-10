@@ -44,7 +44,7 @@ def test_offline_pgvector_projector_receipt_and_tenant_isolation():
         assert db.vector_search(tenant_id=other, model_id=model_id,
                                 vector=vector) == []
         assert worker.consume(consumer_id=consumer,
-                event_type="memory.claim.created", handler=handler, limit=100) == 0
+                event_type="memory.claim.created", handler=handler, limit=100, tenant_id=tenant) == 0
         assert len(invocations) == 1
         assert db.conn.execute(
             """SELECT count(*) FROM memory_outbox_deliveries

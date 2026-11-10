@@ -1,6 +1,6 @@
 # Capability Acceptance Audit — refreshed against current main
 
-Audit date: 2026-11-09  
+Audit date: 2026-11-10  
 Repository: `hippoley/Agent-Memory-Core-v0.1.0`
 
 This replaces earlier audit snapshots that predated the expanded REST facade.
@@ -101,6 +101,48 @@ The API is single-tenant per process and uses a configured bearer key. Before
 public multi-customer deployment, add database RLS, key lifecycle, TLS,
 rate limiting, audit events, request quotas, object lifecycle/deletion,
 quotas, orphan cleanup and backup/restore exercises.
+
+
+## RSI re-audit delta (2026-11-10)
+
+The following implementation changes are present on the user-story closure
+branch and are not yet release-qualified until its consolidated test run
+passes:
+
+- Local Ollama extraction now treats the user utterance as a JSON-encoded
+  untrusted data field and rejects malformed fact fields, invalid predicates,
+  non-object values, non-finite confidence and out-of-range confidence.
+- PostgreSQL candidate application now serializes same-tenant/same-subject/
+  same-predicate writes with a transaction advisory lock. Exact duplicates
+  add provenance without generating another canonical claim or outbox event.
+  A 20-connection real-PostgreSQL race test was added.
+- Transactional outbox events now have bounded retry budgets, exponential
+  backoff, an explicit dead-letter timestamp and tenant-scoped operator replay.
+  Handler writes and acknowledgements remain in one transaction; injected
+  failures roll back handler side effects.
+- Added opt-in, real-service evaluators for 200+ judged Chinese extraction
+  cases and 200+ HTTP retrieval queries. These are measurement harnesses,
+  not passing quality results; no human-adjudicated corpus or live local model
+  result is committed yet.
+
+### Current hard blockers (not to be marked Done)
+
+1. **S02/S04:** no measured 200-case real local-model quality result. The
+   deterministic processor still cannot independently infer negation,
+   coreference or semantic corrections; that requires the real model and
+   gold-set evaluation.
+2. **S06:** no 200-query Chinese retrieval gold set or measured Recall@5/MRR@10.
+   The current FTS dictionary is `simple`, not a Chinese segmenter.
+3. **S09:** projection and transactional outbox retry/DLQ paths exist, but
+   process-kill, database restart, backlog drain and backup/restore drills
+   have not been demonstrated.
+4. **S10:** database-enforced RLS is not implemented. Current API tenant
+   scoping is application-level; do not represent it as hostile multi-tenant
+   isolation.
+5. **Release performance:** the 100-Agent HTTP benchmark exists, but no
+   measured 10,000-round result is recorded on an isolated deployment.
+6. **Object lifecycle:** live MinIO/S3, delete/retention, quota and orphan
+   reconciliation remain incomplete.
 
 ## CI evidence interpretation
 

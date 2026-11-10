@@ -94,6 +94,33 @@ deployment acceptance requirements.
 | GET | `/v1/events` | Durable event replay with cursor pagination |
 | GET | `/v1/events/stream` | Bounded SSE stream with reconnect cursor |
 
+## Request idempotency and conflict behavior
+
+`POST /v1/memories` accepts an optional `Idempotency-Key` header.
+Use one stable key for a single logical write, and reuse it when retrying
+after a network timeout. The service commits the claim, source, outbox,
+and idempotency receipt in the same PostgreSQL transaction.
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/memories \
+  -H "Authorization: Bearer $MEMORY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: example-request-001" \
+  -d '{"subject_id":"room","predicate":"preference","value":{"level":"quiet"},"source_id":"utterance","valid_from":"2026-11-01T00:00:00Z"}'
+```
+
+An identical retry returns the same memory ID and does not create a second
+outbox event. Reusing that key for a different request returns HTTP `409`.
+Malformed keys or violations of the single-valued fact constraint return
+HTTP `422`. Keys are scoped to the server-bound tenant, not client-supplied
+tenant data. The key is currently limited to 255 characters.
+
+`POST /v1/memories/process` retains its separate deterministic extraction
+contract. It now returns `ambiguous` for rejected associations and enforces
+a minimum confidence threshold of 0.65; callers may choose a higher threshold.
+Its processing requests are **not yet idempotent across retries**. Do not
+assume this header on `/v1/memories` extends to the processing endpoint.
+
 ## 5. Core memory operations
 
 ### 5.1 Create a fact

@@ -340,6 +340,16 @@ class PostgresMemory:
             raise ValueError("Tenant, endpoints and predicate required")
         eid = uuid4()
         with self.conn.transaction():
+            # Physical AGE projection must never invent endpoints or bridge
+            # tenant namespaces. Lock registered endpoint rows before insertion.
+            endpoints = self.conn.execute(
+                """SELECT entity_id FROM memory_entities
+                   WHERE tenant_id=%s AND entity_id IN (%s,%s)
+                   FOR KEY SHARE""",
+                (tenant_id, from_entity, to_entity),
+            ).fetchall()
+            if {row[0] for row in endpoints} != {from_entity, to_entity}:
+                raise ValueError("Both relation endpoints must be registered to this tenant")
             if source_memory_id is not None:
                 found = self.conn.execute(
                     "SELECT 1 FROM memory_claims WHERE id=%s AND tenant_id=%s",

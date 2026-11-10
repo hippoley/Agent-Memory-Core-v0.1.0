@@ -560,6 +560,38 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         finally:
             db.close()
 
+    @app.get("/v1/webhooks/{subscription_id}/deliveries",tags=["Events"],
+             summary="Inspect delivery attempts for a tenant-owned webhook")
+    def webhook_deliveries(subscription_id: str,limit: int=100,t: str = Depends(auth)):
+        from .webhooks import WebhookStore
+        try:
+            subscription_id=str(UUID(subscription_id))
+            db=store_factory()
+            try:
+                items=WebhookStore(db.conn).deliveries(tenant_id=t,subscription_id=subscription_id,limit=limit)
+            finally:
+                db.close()
+            return {"items":items}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
+    @app.post("/v1/webhooks/deliveries/{delivery_id}/replay",tags=["Events"],
+              summary="Requeue a dead webhook delivery belonging to this tenant")
+    def replay_webhook_delivery(delivery_id: str,t: str = Depends(auth)):
+        from .webhooks import WebhookStore
+        try:
+            delivery_id=str(UUID(delivery_id))
+            db=store_factory()
+            try:
+                replayed=WebhookStore(db.conn).requeue_dead(tenant_id=t,delivery_id=delivery_id)
+            finally:
+                db.close()
+            if not replayed:
+                raise HTTPException(status_code=404,detail="Dead webhook delivery not found")
+            return {"delivery_id":delivery_id,"requeued":True}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
     @app.delete("/v1/webhooks/{subscription_id}",tags=["Events"],
                 summary="Revoke this tenant's webhook subscription")
     def revoke_webhook(subscription_id: str,t: str = Depends(auth)):

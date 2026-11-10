@@ -109,3 +109,67 @@ class MemoryClient:
 
     def sources(self, memory_id: str):
         return self._request("GET",f"/v1/memories/{memory_id}/sources")
+
+
+    def store_embedding(self, memory_id: str, *, model_id: str,
+                        embedding: list[float]):
+        return self._request("PUT",f"/v1/memories/{memory_id}/embedding",
+                             json={"model_id":model_id,"embedding":embedding})
+
+    def add_entity(self, *, entity_id: str, entity_type: str,
+                   canonical_name: str, aliases: list[str] | None = None,
+                   attributes: dict | None = None):
+        return self._request("POST","/v1/entities",json={
+            "entity_id":entity_id,"entity_type":entity_type,
+            "canonical_name":canonical_name,"aliases":aliases or [],
+            "attributes":attributes or {}})
+
+    def add_edge(self, *, from_entity: str, predicate: str,
+                 to_entity: str, source_memory_id: str | None = None):
+        body={"from_entity":from_entity,"predicate":predicate,"to_entity":to_entity}
+        if source_memory_id is not None:
+            body["source_memory_id"]=source_memory_id
+        return self._request("POST","/v1/edges",json=body)
+
+    def observe(self, *, device_id: str, source_event_id: str, observed_at: str,
+                property: str, value: float, unit: str, source_id: str):
+        return self._request("POST","/v1/observations",json={
+            "device_id":device_id,"source_event_id":source_event_id,
+            "observed_at":observed_at,"property":property,"value":value,
+            "unit":unit,"source_id":source_id})
+
+    def stream_events(self, *, after: str | None = None,
+                      max_seconds: int = 30):
+        """Yield SSE event dicts. Reconnect by passing last yielded id.
+
+        Server bounds stream lifetime; caller controls reconnect/backoff.
+        """
+        if not 1 <= max_seconds <= 30:
+            raise ValueError("max_seconds must be 1..30")
+        params={"max_seconds":max_seconds}
+        if after is not None:
+            params["after"]=after
+        with self._http.stream("GET","/v1/events/stream",params=params) as response:
+            if response.is_error:
+                raise MemoryAPIError(response.status_code,"HTTP_ERROR",
+                                     response.read().decode("utf-8",errors="replace")[:500])
+            frame={}
+            for line in response.iter_lines():
+                if not line:
+                    if frame and "data" in frame:
+                        import json
+                        try:
+                            body=json.loads(frame["data"])
+                        except ValueError as exc:
+                            raise MemoryAPIError(502,"INVALID_EVENT","Malformed SSE JSON") from exc
+                        if frame.get("event")=="error":
+                            raise MemoryAPIError(502,"EVENT_STREAM_ERROR",str(body))
+                        yield {"id":frame.get("id"),"event":frame.get("event"),
+                               "data":body}
+                    frame={}
+                    continue
+                if line.startswith(":"):
+                    continue
+                name,separator,value=line.partition(":")
+                if separator and name in ("id","event","data"):
+                    frame[name]=value.lstrip(" ")

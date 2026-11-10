@@ -200,6 +200,47 @@ retried with exponential backoff, and dead-lettered after the configured
 attempt budget. Revocation stops future dispatch and outstanding delivery
 claims. A receiver should respond 2xx only after durably accepting the event.
 
+## Acceptance evaluation (real local services)
+
+The unit tests validate contracts and deterministic logic. They do **not**
+substitute for a real model-quality or retrieval-quality run.
+
+- Chinese local extraction: prepare a human-adjudicated JSONL corpus with at
+  least 200 examples spanning negation, correction, coreference, entity
+  ambiguity, temporal changes, durable preferences and no-fact cases. Start
+  the configured local Ollama model, set `MEMORY_LOCAL_OLLAMA_MODEL`, then run:
+
+  ```bash
+  python scripts/evaluate_local_extractor.py --dataset /path/to/zh-memory-gold.jsonl
+  ```
+
+  The gate is micro fact F1 >= 0.90, correction-family exact accuracy >= 0.95,
+  and zero extractor errors. The script refuses a smaller corpus by default.
+
+- Retrieval quality: prepare at least 200 judged queries with the IDs of all
+  relevant canonical memories. Run against an isolated local service:
+
+  ```bash
+  MEMORY_API_KEY="$MEMORY_API_KEY" python scripts/evaluate_retrieval.py \
+    --base-url http://127.0.0.1:8000 \
+    --dataset /path/to/zh-memory-retrieval-gold.jsonl
+  ```
+
+  The gate is Recall@5 >= 0.90 and MRR@10 >= 0.85. This is a real HTTP test,
+  not a fixture-based ranking assertion.
+
+- Concurrent processing: `tests/test_processing_concurrency.py` starts 20
+  independent PostgreSQL connections processing the same fact and verifies
+  one canonical claim/outbox event plus 20 provenance links.
+
+- Transactional outbox: failures roll back handler side effects, retry with
+  bounded exponential backoff, dead-letter after the retry budget, and allow
+  tenant-scoped operator replay through `POST /v1/events/outbox/{event_id}/replay`.
+
+These benchmarks are opt-in and intentionally are not run on every code
+change or every CI invocation. A story is not accepted until its required
+real corpus, local service and measured gate have actually passed.
+
 ## Explicit limitations
 
 - The API is single-tenant per process. It is not yet a full identity,

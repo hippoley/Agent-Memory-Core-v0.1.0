@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 
 @dataclass
@@ -44,7 +45,13 @@ class MemoryClient:
         self.close()
 
     def _request(self, method: str, path: str, *, params=None, json=None, headers=None) -> Any:
-        response = self._http.request(method,path,params=params,json=json,headers=headers)
+        import httpx
+        try:
+            response = self._http.request(method,path,params=params,json=json,headers=headers)
+        except httpx.TimeoutException as exc:
+            raise MemoryAPIError(0,"TIMEOUT","Memory service request timed out") from exc
+        except httpx.RequestError as exc:
+            raise MemoryAPIError(0,"TRANSPORT_ERROR","Memory service transport unavailable") from exc
         if response.is_error:
             try:
                 body = response.json()
@@ -59,7 +66,17 @@ class MemoryClient:
             raise MemoryAPIError(response.status_code,code,str(detail))
         if not response.content:
             return None
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MemoryAPIError(response.status_code,"INVALID_RESPONSE",
+                                 "Memory service returned invalid JSON") from exc
+
+    @staticmethod
+    def _segment(identifier: str) -> str:
+        if not isinstance(identifier,str) or not identifier or "/" in identifier or "\\" in identifier or identifier in (".",".."):
+            raise ValueError("Path identifier must be a non-empty single segment")
+        return quote(identifier,safe="")
 
     def ready(self):
         return self._request("GET","/v1/ready")
@@ -84,7 +101,7 @@ class MemoryClient:
                valid_at: str | None = None, known_at: str | None = None):
         params={k:v for k,v in {"predicate":predicate,
                  "valid_at":valid_at,"known_at":known_at}.items() if v is not None}
-        return self._request("GET",f"/v1/memories/{subject_id}",params=params)
+        return self._request("GET",f"/v1/memories/{self._segment(subject_id)}",params=params)
 
     def process(self, *, text: str, source_id: str,
                 candidates: list[dict] | None = None, confidence_threshold: float = 0.65):
@@ -110,12 +127,12 @@ class MemoryClient:
         return self._request("GET","/v1/events",params=params)
 
     def sources(self, memory_id: str):
-        return self._request("GET",f"/v1/memories/{memory_id}/sources")
+        return self._request("GET",f"/v1/memories/{self._segment(memory_id)}/sources")
 
 
     def store_embedding(self, memory_id: str, *, model_id: str,
                         embedding: list[float]):
-        return self._request("PUT",f"/v1/memories/{memory_id}/embedding",
+        return self._request("PUT",f"/v1/memories/{self._segment(memory_id)}/embedding",
                              json={"model_id":model_id,"embedding":embedding})
 
     def add_entity(self, *, entity_id: str, entity_type: str,
@@ -186,15 +203,15 @@ class MemoryClient:
         return self._request("GET","/v1/webhooks")
 
     def revoke_webhook(self, subscription_id: str):
-        return self._request("DELETE",f"/v1/webhooks/{subscription_id}")
+        return self._request("DELETE",f"/v1/webhooks/{self._segment(subscription_id)}")
 
     def webhook_deliveries(self, subscription_id: str, *, limit: int = 100):
-        return self._request("GET",f"/v1/webhooks/{subscription_id}/deliveries",
+        return self._request("GET",f"/v1/webhooks/{self._segment(subscription_id)}/deliveries",
                              params={"limit":limit})
 
     def replay_webhook_delivery(self, delivery_id: str):
-        return self._request("POST",f"/v1/webhooks/deliveries/{delivery_id}/replay")
+        return self._request("POST",f"/v1/webhooks/deliveries/{self._segment(delivery_id)}/replay")
 
     def replay_outbox_event(self, event_id: str):
         """Requeue a dead outbox event owned by this API key's tenant."""
-        return self._request("POST",f"/v1/events/outbox/{event_id}/replay")
+        return self._request("POST",f"/v1/events/outbox/{self._segment(event_id)}/replay")

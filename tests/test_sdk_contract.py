@@ -126,3 +126,45 @@ def test_sdk_replays_dead_outbox_event_for_current_tenant():
             transport=httpx.MockTransport(server)) as sdk:
         assert sdk.replay_outbox_event("event-1")["requeued"] is True
     assert calls==[("POST","/v1/events/outbox/event-1/replay")]
+
+
+@pytest.mark.parametrize("exception,code",[
+    (httpx.ReadTimeout("slow peer"),"TIMEOUT"),
+    (httpx.ConnectError("offline"),"TRANSPORT_ERROR"),
+])
+def test_sdk_normalizes_transport_failures_without_leaking_credentials(exception,code):
+    def fail(request):
+        raise exception
+    with MemoryClient("http://localhost","private-token",
+            transport=httpx.MockTransport(fail)) as sdk:
+        with pytest.raises(MemoryAPIError) as exc:
+            sdk.ready()
+    assert exc.value.status_code==0
+    assert exc.value.code==code
+    assert "private-token" not in str(exc.value)
+
+
+def test_sdk_rejects_invalid_success_json_and_accepts_empty_response():
+    with MemoryClient("http://localhost","secret",transport=httpx.MockTransport(
+            lambda _:httpx.Response(200,text="{incomplete"))) as sdk:
+        with pytest.raises(MemoryAPIError) as exc:
+            sdk.capabilities()
+    assert exc.value.code=="INVALID_RESPONSE"
+    with MemoryClient("http://localhost","secret",transport=httpx.MockTransport(
+            lambda _:httpx.Response(204))) as sdk:
+        assert sdk.capabilities() is None
+
+
+def test_sdk_rejects_path_traversal_and_encodes_reserved_characters():
+    requests=[]
+    def server(request):
+        requests.append(str(request.url))
+        return httpx.Response(200,json={"items":[]})
+    with MemoryClient("http://localhost","secret",
+            transport=httpx.MockTransport(server)) as sdk:
+        for invalid in ("../other","/admin","a/b","a\\\\b","", ".",".."):
+            with pytest.raises(ValueError):
+                sdk.recall(invalid)
+        assert sdk.recall("卧室 #1?")["items"]==[]
+    assert len(requests)==1
+    assert "%23" in requests[0] and "%3F" in requests[0]

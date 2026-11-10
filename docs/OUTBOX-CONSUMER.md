@@ -1,21 +1,32 @@
-# Transactional outbox: supported and unsupported semantics
+# Durable projection delivery
 
-`OutboxWorker.consume(event_type=...,handler=...,limit=...)` uses
-`FOR UPDATE SKIP LOCKED` to claim one pending row and invokes a database-local
-handler in the same PostgreSQL transaction. The event acknowledgement and the
-handler's SQL effects commit together; if the handler fails, its changes roll
-back and the event is rescheduled with a recorded error.
+Canonical writes create projection delivery rows in the same PostgreSQL transaction as the claim, canonical event and outbox row. Current claim channels are `fts` and `vector`. Each `(event_id, channel)` has an independent state machine: `pending -> done` or `pending -> dead`. Schema is kept in packaged and standalone SQL migrations.
 
-Verified adapter: `memory.claim.verified` receipt from Temporal is consumed
-into canonical `memory_events` using event ID idempotency.
+## Runtime
 
-Not yet implemented:
-- an embedding worker that produces vectors from raw text,
-- full SQL FTS projection and AGE task acknowledgement,
-- per-channel task accounting for a single `memory.claim.created` event,
-- background daemon service lifecycle and retry exhaustion/DLQ,
-- external side effects exactly-once semantics.
+Run with `MEMORY_DSN` configured:
 
-A durable outbox is an at-least-once delivery primitive. Do not use one
-`processed_at` flag to claim that all of embeddings, AGE, FTS and remote
-side effects have completed; split them into independent durable tasks.
+```bash
+python -m agent_memory_core.projection_worker
+```
+
+FTS is built in and writes a tenant-scoped `tsvector` projection with a GIN index. Vector generation is injected for a local embedding model:
+
+```bash
+MEMORY_EMBEDDER=my_local_embeddings:embed python -m agent_memory_core.projection_worker
+```
+
+The callable receives a canonical claim dictionary and returns `(model_id, vector)`. Dimensions 384 and 512 are supported; PostgreSQL enforces model ID to dimension binding. Without an embedder, vector tasks remain pending rather than being falsely acknowledged.
+
+## Delivery semantics
+
+`ProjectionWorker` uses `FOR UPDATE SKIP LOCKED` and runs each database-local handler and acknowledgement in one transaction. On failure, handler writes roll back; retry state is updated separately with bounded exponential backoff. After the attempt budget the task becomes `dead`. Operators can call `requeue_dead(event_id=..., channel=...)` to replay it.
+
+Delivery is **at least once**, not exactly once. Handlers must use the supplied connection, must not commit, and should be idempotent. Never perform remote HTTP calls inside the handler transaction.
+
+## Remaining boundaries
+
+- AGE graph edges still use `AgeProjection`'s explicit SQL/AGE ledger path; event-to-edge mapping and a worker adapter are not wired.
+- External webhook subscriptions, signing, per-subscriber cursors and delivery reconciliation are not implemented.
+- FTS is projected, but public hybrid search has not yet switched fully to ranked FTS retrieval.
+- Process supervision, metrics, health endpoints and graceful deployment strategy remain to be added.

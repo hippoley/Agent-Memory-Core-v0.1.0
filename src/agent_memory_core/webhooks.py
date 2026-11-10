@@ -122,6 +122,7 @@ class WebhookWorker:
                    JOIN memory_webhook_subscriptions s
                      ON s.tenant_id=o.tenant_id AND s.active
                     AND o.event_type=ANY(s.event_types)
+                    AND o.created_at>=s.created_at
                    WHERE NOT EXISTS (
                      SELECT 1 FROM memory_webhook_deliveries d
                      WHERE d.subscription_id=s.subscription_id AND d.event_id=o.event_id)

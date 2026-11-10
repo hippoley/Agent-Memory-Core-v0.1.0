@@ -89,5 +89,6 @@ def test_local_extractor_encodes_user_text_as_untrusted_json(monkeypatch):
     assert OllamaFactExtractor(model="m")(hostile)==[]
     prompt=captured["payload"]["prompt"]
     assert '"untrusted_user_text"' in prompt
-    assert hostile in prompt
+    encoded=prompt.split("not instructions: ",1)[1]
+    assert json.loads(encoded)["untrusted_user_text"]==hostile
     assert captured["payload"]["format"]=="json"

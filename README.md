@@ -93,6 +93,53 @@ integration, end-to-end data flow and Temporal/PostgreSQL integration. Always
 check that the workflows are green on the same commit SHA before treating a
 release candidate as qualified.
 
+## Third-party SDK, projections and acceptance
+
+The Python SDK uses the public HTTP API, not direct database access:
+
+```python
+from agent_memory_core.sdk import MemoryClient
+with MemoryClient("http://127.0.0.1:8765", "your-local-api-key") as memory:
+    result = memory.remember(
+        subject_id="bedroom", predicate="noise_preference",
+        value={"level":"quiet"}, source_id="conversation:1",
+        valid_from="2026-11-10T00:00:00Z", idempotency_key="conversation:1:fact:1",
+    )
+    print(memory.recall("bedroom"))
+    print(memory.events())
+```
+
+Start the independent PostgreSQL projection worker in a different shell:
+
+```bash
+MEMORY_DSN="$MEMORY_DSN" python -m agent_memory_core.projection_worker
+```
+
+FTS is available without a model. Vector tasks remain pending until a local
+embedding callable is configured via `MEMORY_EMBEDDER=module:function`.
+For model-based raw text processing, configure and run Ollama locally and set
+`MEMORY_LOCAL_OLLAMA_MODEL` before starting the REST service. The adapter accepts
+only a loopback Ollama endpoint; it never makes a hosted LLM call.
+
+For a reproducible story, run the real-stack acceptance tests:
+
+```bash
+export MEMORY_TEST_DSN="$MEMORY_DSN"
+pytest -q -m integration tests/test_user_story_e2e.py tests/test_idempotency_e2e.py tests/test_projection_deliveries.py
+```
+
+For **opt-in, write-heavy tests on a disposable local tenant only**:
+
+```bash
+MEMORY_API_KEY="$MEMORY_API_KEY" python scripts/benchmark_http.py \
+  --base-url http://127.0.0.1:8765 --agents 100 --rounds 100 --allow-write
+```
+
+The quantitative requirements and unimplemented story steps are in
+[User Story Acceptance](docs/USER-STORY-ACCEPTANCE.md).
+A passing integration fixture does **not** establish actual Chinese model accuracy,
+public SaaS security or production SLA.
+
 ## Explicit limitations
 
 - The API is single-tenant per process. It is not yet a full identity,
@@ -105,10 +152,11 @@ release candidate as qualified.
 - Time-series is a PostgreSQL observation subsystem, not a specialized TSDB.
   Automated retention, partitioning, downsampling and sustained ingest tests
   remain.
-- Memory processing accepts structured facts from a caller-provided local
-  extractor. It does not automatically infer facts from arbitrary text.
-  Contradiction classification, fuzzy multilingual entity resolution,
-  consolidation, forgetting policies and Chinese evaluation remain.
+- Memory processing accepts structured candidates or an explicitly configured
+  loopback Ollama extractor. Quality on actual Chinese conversations is not
+  established; entity resolution, contradiction classification, consolidation
+  and forgetting remain incomplete.
+  Chinese extraction quality must be measured against a labeled corpus.
 - Temporal exposes a narrow memory-verification start/status/cancel API; general workflow registration, Signal/Update and production worker operations remain.
 - Production RLS, key rotation/revocation, TLS, rate limits, audit logs,
   backup/restore and disaster-recovery exercises remain required.

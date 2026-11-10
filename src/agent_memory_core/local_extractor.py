@@ -37,7 +37,7 @@ class OllamaFactExtractor:
             "(short snake_case), value (JSON object), confidence (0..1). "
             "Extract durable user preferences and factual corrections; "
             "do not invent subjects, identities, or dates. "
-            "If the subject is ambiguous or nothing durable is known, return {\\\"facts\\\":[]}. "
+            "If the subject is ambiguous or nothing durable is known, return an empty facts array. "
             "Chinese text is supported. Input follows:\\n"
         )
         payload=json.dumps({"model":self.model,"prompt":instruction+text,

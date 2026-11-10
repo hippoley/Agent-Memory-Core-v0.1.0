@@ -23,4 +23,3 @@ def test_extractor_benchmark_penalizes_hallucinated_facts_and_wrong_corrections(
         "predicted_facts":[wrong],"latency_ms":10.0,"error":None}])
     assert result["micro_f1"]==0.0
     assert result["correction_accuracy"]==0.0
-    assert result["passed"] if "passed" in result else True

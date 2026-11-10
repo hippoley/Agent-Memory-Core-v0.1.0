@@ -50,6 +50,36 @@ class WebhookStore:
         return [{"subscription_id":r[0],"target_url":r[1],"event_types":r[2],
                  "active":r[3],"created_at":r[4]} for r in rows]
 
+    def deliveries(self, *, tenant_id: str, subscription_id: str,
+                   limit: int=100) -> list[dict]:
+        if not 1<=limit<=500:
+            raise ValueError("limit must be 1..500")
+        rows=self.conn.execute(
+            """SELECT d.delivery_id::text,d.event_id::text,d.status,d.attempts,
+                      d.available_at,d.delivered_at,d.response_status,d.last_error
+               FROM memory_webhook_deliveries d
+               JOIN memory_webhook_subscriptions s
+                 ON s.subscription_id=d.subscription_id
+               WHERE s.tenant_id=%s AND d.subscription_id=%s::uuid
+               ORDER BY d.created_at DESC,d.delivery_id DESC LIMIT %s""",
+            (tenant_id,subscription_id,limit)).fetchall()
+        names=("delivery_id","event_id","status","attempts","available_at",
+               "delivered_at","response_status","last_error")
+        return [dict(zip(names,row)) for row in rows]
+
+    def requeue_dead(self, *, tenant_id: str, delivery_id: str) -> bool:
+        with self.conn.transaction():
+            row=self.conn.execute(
+                """UPDATE memory_webhook_deliveries d SET status='pending',
+                   attempts=0,available_at=clock_timestamp(),lease_until=NULL,
+                   last_error=NULL,response_status=NULL
+                   FROM memory_webhook_subscriptions s
+                   WHERE d.subscription_id=s.subscription_id
+                     AND s.tenant_id=%s AND d.delivery_id=%s::uuid
+                     AND d.status='dead' RETURNING d.delivery_id""",
+                (tenant_id,delivery_id)).fetchone()
+        return row is not None
+
     def revoke(self, *, tenant_id: str, subscription_id: str) -> bool:
         with self.conn.transaction():
             row=self.conn.execute(

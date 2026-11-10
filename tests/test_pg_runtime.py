@@ -65,6 +65,11 @@ def test_real_postgres_pgvector_age():
                 model_id="BAAI/bge-small-zh-v1.5",vector=vec)
 
 
+        # Register canonical graph endpoints before creating relations.
+        for entity_id, kind in (("room-1","room"),("window-1","device"),
+                                ("home-1","place"),("window-current","device")):
+            db.upsert_entity(tenant_id=tenant,entity_id=entity_id,
+                             entity_type=kind,canonical_name=entity_id)
         db.add_edge(tenant_id=tenant,from_entity="room-1",predicate="HAS_WINDOW",to_entity="window-1",
                     source_memory_id=mid)
         with pytest.raises(PermissionError):
@@ -143,6 +148,8 @@ def test_real_postgres_pgvector_age():
             embedding=vec,model_id="test384",anchor_entity="room-1",
         ) == []
         special='window-"\\\\b'
+        db.upsert_entity(tenant_id=tenant,entity_id=special,entity_type="device",
+                         canonical_name="Specially named device")
         db.add_edge(tenant_id=tenant,from_entity="room-1",predicate="SPECIALLY_NAMED",to_entity=special,
                     source_memory_id=mid)
         assert age.project_pending(tenant_id=tenant).projected==1
@@ -317,3 +324,30 @@ def test_competing_first_writes_are_serialized_across_connections():
                                  predicate="preference")) == 1
     finally:
         verify.close()
+
+
+def test_relation_rejects_unregistered_or_cross_tenant_entities():
+    tenant="edge-ownership-"+uuid4().hex
+    other=tenant+"-other"
+    db=PostgresMemory(DSN)
+    try:
+        db.migrate()
+        db.upsert_entity(tenant_id=tenant,entity_id="room",entity_type="room",
+                         canonical_name="Room")
+        db.upsert_entity(tenant_id=other,entity_id="foreign-window",
+                         entity_type="device",canonical_name="Foreign Window")
+        with pytest.raises(ValueError,match="registered to this tenant"):
+            db.add_edge(tenant_id=tenant,from_entity="room",
+                        predicate="HAS_WINDOW",to_entity="foreign-window")
+        with pytest.raises(ValueError,match="registered to this tenant"):
+            db.add_edge(tenant_id=tenant,from_entity="unregistered",
+                        predicate="HAS_WINDOW",to_entity="room")
+        db.upsert_entity(tenant_id=tenant,entity_id="window",
+                         entity_type="device",canonical_name="Window")
+        edge=db.add_edge(tenant_id=tenant,from_entity="room",
+                         predicate="HAS_WINDOW",to_entity="window")
+        assert edge
+        assert db.outgoing_edges(tenant_id=tenant,from_entity="room") == [
+            ("HAS_WINDOW","window")]
+    finally:
+        db.close()

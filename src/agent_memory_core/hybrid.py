@@ -70,6 +70,20 @@ class HybridMemorySearch:
                 degraded["vector"]=f"{type(exc).__name__}: {str(exc)[:240]}"
 
         if query and query.strip():
+            fts_search = getattr(self.store, "fts_search", None)
+            if callable(fts_search):
+                try:
+                    with _channel_transaction(self.store):
+                        fts_ids = fts_search(
+                            tenant_id=tenant_id, query=query,
+                            limit=min(limit*10,100),
+                            valid_at=valid_at, known_at=known_at)
+                    for rank, mid in enumerate(fts_ids, 1):
+                        ranked.setdefault(mid, []).append(("fts", rank))
+                except Exception as exc:
+                    degraded["fts"] = f"{type(exc).__name__}: {str(exc)[:240]}"
+
+        if query and query.strip():
             # POSITION treats the user query literally; no LIKE wildcard or
             # ESCAPE dialect ambiguity across PostgreSQL versions.
             rows = self.store.conn.execute(

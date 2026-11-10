@@ -31,8 +31,10 @@ def test_signed_webhook_delivery_and_tenant_scoped_revocation():
     api_key="webhook-api-key-for-tenant-"+uuid4().hex
     master="webhook-master-signing-key-at-least-32-characters"
     try:
+        from agent_memory_core.postgres import PostgresMemory
+        dsn=os.environ["MEMORY_TEST_DSN"]
         app=create_app(api_key=api_key,tenant_id=tenant,
-            store_factory=lambda:db,
+            store_factory=lambda:PostgresMemory(dsn),
             webhook_signing_key=master,
             webhook_allowed_hosts={"hooks.example.test"})
         client=TestClient(app)
@@ -74,7 +76,7 @@ def test_signed_webhook_delivery_and_tenant_scoped_revocation():
 
         # A different tenant cannot list or revoke this subscription.
         other=TestClient(create_app(api_key="other-webhook-key-strong-enough",
-            tenant_id="other-"+tenant,store_factory=lambda:db,
+            tenant_id="other-"+tenant,store_factory=lambda:PostgresMemory(dsn),
             webhook_signing_key=master,
             webhook_allowed_hosts={"hooks.example.test"}))
         other_headers={"Authorization":"Bearer other-webhook-key-strong-enough"}

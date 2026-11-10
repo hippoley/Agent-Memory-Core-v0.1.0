@@ -480,6 +480,16 @@ class PostgresMemory:
                 """INSERT INTO memory_edges(edge_id,tenant_id,from_entity,predicate,to_entity,source_memory_id)
                    VALUES (%s,%s,%s,%s,%s,%s)""",
                 (eid,tenant_id,from_entity,predicate,to_entity,source_memory_id))
+            payload = json.dumps({"edge_id": str(eid), "from_entity": from_entity,
+                                  "to_entity": to_entity, "predicate": predicate},
+                                 ensure_ascii=False, sort_keys=True)
+            event_id = uuid4()
+            self.conn.execute(
+                """INSERT INTO memory_outbox
+                   (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                   VALUES (%s,%s,'edge',%s,'memory.edge.created',%s::jsonb)""",
+                (event_id,tenant_id,str(eid),payload),
+            )
         return str(eid)
 
 

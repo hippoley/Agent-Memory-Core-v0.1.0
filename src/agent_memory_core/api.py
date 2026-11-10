@@ -7,7 +7,7 @@ import asyncio
 import json
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
@@ -191,22 +191,29 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             "Tenant identity is derived from the API credential, never from request JSON."
         ),
     )
-    def add_claim(item: Claim, t: str = Depends(auth)):
+    def add_claim(item: Claim, t: str = Depends(auth),
+                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
         try:
             valid_from = aware_iso(item.valid_from)
             valid_to = aware_iso(item.valid_to)
             db = store_factory()
             try:
-                mid = db.remember(
+                args = dict(
                     tenant_id=t, subject_id=item.subject_id, predicate=item.predicate,
                     value=item.value, source_id=item.source_id, valid_from=valid_from,
                     valid_to=valid_to, replaces_id=item.replaces_id,
                     object_sha256=item.object_sha256,
                 )
+                if idempotency_key is not None:
+                    mid = db.remember_idempotent(idempotency_key=idempotency_key, **args)
+                else:
+                    mid = db.remember(**args)
             finally:
                 db.close()
             return {"id": mid, "tenant_id": t}
         except ValueError as exc:
+            if "Idempotency key reused" in str(exc):
+                raise HTTPException(status_code=409, detail=str(exc))
             raise HTTPException(status_code=422, detail=str(exc))
 
     @app.get(

@@ -19,6 +19,7 @@ class ProcessingReport:
     rejected: int = 0
     replaced: list[str] = field(default_factory=list)
     embedding_failures: list[str] = field(default_factory=list)
+    ambiguous: int = 0
 
 
 class MemoryProcessor:
@@ -26,6 +27,7 @@ class MemoryProcessor:
 
     Extractor contract: extractor(text) returns an iterable of dictionaries.
     Each candidate has subject_id, predicate, value, and optional confidence.
+    Optional cardinality is 'one' (default) or 'many'.
     An optional embedder receives the normalized candidate and returns a
     (model_id, vector) pair.
     """
@@ -56,19 +58,33 @@ class MemoryProcessor:
                 continue
             subject = candidate.get("subject_id")
             subject_name = candidate.get("subject_name")
+            cardinality = candidate.get("cardinality", "one")
+            if subject_name is not None and (
+                    not isinstance(subject_name, str) or not subject_name.strip()):
+                report.rejected += 1
+                continue
             if subject_name and self.entity_resolver is not None:
                 try:
                     resolved = self.entity_resolver(tenant_id, subject_name)
                 except ValueError:
+                    report.ambiguous += 1
                     report.rejected += 1
                     continue
-                if resolved is not None:
-                    subject = resolved["entity_id"]
+                # Reject unrecognized and contradictory entity associations.
+                if (not isinstance(resolved, dict)
+                        or not isinstance(resolved.get("entity_id"), str)
+                        or not resolved["entity_id"].strip()
+                        or (subject is not None and subject != resolved["entity_id"])):
+                    report.ambiguous += 1
+                    report.rejected += 1
+                    continue
+                subject = resolved["entity_id"]
             predicate = candidate.get("predicate")
             value = candidate.get("value")
             confidence = candidate.get("confidence", 1.0)
             if (not isinstance(subject, str) or not subject.strip()
                     or not isinstance(predicate, str) or not predicate.strip()
+                    or cardinality not in ('one', 'many')
                     or not isinstance(value, dict)
                     or not isinstance(confidence, (int, float))
                     or not 0.0 <= confidence <= 1.0
@@ -91,7 +107,13 @@ class MemoryProcessor:
                                     source_id=source_id,confidence=float(confidence))
                     report.duplicates += 1
                     continue
-                replaces_id = active[0]["id"] if active else None
+                # Multi-valued relations co-exist; single-valued conflicts
+                # must not replace an arbitrary active record.
+                if cardinality == "one" and len(active) > 1:
+                    report.ambiguous += 1
+                    report.rejected += 1
+                    continue
+                replaces_id = active[0]["id"] if active and cardinality == "one" else None
                 memory_id = self.store.remember(
                     tenant_id=tenant_id, subject_id=subject, predicate=predicate,
                     value=value, source_id=source_id, valid_from=now,

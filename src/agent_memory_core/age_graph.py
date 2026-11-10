@@ -219,3 +219,17 @@ class AgeProjection:
                 raise ValueError("Unexpected AGE entity ID type")
             result.append(parsed)
         return result
+
+
+def project_age_from_outbox(conn, tenant_id: str, event_id: str,
+                            aggregate_id: str, payload) -> None:
+    """Reconcile canonical edge state inside the outbox receipt transaction.
+
+    Triggered by claim creation (potential supersession), edge creation, and
+    retirement. Scan is tenant-scoped and bounded per event; subsequent
+    delivery polls or operator reconciliation can drain larger backlogs.
+    """
+    graph = AgeProjection(conn)
+    graph.initialize()
+    graph.reconcile_invalidated(tenant_id=tenant_id, limit=100)
+    graph.project_pending(tenant_id=tenant_id, limit=100)

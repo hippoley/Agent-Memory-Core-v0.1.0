@@ -292,6 +292,18 @@ class PostgresMemory:
                 """INSERT INTO memory_edges(edge_id,tenant_id,from_entity,predicate,to_entity,source_memory_id)
                    VALUES (%s,%s,%s,%s,%s,%s)""",
                 (eid,tenant_id,from_entity,predicate,to_entity,source_memory_id))
+            payload=json.dumps({"edge_id":str(eid)},sort_keys=True)
+            self.conn.execute(
+                """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
+                   VALUES (%s,%s,'memory.edge.created',%s::jsonb)""",
+                (tenant_id,str(eid),payload))
+            self.conn.execute(
+                """INSERT INTO memory_outbox(event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                   VALUES (%s,%s,'edge',%s,'memory.edge.created',%s::jsonb)""",
+                (eid,tenant_id,str(eid),payload))
+            self.conn.execute(
+                """INSERT INTO memory_projection_deliveries(event_id,channel)
+                   VALUES (%s,'graph') ON CONFLICT DO NOTHING""",(eid,))
         return str(eid)
 
 

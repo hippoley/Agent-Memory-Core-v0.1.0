@@ -90,3 +90,78 @@ def test_processor_uses_canonical_entity_resolution():
                               "value":{"target":"good"}}])
     assert report.created==["memory-1"]
     assert store.rows[0]["subject_id"]=="canonical-bedroom-1"
+
+
+def test_multi_valued_relationships_coexist_and_deduplicate():
+    store = FakeStore()
+    processor = MemoryProcessor(store)
+    candidates = [
+        {"subject_id": "living-room", "predicate": "HAS_WINDOW",
+         "value": {"target_id": "window-a"}, "cardinality": "many"},
+        {"subject_id": "living-room", "predicate": "HAS_WINDOW",
+         "value": {"target_id": "window-b"}, "cardinality": "many"},
+        {"subject_id": "living-room", "predicate": "HAS_WINDOW",
+         "value": {"target_id": "window-a"}, "cardinality": "many"},
+    ]
+    report = processor.process(tenant_id="home", text="two windows",
+                               source_id="conversation", extractor=lambda _: candidates)
+    assert len(report.created) == 2
+    assert report.duplicates == 1
+    assert report.replaced == []
+    assert {r["value"]["target_id"] for r in store.rows} == {"window-a", "window-b"}
+    assert all(r["superseded_at"] is None for r in store.rows)
+
+
+def test_unresolved_and_mismatched_entity_identity_is_not_written():
+    store = FakeStore()
+    processor = MemoryProcessor(
+        store, entity_resolver=lambda tenant, name:
+        {"entity_id": "canonical-room"} if name == "master bedroom" else None)
+    report = processor.process(
+        tenant_id="home", text="ambiguous reference", source_id="conversation",
+        extractor=lambda _: [
+            {"subject_id": "hall", "subject_name": "unknown room",
+             "predicate": "P", "value": {"x": 1}},
+            {"subject_id": "fake-room", "subject_name": "master bedroom",
+             "predicate": "P", "value": {"x": 2}},
+            {"subject_name": "master bedroom", "predicate": "P",
+             "value": {"x": 3}},
+        ])
+    assert report.ambiguous == 2
+    assert report.rejected == 2
+    assert len(report.created) == 1
+    assert store.rows[0]["subject_id"] == "canonical-room"
+
+
+def test_single_valued_conflict_does_not_pick_arbitrary_active_record():
+    store = FakeStore()
+    processor = MemoryProcessor(store)
+    seed = processor.process(
+        tenant_id="home", text="two valid relations", source_id="s1",
+        extractor=lambda _: [
+            {"subject_id": "room", "predicate": "P", "value": {"v": 1},
+             "cardinality": "many"},
+            {"subject_id": "room", "predicate": "P", "value": {"v": 2},
+             "cardinality": "many"},
+        ])
+    report = processor.process(
+        tenant_id="home", text="single-valued correction", source_id="s2",
+        extractor=lambda _: [
+            {"subject_id": "room", "predicate": "P", "value": {"v": 3}},
+        ])
+    assert len(seed.created) == 2
+    assert report.created == []
+    assert report.rejected == 1
+    assert report.ambiguous == 1
+    assert report.replaced == []
+
+
+def test_unknown_cardinality_is_rejected():
+    processor = MemoryProcessor(FakeStore())
+    report = processor.process(
+        tenant_id="home", text="test", source_id="s1",
+        extractor=lambda _: [
+            {"subject_id": "room", "predicate": "P",
+             "value": {"v": 1}, "cardinality": "untrusted"},
+        ])
+    assert report.rejected == 1

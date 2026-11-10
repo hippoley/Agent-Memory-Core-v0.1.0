@@ -118,8 +118,15 @@ tenant data. The key is currently limited to 255 characters.
 `POST /v1/memories/process` retains its separate deterministic extraction
 contract. It now returns `ambiguous` for rejected associations and enforces
 a minimum confidence threshold of 0.65; callers may choose a higher threshold.
-Its processing requests are **not yet idempotent across retries**. Do not
-assume this header on `/v1/memories` extends to the processing endpoint.
+The same `Idempotency-Key` header is now also supported by
+`POST /v1/memories/process`. Processing requests have a separate key
+namespace (`process:`), so keys cannot accidentally collide with single
+claim creation. A retry of an identical batch returns the original complete
+processing report, without creating extra claims or outbox events; a
+different body with the same key returns HTTP 409. The entire batch uses
+one enclosing PostgreSQL transaction including the durable response receipt.
+This is a database-local guarantee, not an external side-effect exactly-once
+guarantee.
 
 ## 5. Core memory operations
 

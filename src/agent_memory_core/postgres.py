@@ -36,6 +36,32 @@ class PostgresMemory:
         with self.conn.transaction():
             self.conn.execute(sql)
 
+    def predicate_cardinality(self, *, tenant_id: str, predicate: str) -> str:
+        """Trusted policy; absent predicate definitions default to single-valued."""
+        if not tenant_id or not predicate or not predicate.strip():
+            raise ValueError("Tenant and predicate required")
+        row = self.conn.execute(
+            "SELECT cardinality FROM memory_predicate_policies "
+            "WHERE tenant_id=%s AND predicate=%s", (tenant_id, predicate)
+        ).fetchone()
+        return row[0] if row else "one"
+
+    def set_predicate_cardinality(self, *, tenant_id: str, predicate: str,
+                                  cardinality: str) -> None:
+        """Administrative store operation, not exposed through the extractor."""
+        if (not tenant_id or not predicate or not predicate.strip()
+                or cardinality not in ("one", "many")):
+            raise ValueError("Invalid tenant predicate policy")
+        with self.conn.transaction():
+            self.conn.execute(
+                """INSERT INTO memory_predicate_policies
+                   (tenant_id,predicate,cardinality) VALUES (%s,%s,%s)
+                   ON CONFLICT (tenant_id,predicate) DO UPDATE SET
+                   cardinality=EXCLUDED.cardinality,
+                   updated_at=clock_timestamp()""",
+                (tenant_id, predicate, cardinality),
+            )
+
     def remember(self, *, tenant_id: str, subject_id: str, predicate: str, value: dict,
                  source_id: str, valid_from: datetime, valid_to: datetime | None = None,
                  replaces_id: str | None = None, object_sha256: str | None = None) -> str:

@@ -23,7 +23,7 @@ def test_claim_atomically_creates_fts_vector_tasks_and_fts_handler_projects():
         tasks=db.conn.execute(
             """SELECT channel,status FROM memory_projection_deliveries
                WHERE event_id=%s ORDER BY channel""",(mid,)).fetchall()
-        assert tasks == [("fts","pending"),("vector","pending")]
+        assert tasks == [("fts","pending"),("graph","pending"),("vector","pending")]
         worker=ProjectionWorker(db.conn)
         handler=PostgresProjectionHandlers()
         assert worker.consume(channel="fts",handler=handler.full_text,limit=10,event_id=mid)>=1

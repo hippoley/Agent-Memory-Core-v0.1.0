@@ -1,39 +1,36 @@
-"""Local extractor protocol and no-cloud security boundary."""
-import io
+"""Local extractor protocol and no-cloud network restrictions."""
 import json
+import urllib.request
 import pytest
-from agent_memory_core.local_extractor import OllamaFactExtractor
-
+from agent_memory_core.local_extractor import OllamaFactExtractor, _NoRedirect
 
 class FakeHTTP:
-    def __init__(self,data):
-        self.data=data
-    def __enter__(self):
-        return self
-    def __exit__(self,*args):
-        pass
-    def read(self,n):
-        return self.data
+    def __init__(self,data): self.data=data
+    def __enter__(self): return self
+    def __exit__(self,*args): pass
+    def read(self,n): return self.data
 
+def fake_opener(monkeypatch, handler):
+    class Stub:
+        def open(self,request,timeout):
+            return handler(request,timeout)
+    monkeypatch.setattr(urllib.request,"build_opener",lambda *args:Stub())
 
-def test_local_ollama_produces_structured_facts_without_remote_call(monkeypatch):
-    import urllib.request
+def test_local_ollama_returns_facts_and_never_needs_cloud(monkeypatch):
     captured={}
-    def stub(req,timeout):
-        captured["url"]=req.full_url
-        captured["payload"]=json.loads(req.data)
-        return FakeHTTP(json.dumps({"response":json.dumps({"facts":[{
-            "subject_id":"bedroom","predicate":"noise",
-            "value":{"level":"quiet"},"confidence":0.94
-        }]})}).encode())
-    monkeypatch.setattr(urllib.request,"urlopen",stub)
-    extractor=OllamaFactExtractor(model="local-test-model")
-    result=extractor("以后卧室晚上要安静")
-    assert result[0]["value"]["level"]=="quiet"
+    def serve(request,timeout):
+        captured["url"]=request.full_url
+        captured["payload"]=json.loads(request.data)
+        return FakeHTTP(json.dumps({"response":json.dumps({"facts":[
+            {"subject_id":"bedroom","predicate":"noise",
+             "value":{"level":"quiet"},"confidence":0.94}
+        ]})}).encode())
+    fake_opener(monkeypatch,serve)
+    facts=OllamaFactExtractor(model="local-model")("晚上卧室安静一点")
+    assert facts[0]["value"]=={"level":"quiet"}
     assert captured["url"]=="http://127.0.0.1:11434/api/generate"
     assert captured["payload"]["stream"] is False
     assert captured["payload"]["options"]["temperature"]==0
-
 
 @pytest.mark.parametrize("endpoint",[
     "https://api.example.com/api/generate",
@@ -42,24 +39,25 @@ def test_local_ollama_produces_structured_facts_without_remote_call(monkeypatch)
     "http://user:pass@localhost/api/generate",
     "http://localhost:11434/api/generate?redirect=http://example.com",
 ])
-def test_local_adapter_rejects_nonloopback_or_unexpected_urls(endpoint):
+def test_local_extractor_rejects_nonloopback_addresses(endpoint):
     with pytest.raises(ValueError):
         OllamaFactExtractor(model="m",endpoint=endpoint)
 
-
-def test_local_adapter_rejects_malformed_response(monkeypatch):
-    import urllib.request
-    monkeypatch.setattr(urllib.request,"urlopen",lambda *a,**kw:
-                         FakeHTTP(b'{"response":"{\"facts\":{\"wrong\":true}}"}'))
+def test_local_extractor_rejects_malformed_model_response(monkeypatch):
+    fake_opener(monkeypatch,lambda *a:FakeHTTP(json.dumps({
+        "response":json.dumps({"facts":{"wrong":True}})
+    }).encode()))
     with pytest.raises(RuntimeError):
-        OllamaFactExtractor(model="m")("text")
+        OllamaFactExtractor(model="m")("test")
 
-
-def test_local_adapter_fails_closed_on_network_error(monkeypatch):
-    import urllib.request
+def test_local_extractor_fails_closed_when_offline(monkeypatch):
     from urllib.error import URLError
-    def unavailable(*args,**kwargs):
-        raise URLError("offline")
-    monkeypatch.setattr(urllib.request,"urlopen",unavailable)
+    def offline(*args): raise URLError("offline")
+    fake_opener(monkeypatch,offline)
     with pytest.raises(RuntimeError,match="unavailable"):
-        OllamaFactExtractor(model="m")("some fact")
+        OllamaFactExtractor(model="m")("test")
+
+def test_local_extractor_rejects_redirects():
+    with pytest.raises(RuntimeError,match="redirect"):
+        _NoRedirect().redirect_request(None,None,302,"",{},
+            "https://remote.example.com/api/generate")

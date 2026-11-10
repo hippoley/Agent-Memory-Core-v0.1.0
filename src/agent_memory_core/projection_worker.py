@@ -14,7 +14,8 @@ from .outbox import ProjectionOutboxWorker, project_claim_fts
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--consumer-id", default="fts-v1")
+    parser.add_argument("--projection", choices=("fts", "age"), default="fts")
+    parser.add_argument("--consumer-id", default=None)
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     parser.add_argument("--once", action="store_true")
@@ -28,10 +29,23 @@ def main(argv=None):
     while True:
         db = PostgresMemory(dsn)
         try:
-            done = ProjectionOutboxWorker(db.conn).consume(
-                consumer_id=args.consumer_id, event_type="memory.claim.created",
-                handler=project_claim_fts, limit=args.batch_size,
-            )
+            worker = ProjectionOutboxWorker(db.conn)
+            if args.projection == "fts":
+                done = worker.consume(
+                    consumer_id=args.consumer_id or "fts-v1",
+                    event_type="memory.claim.created",
+                    handler=project_claim_fts, limit=args.batch_size,
+                )
+            else:
+                from .age_graph import project_age_from_outbox
+                consumer = args.consumer_id or "age-v1"
+                done = 0
+                for event_type in ("memory.edge.created", "memory.edge.retired",
+                                   "memory.claim.created"):
+                    done += worker.consume(
+                        consumer_id=consumer, event_type=event_type,
+                        handler=project_age_from_outbox, limit=args.batch_size,
+                    )
         finally:
             db.close()
         if args.once:

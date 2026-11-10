@@ -167,3 +167,32 @@ class ProjectionOutboxWorker:
                 (tenant_id,consumer_id,event_id),
             ).fetchone()
         return row is not None
+
+
+def project_claim_fts(conn, tenant_id: str, event_id: str,
+                      aggregate_id: str, payload) -> None:
+    """Materialize a tenant-owned claim into PostgreSQL FTS.
+
+    The worker's transaction contains the derived index and delivery receipt.
+    The projection is reconstructible from canonical memory_claims. No cloud
+    embedding, remote service or automatic Chinese segmentation is involved.
+    """
+    from uuid import UUID
+    claim_id = UUID(aggregate_id)
+    row = conn.execute(
+        """SELECT value FROM memory_claims WHERE id=%s AND tenant_id=%s""",
+        (claim_id, tenant_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError("Canonical claim missing or wrong tenant")
+    value = row[0]
+    document = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                          separators=(",", ":"), allow_nan=False)
+    conn.execute(
+        """INSERT INTO memory_claim_fts(memory_id,tenant_id,document)
+           VALUES (%s,%s,to_tsvector('simple',%s))
+           ON CONFLICT(memory_id) DO UPDATE SET
+               document=EXCLUDED.document,indexed_at=clock_timestamp()
+           WHERE memory_claim_fts.tenant_id=EXCLUDED.tenant_id""",
+        (claim_id, tenant_id, document),
+    )

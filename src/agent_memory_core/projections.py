@@ -36,7 +36,7 @@ class ProjectionWorker:
                 added += result.rowcount
         return added
 
-    def consume(self, *, channel: str, handler: Callable, limit: int = 20) -> int:
+    def consume(self, *, channel: str, handler: Callable, limit: int = 20, event_id: str | None = None) -> int:
         """Atomically commit a DB-local projection and its acknowledgement.
 
         A failed attempt rolls back the handler transaction, then records
@@ -56,9 +56,10 @@ class ProjectionWorker:
                            JOIN memory_outbox o ON o.event_id=d.event_id
                            WHERE d.channel=%s AND d.status='pending'
                              AND d.available_at<=clock_timestamp()
+                             AND (%s IS NULL OR d.event_id=%s::uuid)
                            ORDER BY d.available_at,o.created_at,d.event_id
                            LIMIT 1 FOR UPDATE OF d SKIP LOCKED""",
-                        (channel,)).fetchone()
+                        (channel,event_id,event_id)).fetchone()
                     if row is None:
                         break
                     event_id, tenant, aggregate, event_type, payload = row

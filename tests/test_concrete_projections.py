@@ -26,7 +26,7 @@ def test_claim_atomically_creates_fts_vector_tasks_and_fts_handler_projects():
         assert tasks == [("fts","pending"),("vector","pending")]
         worker=ProjectionWorker(db.conn)
         handler=PostgresProjectionHandlers()
-        assert worker.consume(channel="fts",handler=handler.full_text,limit=10)>=1
+        assert worker.consume(channel="fts",handler=handler.full_text,limit=10,event_id=mid)>=1
         projected=db.conn.execute(
             "SELECT tenant_id,document::text FROM memory_claim_search WHERE memory_id=%s",
             (mid,)).fetchone()

@@ -163,6 +163,12 @@ def test_fts_projector_rebuildable_tenant_scoped_and_bitemporal():
             if db.fts_search(tenant_id=tenant,query=word):
                 break
         assert db.fts_search(tenant_id=tenant,query=word)==[mid]
+        from agent_memory_core.hybrid import HybridMemorySearch
+        report = HybridMemorySearch(db).search_detailed(
+            tenant_id=tenant, query=word, limit=10)
+        assert report.hits and report.hits[0].memory_id == mid
+        assert "fts" in report.hits[0].channels
+        assert "fts" in report.channels_used
         assert db.fts_search(tenant_id=other,query=word)==[]
         assert db.fts_search(tenant_id=tenant,query=word,
                valid_at=datetime(2026,10,1,tzinfo=timezone.utc))==[]

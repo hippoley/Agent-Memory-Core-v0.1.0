@@ -105,3 +105,19 @@ Existing edge rows created before the event-producing version require a
 separate backfill or explicit `AgeProjection.project_pending` sweep.
 The graph's tenancy is enforced in canonical SQL; direct AGE access is still
 an operator privilege and is not isolated by database RLS.
+
+### Historical AGE repair
+
+Edges written before `memory.edge.created` events were added cannot be
+discovered retroactively by the event consumer. Run an explicitly scoped
+operator repair without mutating canonical edges:
+
+```bash
+python -m agent_memory_core.projection_worker \
+  --backfill-age-tenant 'home' --batch-size 100
+```
+
+The command reports `projected`, `removed`, and `complete`. A non-complete
+result exits nonzero so the operator can run another bounded pass. It does
+not remove graph orphan vertices; it replays unprojected active edges and
+cleans retired/superseded ones from the derived graph.

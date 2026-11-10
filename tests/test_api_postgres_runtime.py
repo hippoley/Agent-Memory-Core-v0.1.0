@@ -258,3 +258,51 @@ def test_memory_post_idempotency_key_retries_and_conflicts():
             (tenant,)).fetchone()[0]==1
     finally:
         check.close()
+
+
+@pytest.mark.integration
+def test_memory_processing_batch_is_idempotent_and_atomic():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real database required")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    from agent_memory_core.postgres import PostgresMemory
+    tenant = "batch-idempotency-" + uuid4().hex
+    key = "processing-api-key-long-enough-for-tests"
+    db = PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        db.migrate()
+    finally:
+        db.close()
+    client = TestClient(create_app(api_key=key,tenant_id=tenant,
+        store_factory=lambda: PostgresMemory(os.environ["MEMORY_TEST_DSN"])))
+    headers={"Authorization":"Bearer "+key,"Idempotency-Key":"session-turn-001"}
+    payload={"text":"quiet then normal","source_id":"conversation-1",
+             "candidates":[
+                {"subject_id":"room","predicate":"noise",
+                 "value":{"level":"quiet"},"confidence":0.96},
+                {"subject_id":"room","predicate":"noise",
+                 "value":{"level":"normal"},"confidence":0.98},
+             ]}
+    first=client.post("/v1/memories/process",headers=headers,json=payload)
+    second=client.post("/v1/memories/process",headers=headers,json=payload)
+    assert first.status_code==200 and second.status_code==200
+    assert first.json()==second.json()
+    assert len(first.json()["created"])==2
+    mismatch=client.post("/v1/memories/process",headers=headers,json={
+        **payload,"text":"different conversation"})
+    assert mismatch.status_code==409
+    verify=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        assert len(verify.recall(tenant_id=tenant,subject_id="room",
+                                 predicate="noise"))==1
+        assert verify.conn.execute(
+            "SELECT count(*) FROM memory_outbox WHERE tenant_id=%s",
+            (tenant,)).fetchone()[0]==2
+        assert verify.conn.execute(
+            "SELECT count(*) FROM memory_idempotency "
+            "WHERE tenant_id=%s AND idempotency_key=%s",
+            (tenant,"process:session-turn-001")).fetchone()[0]==1
+    finally:
+        verify.close()

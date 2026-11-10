@@ -22,7 +22,9 @@ class PostgresMemory:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("Install the 'postgres' extra: pip install -e '.[postgres]'") from exc
-        self.conn = psycopg.connect(dsn)
+        # Every canonical mutation explicitly uses conn.transaction().
+        # Avoid implicit read transactions that could roll back nested writes.
+        self.conn = psycopg.connect(dsn, autocommit=True)
 
     def close(self) -> None:
         self.conn.close()

@@ -340,6 +340,12 @@ class PostgresMemory:
             raise ValueError("Tenant, endpoints and predicate required")
         eid = uuid4()
         with self.conn.transaction():
+            if source_memory_id is not None:
+                found = self.conn.execute(
+                    "SELECT 1 FROM memory_claims WHERE id=%s AND tenant_id=%s",
+                    (source_memory_id,tenant_id)).fetchone()
+                if not found:
+                    raise PermissionError("Source memory belongs to another tenant or does not exist")
             # Physical AGE projection must never invent endpoints or bridge
             # tenant namespaces. Lock registered endpoint rows before insertion.
             endpoints = self.conn.execute(
@@ -350,12 +356,6 @@ class PostgresMemory:
             ).fetchall()
             if {row[0] for row in endpoints} != {from_entity, to_entity}:
                 raise ValueError("Both relation endpoints must be registered to this tenant")
-            if source_memory_id is not None:
-                found = self.conn.execute(
-                    "SELECT 1 FROM memory_claims WHERE id=%s AND tenant_id=%s",
-                    (source_memory_id,tenant_id)).fetchone()
-                if not found:
-                    raise PermissionError("Source memory belongs to another tenant or does not exist")
             self.conn.execute(
                 """INSERT INTO memory_edges(edge_id,tenant_id,from_entity,predicate,to_entity,source_memory_id)
                    VALUES (%s,%s,%s,%s,%s,%s)""",

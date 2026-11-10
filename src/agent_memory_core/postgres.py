@@ -4,6 +4,7 @@ This module does NOT call a hosted memory or embedding API.
 AGE graph projection deliberately remains a separate, explicitly optional step.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
@@ -40,6 +41,17 @@ class PostgresMemory:
             "SELECT pg_advisory_xact_lock(hashtextextended(%s, 1))",
             (json.dumps([tenant_id, subject_id, predicate], ensure_ascii=False),),
         )
+
+    @contextmanager
+    def fact_transaction(self, *, tenant_id: str, subject_id: str,
+                         predicate: str):
+        """Serialize read/dedupe/version/link as one durable fact decision."""
+        if not all((tenant_id, subject_id, predicate)):
+            raise ValueError("Tenant, subject, and predicate required")
+        with self.conn.transaction():
+            self._lock_predicate(tenant_id, predicate)
+            self._lock_fact(tenant_id, subject_id, predicate)
+            yield
 
     def current_time(self) -> datetime:
         """Read the database clock used for recorded_at and bitemporal visibility."""

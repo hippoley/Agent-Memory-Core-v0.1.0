@@ -37,7 +37,7 @@ def test_offline_pgvector_projector_receipt_and_tenant_isolation():
         handler = make_embedding_handler(model_id=model_id, embed=local_fixture)
         assert db.vector_search(tenant_id=tenant, model_id=model_id, vector=vector) == []
         assert worker.consume(consumer_id=consumer,
-                event_type="memory.claim.created", handler=handler, limit=100) >= 1
+                event_type="memory.claim.created", handler=handler, limit=100, tenant_id=tenant) >= 1
         assert len(invocations) == 1
         assert db.vector_search(tenant_id=tenant, model_id=model_id,
                                 vector=vector)[0][0] == claim
@@ -76,7 +76,7 @@ def test_pgvector_projector_invalid_dimensions_dead_letter_and_recovery():
         broken = make_embedding_handler(
             model_id=model_id, embed=lambda text: [1.0] * 16)
         assert worker.consume(consumer_id=consumer, event_type="memory.claim.created",
-                              handler=broken, limit=100, max_attempts=1) == 0
+                              handler=broken, limit=100, max_attempts=1, tenant_id=tenant) == 0
         assert worker.status(consumer_id=consumer, tenant_id=tenant)["dead_letter"] == 1
         assert db.conn.execute(
             "SELECT count(*) FROM memory_embedding_models WHERE tenant_id=%s",
@@ -88,7 +88,7 @@ def test_pgvector_projector_invalid_dimensions_dead_letter_and_recovery():
         fixed = make_embedding_handler(
             model_id=model_id, embed=lambda text: vector)
         assert worker.consume(consumer_id=consumer, event_type="memory.claim.created",
-                              handler=fixed, limit=100) >= 1
+                              handler=fixed, limit=100, tenant_id=tenant) >= 1
         assert worker.status(consumer_id=consumer, tenant_id=tenant)["dead_letter"] == 0
         assert db.vector_search(tenant_id=tenant, model_id=model_id,
                                 vector=vector)[0][0] == claim

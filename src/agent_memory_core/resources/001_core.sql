@@ -185,3 +185,18 @@ CREATE TABLE IF NOT EXISTS memory_predicate_policies (
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (tenant_id,predicate)
 );
+
+-- Fan-out delivery ledger: each consumer independently acknowledges each event.
+CREATE TABLE IF NOT EXISTS memory_outbox_deliveries (
+  event_id uuid NOT NULL REFERENCES memory_outbox(event_id) ON DELETE CASCADE,
+  consumer_id text NOT NULL,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  available_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  delivered_at timestamptz,
+  dead_letter_at timestamptz,
+  last_error text,
+  PRIMARY KEY(event_id, consumer_id)
+);
+CREATE INDEX IF NOT EXISTS memory_outbox_deliveries_pending
+  ON memory_outbox_deliveries(consumer_id, available_at, event_id)
+  WHERE delivered_at IS NULL AND dead_letter_at IS NULL;

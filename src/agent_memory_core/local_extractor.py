@@ -11,6 +11,11 @@ import urllib.request
 from urllib.parse import urlsplit
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("Ollama redirect refused; no remote network access")
+
+
 class OllamaFactExtractor:
     def __init__(self, *, model: str, endpoint: str = "http://127.0.0.1:11434/api/generate",
                  timeout: float = 20.0):
@@ -25,6 +30,7 @@ class OllamaFactExtractor:
         self.model=model
         self.endpoint=endpoint
         self.timeout=timeout
+        self._opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_NoRedirect())
 
     def __call__(self, text: str) -> list[dict]:
         if not isinstance(text,str) or not text.strip() or len(text)>100000:
@@ -46,7 +52,7 @@ class OllamaFactExtractor:
         request=urllib.request.Request(self.endpoint,data=payload,
                  headers={"Content-Type":"application/json"},method="POST")
         try:
-            with urllib.request.urlopen(request,timeout=self.timeout) as response:
+            with self._opener.open(request,timeout=self.timeout) as response:
                 raw=response.read(1024*1024+1)
         except (urllib.error.URLError,TimeoutError,OSError) as exc:
             raise RuntimeError("Local Ollama memory extractor unavailable") from exc

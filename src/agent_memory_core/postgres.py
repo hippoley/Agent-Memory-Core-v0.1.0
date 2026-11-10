@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
+from hashlib import sha256
 from .vector_validation import vector_literal
 from uuid import uuid4
 import json
@@ -171,6 +172,46 @@ class PostgresMemory:
                    VALUES (%s,%s,'claim',%s,'memory.claim.created',%s::jsonb)""",
                 (mid,tenant_id,str(mid),packed))
         return str(mid)
+
+    def remember_idempotent(self, *, idempotency_key: str, **kwargs) -> str:
+        """Store one logical request even if the caller retries after timeout.
+
+        All effects (claim, source, event, outbox, idempotency receipt) commit
+        together. Different bodies sharing a tenant/key are a conflict.
+        """
+        tenant = kwargs.get("tenant_id")
+        if (not tenant or not isinstance(idempotency_key, str)
+                or not 1 <= len(idempotency_key) <= 255):
+            raise ValueError("Invalid tenant or idempotency key")
+        packed = json.dumps(kwargs, ensure_ascii=False, sort_keys=True,
+                            default=lambda obj: aware(obj).isoformat()
+                            if isinstance(obj, datetime) else TypeError(
+                                "Unsupported idempotency request value"),
+                            separators=(",",":"), allow_nan=False)
+        fingerprint = sha256(packed.encode("utf-8")).hexdigest()
+        with self.conn.transaction():
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 2))",
+                (json.dumps([tenant,idempotency_key],ensure_ascii=False),),
+            )
+            existing = self.conn.execute(
+                """SELECT request_sha256,result FROM memory_idempotency
+                   WHERE tenant_id=%s AND idempotency_key=%s FOR UPDATE""",
+                (tenant,idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                if existing[0] != fingerprint:
+                    raise ValueError("Idempotency key reused with different request")
+                return existing[1]["id"]
+            memory_id = self.remember(**kwargs)
+            self.conn.execute(
+                """INSERT INTO memory_idempotency
+                   (tenant_id,idempotency_key,request_sha256,result)
+                   VALUES (%s,%s,%s,%s::jsonb)""",
+                (tenant,idempotency_key,fingerprint,
+                 json.dumps({"id":memory_id},sort_keys=True)),
+            )
+        return memory_id
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:

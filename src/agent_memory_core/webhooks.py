@@ -110,7 +110,7 @@ class WebhookWorker:
         return hmac.new(self.master,("agent-memory-webhook:"+subscription_id).encode(),
                         hashlib.sha256).digest()
 
-    def enqueue(self,limit: int=500) -> int:
+    def enqueue(self,limit: int=500,tenant_id: str|None=None) -> int:
         if not 1<=limit<=5000:
             raise ValueError("limit must be 1..5000")
         with self.conn.transaction():
@@ -125,12 +125,13 @@ class WebhookWorker:
                    WHERE NOT EXISTS (
                      SELECT 1 FROM memory_webhook_deliveries d
                      WHERE d.subscription_id=s.subscription_id AND d.event_id=o.event_id)
+                     AND (%s::text IS NULL OR o.tenant_id=%s)
                    ORDER BY o.created_at,o.event_id
                    LIMIT %s
-                   ON CONFLICT(subscription_id,event_id) DO NOTHING""",(limit,))
+                   ON CONFLICT(subscription_id,event_id) DO NOTHING""",(tenant_id,tenant_id,limit))
             return result.rowcount
 
-    def _claim(self):
+    def _claim(self,tenant_id: str|None=None):
         with self.conn.transaction():
             row=self.conn.execute(
                 """SELECT d.delivery_id::text,d.subscription_id::text,
@@ -143,8 +144,9 @@ class WebhookWorker:
                    WHERE s.active AND d.attempts<%s
                      AND ((d.status='pending' AND d.available_at<=clock_timestamp())
                        OR (d.status='delivering' AND d.lease_until<clock_timestamp()))
+                     AND (%s::text IS NULL OR d.tenant_id=%s)
                    ORDER BY d.available_at,d.created_at,d.delivery_id
-                   LIMIT 1 FOR UPDATE OF d SKIP LOCKED""",(self.max_attempts,)).fetchone()
+                   LIMIT 1 FOR UPDATE OF d SKIP LOCKED""",(self.max_attempts,tenant_id,tenant_id)).fetchone()
             if row is None:
                 return None
             self.conn.execute(
@@ -173,8 +175,8 @@ class WebhookWorker:
                        WHERE delivery_id=%s::uuid AND status='delivering'""",
                     ("dead" if dead else "pending",delay,status,(error or "delivery failed")[:500],delivery_id))
 
-    def deliver_one(self) -> bool:
-        row=self._claim()
+    def deliver_one(self,tenant_id: str|None=None) -> bool:
+        row=self._claim(tenant_id=tenant_id)
         if row is None:
             return False
         delivery_id,subscription_id,event_id,tenant_id,target,event_type,payload,attempt=row
@@ -208,13 +210,13 @@ class WebhookWorker:
                          error=type(exc).__name__+": "+str(exc),attempt=attempt)
         return True
 
-    def consume(self,limit: int=100) -> int:
+    def consume(self,limit: int=100,tenant_id: str|None=None) -> int:
         if not 1<=limit<=1000:
             raise ValueError("limit must be 1..1000")
-        self.enqueue()
+        self.enqueue(tenant_id=tenant_id)
         done=0
         for _ in range(limit):
-            if not self.deliver_one():
+            if not self.deliver_one(tenant_id=tenant_id):
                 break
             done+=1
         return done

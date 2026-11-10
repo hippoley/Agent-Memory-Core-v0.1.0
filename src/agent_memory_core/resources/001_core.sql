@@ -200,3 +200,14 @@ CREATE TABLE IF NOT EXISTS memory_outbox_deliveries (
 CREATE INDEX IF NOT EXISTS memory_outbox_deliveries_pending
   ON memory_outbox_deliveries(consumer_id, available_at, event_id)
   WHERE delivered_at IS NULL AND dead_letter_at IS NULL;
+
+-- Rebuildable lexical projection. "simple" supports token-based matching;
+-- Chinese segmentation is not provided by PostgreSQL's stock configuration.
+CREATE TABLE IF NOT EXISTS memory_claim_fts (
+  memory_id uuid PRIMARY KEY REFERENCES memory_claims(id) ON DELETE CASCADE,
+  tenant_id text NOT NULL,
+  document tsvector NOT NULL,
+  indexed_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS memory_claim_fts_gin ON memory_claim_fts USING gin(document);
+CREATE INDEX IF NOT EXISTS memory_claim_fts_tenant ON memory_claim_fts(tenant_id);

@@ -66,6 +66,11 @@ def test_signed_webhook_delivery_and_tenant_scoped_revocation():
         transport=httpx.Client(transport=httpx.MockTransport(receiver))
         worker=WebhookWorker(db.conn,signing_master_key=master,
             allowed_hosts={"hooks.example.test"},http_client=transport)
+        assert worker.enqueue()==1
+        queued=db.conn.execute(
+            """SELECT subscription_id::text,event_id::text FROM memory_webhook_deliveries
+               WHERE subscription_id=%s::uuid""",(sub["subscription_id"],)).fetchall()
+        assert len(queued)==1 and queued[0][1]==mid,queued
         assert worker.consume(limit=10)==1
         assert len(received)==1
         state=db.conn.execute(

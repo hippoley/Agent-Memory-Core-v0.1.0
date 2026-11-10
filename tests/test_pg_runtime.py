@@ -351,3 +351,39 @@ def test_relation_rejects_unregistered_or_cross_tenant_entities():
             ("HAS_WINDOW","window")]
     finally:
         db.close()
+
+
+def test_concurrent_processor_same_fact_is_one_claim_with_two_sources():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from agent_memory_core.processing import MemoryProcessor
+    tenant = "dedupe-" + uuid4().hex
+    init = PostgresMemory(DSN)
+    try:
+        init.migrate()
+    finally:
+        init.close()
+    barrier=Barrier(2)
+    def ingest(source):
+        db=PostgresMemory(DSN)
+        try:
+            barrier.wait(timeout=10)
+            report=MemoryProcessor(db).process(
+                tenant_id=tenant,text="Same preference",source_id=source,
+                extractor=lambda _: [{"subject_id":"room","predicate":"preference",
+                                      "value":{"level":"quiet"}}])
+            return report
+        finally:
+            db.close()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(ingest,("agent-a","agent-b")))
+    assert sorted((len(r.created),r.duplicates,r.rejected) for r in results) == [
+        (0,1,0),(1,0,0)]
+    verify=PostgresMemory(DSN)
+    try:
+        rows=verify.recall(tenant_id=tenant,subject_id="room",predicate="preference")
+        assert len(rows)==1
+        sources=verify.sources_for_memory(tenant_id=tenant,memory_id=rows[0]["id"])
+        assert {s["source_id"] for s in sources}=={"agent-a","agent-b"}
+    finally:
+        verify.close()

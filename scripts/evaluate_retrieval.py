@@ -14,6 +14,18 @@ from pathlib import Path
 import sys
 import time
 
+def score_query(relevant_ids, ranked_ids):
+    relevant=set(relevant_ids)
+    if not relevant:
+        raise ValueError("At least one relevant memory ID is required")
+    ranked=list(ranked_ids)
+    recall_at_5=len(relevant.intersection(ranked[:5]))/len(relevant)
+    first_rank=next((rank for rank,memory_id in enumerate(ranked[:10],1)
+                     if memory_id in relevant),None)
+    reciprocal_rank=1/first_rank if first_rank else 0.0
+    return recall_at_5,reciprocal_rank,first_rank
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--dataset",required=True)
@@ -47,10 +59,9 @@ def main():
                 result=client.search(query=row["query"],limit=10,
                     embedding=row.get("embedding"),model_id=row.get("model_id"))
                 ids=[hit["memory_id"] for hit in result["items"]]
-                recalled5=len(expected.intersection(ids[:5]))/len(expected)
+                recalled5,rr,rank=score_query(expected,ids)
                 recall5+=recalled5
-                rank=next((rank for rank,mid in enumerate(ids,1) if mid in expected),None)
-                reciprocal.append(1/rank if rank else 0.0)
+                reciprocal.append(rr)
                 failures+=0
                 details.append({"index":index,"recall_at_5":recalled5,"first_relevant_rank":rank,
                     "channels_used":result.get("channels_used",[]),

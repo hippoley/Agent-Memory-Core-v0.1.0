@@ -22,10 +22,24 @@ class PostgresMemory:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("Install the 'postgres' extra: pip install -e '.[postgres]'") from exc
-        self.conn = psycopg.connect(dsn)
+        self.conn = psycopg.connect(dsn, autocommit=True)
 
     def close(self) -> None:
         self.conn.close()
+
+    def _lock_predicate(self, tenant_id: str, predicate: str) -> None:
+        # Shared with administrative cardinality updates. This is an xact lock
+        # and is meaningful only inside an explicit transaction.
+        self.conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (json.dumps([tenant_id, predicate], ensure_ascii=False),),
+        )
+
+    def _lock_fact(self, tenant_id: str, subject_id: str, predicate: str) -> None:
+        self.conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 1))",
+            (json.dumps([tenant_id, subject_id, predicate], ensure_ascii=False),),
+        )
 
     def current_time(self) -> datetime:
         """Read the database clock used for recorded_at and bitemporal visibility."""
@@ -53,6 +67,13 @@ class PostgresMemory:
                 or cardinality not in ("one", "many")):
             raise ValueError("Invalid tenant predicate policy")
         with self.conn.transaction():
+            self._lock_predicate(tenant_id, predicate)
+            current = self.predicate_cardinality(tenant_id=tenant_id, predicate=predicate)
+            if current != cardinality and self.conn.execute(
+                "SELECT 1 FROM memory_claims WHERE tenant_id=%s AND predicate=%s LIMIT 1",
+                (tenant_id, predicate),
+            ).fetchone():
+                raise ValueError("Cannot change cardinality for an existing predicate without reconciliation")
             self.conn.execute(
                 """INSERT INTO memory_predicate_policies
                    (tenant_id,predicate,cardinality) VALUES (%s,%s,%s)
@@ -73,6 +94,24 @@ class PostgresMemory:
             raise ValueError("Invalid effective interval")
         mid = uuid4()
         with self.conn.transaction():
+            self._lock_predicate(tenant_id, predicate)
+            self._lock_fact(tenant_id, subject_id, predicate)
+            cardinality = self.predicate_cardinality(tenant_id=tenant_id, predicate=predicate)
+            if cardinality == "one":
+                collisions = self.conn.execute(
+                    """SELECT id::text FROM memory_claims
+                       WHERE tenant_id=%s AND subject_id=%s AND predicate=%s
+                         AND superseded_at IS NULL
+                         AND valid_from < coalesce(%s::timestamptz, 'infinity'::timestamptz)
+                         AND (valid_to IS NULL OR valid_to > %s)
+                       FOR UPDATE""",
+                    (tenant_id, subject_id, predicate, valid_to, valid_from),
+                ).fetchall()
+                if replaces_id:
+                    if len(collisions) != 1 or collisions[0][0] != str(replaces_id):
+                        raise ValueError("Single-valued correction must replace the only overlapping claim")
+                elif collisions:
+                    raise ValueError("Single-valued predicate already has an overlapping active claim; use replaces_id")
             mutation_time = self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
             if object_sha256 is not None:
                 owned = self.conn.execute(

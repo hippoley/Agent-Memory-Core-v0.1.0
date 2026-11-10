@@ -79,3 +79,29 @@ Chinese tokenizer before claiming Chinese full-text search quality.
 Index lag is possible while the worker is down; canonical SQL remains the
 source of truth. A production supervisor, metrics, stale-projection alarms,
 resync controls and recovery exercises are still required.
+
+## Apache AGE projection worker (draft)
+
+After running schema migration, start a separately supervised AGE worker:
+
+```bash
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.projection_worker --projection age --once
+python -m agent_memory_core.projection_worker --projection age --consumer-id age-v1
+```
+
+The AGE worker independently acknowledges `memory.edge.created`,
+`memory.edge.retired`, and `memory.claim.created` events using the
+`age-v1` consumer namespace. Canonical edge creation/retirement now append
+transactional outbox events. New claims trigger reconciliation for previously
+sourced edges whose claim has been superseded. The handler uses
+`AgeProjection.reconcile_invalidated` and `project_pending` in the
+same PostgreSQL transaction as its receipt.
+
+**Boundaries:** AGE remains a rebuildable index and is eventually consistent
+when this worker is stopped. Reconciliation is bounded to 100 edges per
+trigger and is not a guaranteed full rebuild for arbitrary historic backlog.
+Existing edge rows created before the event-producing version require a
+separate backfill or explicit `AgeProjection.project_pending` sweep.
+The graph's tenancy is enforced in canonical SQL; direct AGE access is still
+an operator privilege and is not isolated by database RLS.

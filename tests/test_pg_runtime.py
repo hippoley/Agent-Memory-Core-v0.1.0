@@ -387,3 +387,37 @@ def test_concurrent_processor_same_fact_is_one_claim_with_two_sources():
         assert {s["source_id"] for s in sources}=={"agent-a","agent-b"}
     finally:
         verify.close()
+
+
+def test_direct_sql_cannot_bypass_graph_tenant_foreign_keys():
+    import psycopg
+    tenant = "graph-fk-" + uuid4().hex
+    other = "cross-" + tenant
+    db = PostgresMemory(DSN)
+    try:
+        db.migrate()
+        db.upsert_entity(tenant_id=tenant,entity_id="room",
+                         entity_type="room",canonical_name="Room")
+        db.upsert_entity(tenant_id=other,entity_id="window",
+                         entity_type="device",canonical_name="Foreign window")
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            with db.conn.transaction():
+                db.conn.execute(
+                    """INSERT INTO memory_edges
+                       (edge_id,tenant_id,from_entity,predicate,to_entity)
+                       VALUES (%s,%s,'room','HAS_WINDOW','window')""",
+                    (uuid4(),tenant),
+                )
+        db.upsert_entity(tenant_id=tenant,entity_id="window",
+                         entity_type="device",canonical_name="Local window")
+        with db.conn.transaction():
+            db.conn.execute(
+                """INSERT INTO memory_edges
+                   (edge_id,tenant_id,from_entity,predicate,to_entity)
+                   VALUES (%s,%s,'room','HAS_WINDOW','window')""",
+                (uuid4(),tenant),
+            )
+        assert db.outgoing_edges(tenant_id=tenant,from_entity="room") == [
+            ("HAS_WINDOW","window")]
+    finally:
+        db.close()

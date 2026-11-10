@@ -211,3 +211,24 @@ CREATE TABLE IF NOT EXISTS memory_claim_fts (
 );
 CREATE INDEX IF NOT EXISTS memory_claim_fts_gin ON memory_claim_fts USING gin(document);
 CREATE INDEX IF NOT EXISTS memory_claim_fts_tenant ON memory_claim_fts(tenant_id);
+
+-- Enforce endpoint tenant ownership even for direct SQL writers. NOT VALID
+-- allows installation with historical orphan edges; newly inserted/updated
+-- rows are checked. Existing orphans require a separate audit and cleanup.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE conname='memory_edges_from_entity_tenant_fk'
+                   AND conrelid='memory_edges'::regclass) THEN
+    ALTER TABLE memory_edges ADD CONSTRAINT memory_edges_from_entity_tenant_fk
+      FOREIGN KEY (tenant_id,from_entity)
+      REFERENCES memory_entities(tenant_id,entity_id) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE conname='memory_edges_to_entity_tenant_fk'
+                   AND conrelid='memory_edges'::regclass) THEN
+    ALTER TABLE memory_edges ADD CONSTRAINT memory_edges_to_entity_tenant_fk
+      FOREIGN KEY (tenant_id,to_entity)
+      REFERENCES memory_entities(tenant_id,entity_id) NOT VALID;
+  END IF;
+END $$;

@@ -183,11 +183,13 @@ class PostgresMemory:
         if (not tenant or not isinstance(idempotency_key, str)
                 or not 1 <= len(idempotency_key) <= 255):
             raise ValueError("Invalid tenant or idempotency key")
+        def serialize_identity(obj):
+            if isinstance(obj, datetime):
+                return aware(obj).isoformat()
+            raise TypeError("Unsupported idempotency request value")
         packed = json.dumps(kwargs, ensure_ascii=False, sort_keys=True,
-                            default=lambda obj: aware(obj).isoformat()
-                            if isinstance(obj, datetime) else TypeError(
-                                "Unsupported idempotency request value"),
-                            separators=(",",":"), allow_nan=False)
+                            default=serialize_identity, separators=(",", ":"),
+                            allow_nan=False)
         fingerprint = sha256(packed.encode("utf-8")).hexdigest()
         with self.conn.transaction():
             self.conn.execute(

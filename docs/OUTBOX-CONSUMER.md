@@ -121,3 +121,40 @@ The command reports `projected`, `removed`, and `complete`. A non-complete
 result exits nonzero so the operator can run another bounded pass. It does
 not remove graph orphan vertices; it replays unprojected active edges and
 cleans retired/superseded ones from the derived graph.
+
+## Offline pgvector projection (draft)
+
+This worker uses the same per-consumer ledger as AGE and FTS. Its inference
+adapter loads an already-downloaded SentenceTransformer from an **existing
+local directory**, with `local_files_only=True` and
+`trust_remote_code=False`. No hosted embedding API is called.
+
+```bash
+python -m pip install -e '.[postgres,embedding]'
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.projection_worker \
+  --projection vector \
+  --tenant-id home \
+  --model-id local-bge-zh-512-v1 \
+  --model-path /srv/models/embedding-zh \
+  --batch-size 20
+```
+
+The loader must yield **384 or 512** dimensions, finite and nonzero.
+Model IDs are versioned operator-assigned identifiers: never reuse the same
+model ID for incompatible model weights or normalization rules. Per-tenant
+model-dimension conflicts fail without an outbox acknowledgement. Retries
+and dead-letter replay are available through `ProjectionOutboxWorker`.
+
+`model_path` needs to be populated by the operator ahead of time; the CI
+embedding test uses a deterministic fixture and **does not demonstrate
+inference with real model weights**. Model quality, Chinese similarity and
+hardware throughput require separate tests with actual local weights.
+
+For now, inference runs inside the database transaction so vector storage
+and its receipt commit atomically. For production, isolate potentially slow
+model inference from PostgreSQL row locks with a leased prepare/commit
+protocol; external inference has at-least-once semantics, not exactly once.
+The vector consumer requires an explicit `--tenant-id`, preventing accidental
+processing of unrelated tenants. FTS and AGE workers may also accept the
+optional `--tenant-id` filter.

@@ -43,8 +43,8 @@ class MemoryClient:
     def __exit__(self, *args):
         self.close()
 
-    def _request(self, method: str, path: str, *, params=None, json=None) -> Any:
-        response = self._http.request(method,path,params=params,json=json)
+    def _request(self, method: str, path: str, *, params=None, json=None, headers=None) -> Any:
+        response = self._http.request(method,path,params=params,json=json,headers=headers)
         if response.is_error:
             try:
                 body = response.json()
@@ -69,14 +69,16 @@ class MemoryClient:
 
     def remember(self, *, subject_id: str, predicate: str, value: dict,
                  source_id: str, valid_from: str, valid_to: str | None = None,
-                 replaces_id: str | None = None, object_sha256: str | None = None):
+                 replaces_id: str | None = None, object_sha256: str | None = None,
+                 idempotency_key: str | None = None):
         body = dict(subject_id=subject_id,predicate=predicate,value=value,
                     source_id=source_id,valid_from=valid_from)
         body.update({key:val for key,val in {
             "valid_to":valid_to,"replaces_id":replaces_id,
             "object_sha256":object_sha256,
         }.items() if val is not None})
-        return self._request("POST","/v1/memories",json=body)
+        return self._request("POST","/v1/memories",json=body,
+                             headers={"Idempotency-Key":idempotency_key} if idempotency_key is not None else None)
 
     def recall(self, subject_id: str, *, predicate: str | None = None,
                valid_at: str | None = None, known_at: str | None = None):

@@ -94,8 +94,9 @@ class ProjectionOutboxWorker:
                      SELECT 1 FROM memory_outbox_deliveries d
                      WHERE d.event_id=o.event_id AND d.consumer_id=%s
                    )
+                   ORDER BY o.created_at,o.event_id LIMIT %s
                    ON CONFLICT(event_id,consumer_id) DO NOTHING""",
-                (consumer_id,event_type,consumer_id),
+                (consumer_id,event_type,consumer_id,min(limit*10,1000)),
             )
         processed = 0
         for _ in range(limit):
@@ -134,7 +135,9 @@ class ProjectionOutboxWorker:
                     self.conn.execute(
                         """UPDATE memory_outbox_deliveries SET
                            attempts=attempts+1,
-                           available_at=clock_timestamp()+interval '5 seconds',
+                           available_at=clock_timestamp() +
+                               (interval '1 second' * LEAST(
+                                   300, (5 * POWER(2,LEAST(attempts,6)))::integer)),
                            dead_letter_at=CASE WHEN attempts+1 >= %s
                                THEN clock_timestamp() ELSE NULL END,
                            last_error=%s

@@ -158,14 +158,16 @@ class WebhookWorker:
 
     def _finish(self,delivery_id: str,*,success: bool,status: int|None,error: str|None,
                 attempt: int):
+        """Lease fencing: a superseded or expired attempt cannot acknowledge."""
         with self.conn.transaction():
             if success:
                 self.conn.execute(
                     """UPDATE memory_webhook_deliveries SET status='delivered',
                        delivered_at=clock_timestamp(),lease_until=NULL,
                        response_status=%s,last_error=NULL
-                       WHERE delivery_id=%s::uuid AND status='delivering'""",
-                    (status,delivery_id))
+                       WHERE delivery_id=%s::uuid AND status='delivering'
+                         AND attempts=%s AND lease_until>clock_timestamp()""",
+                    (status,delivery_id,attempt))
             else:
                 dead=attempt>=self.max_attempts
                 delay=min(3600,5*(2**min(attempt-1,9)))
@@ -173,8 +175,9 @@ class WebhookWorker:
                     """UPDATE memory_webhook_deliveries SET status=%s,
                        available_at=clock_timestamp()+(%s*interval '1 second'),
                        lease_until=NULL,response_status=%s,last_error=%s
-                       WHERE delivery_id=%s::uuid AND status='delivering'""",
-                    ("dead" if dead else "pending",delay,status,(error or "delivery failed")[:500],delivery_id))
+                       WHERE delivery_id=%s::uuid AND status='delivering'
+                         AND attempts=%s AND lease_until>clock_timestamp()""",
+                    ("dead" if dead else "pending",delay,status,(error or "delivery failed")[:500],delivery_id,attempt))
 
     def deliver_one(self,tenant_id: str|None=None) -> bool:
         row=self._claim(tenant_id=tenant_id)

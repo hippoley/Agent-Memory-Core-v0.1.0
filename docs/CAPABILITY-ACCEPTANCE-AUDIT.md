@@ -1,7 +1,20 @@
-# Capability Acceptance Audit — refreshed against current main
+# Capability Acceptance Audit — current main baseline plus draft PR #2 changes
 
-Audit date: 2026-11-09  
+Audit date: 2026-11-10  
 Repository: `hippoley/Agent-Memory-Core-v0.1.0`
+
+
+
+> **Scope note (Draft PR #2):** The main-branch baseline described below
+> remains unchanged until merge. The draft branch additionally introduces
+> explicit PostgreSQL read/write transaction boundaries, serialized
+> single-value claim enforcement, trusted predicate policies, verified graph
+> relation endpoints, independent Outbox consumer receipts/DLQ,
+> processing confidence floor and ambiguity reporting, and optional
+> Idempotency-Key for POST /v1/memories.
+> Recheck every job for the exact HEAD SHA before marking this PR accepted.
+> The new fan-out ledger does not include vector/FTS/AGE materializer workers,
+> and two-connection concurrency tests do not qualify as 100-agent load tests.
 
 This replaces earlier audit snapshots that predated the expanded REST facade.
 The audit distinguishes implementation, tests, external API exposure and
@@ -112,11 +125,12 @@ runs from different commits and call the latest main fully qualified.
 ## Next engineering gates
 
 1. Add real MinIO integration tests, object lifecycle/deletion, quota and orphan cleanup.
-2. Add outbox per-channel tasks for vector, FTS and AGE projection, plus retry
-   exhaustion and dead-letter handling.
+2. Connect real vector, FTS, and AGE projector handlers to the new independent
+   consumer ledger, add daemon lifecycle, operational metrics, and backpressure.
 3. Add observation retention/partition policy and sustained ingestion tests.
-4. Add processing concurrency/idempotency controls and a Chinese candidate
-   extraction evaluation set.
+4. Expand the two-connection atomic processor tests to 100-Agent sustained
+   concurrency/load; implement processing-endpoint idempotency and a Chinese
+   extraction/negation/coreference evaluation set.
 5. Add Temporal signals/updates and generalize workflow registration only after
    worker deployment and lifecycle semantics are stable.
 6. Add RLS, API key rotation/revocation, rate limits and audit trails.

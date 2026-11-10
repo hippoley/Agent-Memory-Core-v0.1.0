@@ -176,7 +176,7 @@ class PostgresMemory:
         canonical=json.dumps(value,ensure_ascii=False,sort_keys=True,
                              separators=(",",":"),allow_nan=False)
         with self.conn.transaction():
-            lock_key="agent-memory-claim:"+tenant_id+"\\x1f"+subject_id+"\\x1f"+predicate
+            lock_key="agent-memory-claim:"+json.dumps([tenant_id,subject_id,predicate],ensure_ascii=False,separators=(",",":"))
             self.conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",(lock_key,))
             now=self.current_time()

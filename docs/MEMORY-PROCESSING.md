@@ -107,9 +107,20 @@ a missing, ambiguous, or contradictory resolution is rejected.
 
 **Security and reliability boundaries:** Calling
 `set_predicate_cardinality` must be limited to an authenticated trusted
-administrative control plane. The registry by itself does not validate
-`value.target_id` ownership, implement atomic check-then-insert under
-concurrent agents, retractions/negative assertions, or clean up stale graph
-projections. Changing a policy for an existing populated predicate requires
-a separate audited data reconciliation; no automated migration of existing
-claims is implied.
+administrative control plane. Direct `remember()` writes now enforce overlapping single-value claims
+with tenant-scoped transaction advisory locks (including competing first
+writers). `add_edge()` validates both graph endpoints against
+`memory_entities` for the same tenant, but arbitrary claim payloads such as
+`value.target_id` are **not** yet typed or entity-validated.
+
+The public processing API enforces a confidence floor of 0.65 and returns
+`ambiguous` separately. The canonical PostgreSQL connector uses autocommit
+for standalone reads and explicit transactions for mutations, preventing
+implicit read transactions from silently rolling back successful writes on
+connection close.
+
+**Still missing:** semantic deduplication for concurrently repeated
+multi-valued facts, model-driven relation retractions/negative assertions,
+automated data reconciliation, crash/restart load testing, and a true
+cross-request idempotent claim command. Policy changes for a predicate with
+existing claims are rejected pending an audited migration.

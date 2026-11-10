@@ -254,3 +254,36 @@ def test_age_outbox_auto_projects_retires_and_reconciles_sourced_edges():
         assert worker.status(consumer_id="age-test-v1",tenant_id=tenant)["dead_letter"]==0
     finally:
         db.close()
+
+
+@pytest.mark.integration
+def test_age_backfill_recovers_legacy_edge_without_outbox_event():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real AGE/PostgreSQL required")
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.age_graph import AgeProjection, backfill_age_tenant
+    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    tenant="legacy-age-"+uuid4().hex
+    try:
+        db.migrate()
+        for name,kind in (("room","room"),("window","device")):
+            db.upsert_entity(tenant_id=tenant,entity_id=name,
+                             entity_type=kind,canonical_name=name)
+        edge_id=uuid4()
+        # Legacy producer wrote a canonical edge but did not emit an event.
+        with db.conn.transaction():
+            db.conn.execute(
+                """INSERT INTO memory_edges
+                   (edge_id,tenant_id,from_entity,predicate,to_entity)
+                   VALUES (%s,%s,'room','HAS_WINDOW','window')""",
+                (edge_id,tenant))
+        graph=AgeProjection(db.conn)
+        graph.initialize()
+        assert graph.neighbors(tenant_id=tenant,from_entity="room")==[]
+        outcome=backfill_age_tenant(db.conn,tenant_id=tenant,batch_size=1)
+        assert outcome=={"tenant_id":tenant,"projected":1,
+                         "removed":0,"complete":True}
+        assert graph.neighbors(tenant_id=tenant,from_entity="room")==["window"]
+        assert backfill_age_tenant(db.conn,tenant_id=tenant)["projected"]==0
+    finally:
+        db.close()

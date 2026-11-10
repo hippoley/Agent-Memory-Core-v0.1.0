@@ -68,7 +68,7 @@ class ProcessRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100000, description="Original text retained as processing context; source_id identifies its durable source.")
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
     candidates: list[dict] = Field(min_length=1, max_length=500, description="Structured facts emitted by the caller's local extractor. Each item requires subject_id or resolvable subject_name, predicate, and object value.")
-    confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+    confidence_threshold: float = Field(default=0.65, ge=0.65, le=1.0, description="Caller may raise the minimum but cannot lower the service floor of 0.65.")
 
 
 class MemoryVerificationRequest(BaseModel):
@@ -537,6 +537,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 "rejected": report.rejected,
                 "replaced": report.replaced,
                 "embedding_failures": report.embedding_failures,
+                "ambiguous": report.ambiguous,
             }
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))

@@ -16,10 +16,13 @@ from uuid import uuid4
 def validate_target(url: str, allowed_hosts: set[str]) -> str:
     parsed=urlsplit(url)
     host=(parsed.hostname or "").lower().rstrip(".")
+    port=parsed.port
+    allowed_target=((port in (None,443) and host in allowed_hosts)
+                    or (port is not None and f"{host}:{port}" in allowed_hosts))
     if (parsed.scheme!="https" or not host or parsed.username or parsed.password
-            or parsed.port not in (None,443) or parsed.path in ("","/")
-            or parsed.query or parsed.fragment or host not in allowed_hosts):
-        raise ValueError("Webhook URL must be HTTPS on an explicitly allowed host and include a path")
+            or parsed.path in ("","/") or parsed.query or parsed.fragment
+            or not allowed_target):
+        raise ValueError("Webhook URL must be HTTPS on an explicitly allowed host[:port] and include a path")
     return url
 
 

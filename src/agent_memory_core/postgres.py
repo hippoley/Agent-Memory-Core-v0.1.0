@@ -38,9 +38,17 @@ class PostgresMemory:
         return self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
 
     def migrate(self) -> None:
-        sql = resources.files("agent_memory_core").joinpath("resources/001_core.sql").read_text(encoding="utf-8")
-        with self.conn.transaction():
-            self.conn.execute(sql)
+        """Apply ordered, idempotent SQL migrations shipped with this package."""
+        root = resources.files("agent_memory_core").joinpath("resources")
+        migrations = sorted(
+            (item for item in root.iterdir()
+             if item.name.endswith(".sql") and item.name[:3].isdigit()),
+            key=lambda item: item.name,
+        )
+        for migration in migrations:
+            sql = migration.read_text(encoding="utf-8")
+            with self.conn.transaction():
+                self.conn.execute(sql)
 
     def remember(self, *, tenant_id: str, subject_id: str, predicate: str, value: dict,
                  source_id: str, valid_from: datetime, valid_to: datetime | None = None,

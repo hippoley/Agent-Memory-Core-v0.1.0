@@ -74,8 +74,18 @@ flags = {
     "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
 }
 
+def memory_extractor_factory(tenant_id):
+    from .local_extractor import OllamaFactExtractor
+    return OllamaFactExtractor(
+        model=os.environ["MEMORY_LOCAL_OLLAMA_MODEL"],
+        endpoint=os.getenv("MEMORY_LOCAL_OLLAMA_ENDPOINT",
+                           "http://127.0.0.1:11434/api/generate"),
+    )
+
+
 app = create_app(search_factory=search_factory,
                  object_store_factory=object_store_factory,
                  capability_flags=flags,
+                 memory_extractor_factory=memory_extractor_factory if os.getenv('MEMORY_LOCAL_OLLAMA_MODEL') else None,
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
                  temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"))

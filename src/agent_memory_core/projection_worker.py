@@ -16,6 +16,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--projection", choices=("fts", "age", "vector"), default="fts")
     parser.add_argument("--consumer-id", default=None)
+    parser.add_argument("--tenant-id", default=None,
+                        help="Restrict consumed events to a server-owned tenant")
     parser.add_argument("--model-path", default=None,
                         help="Local directory with an offline SentenceTransformer")
     parser.add_argument("--model-id", default=None,
@@ -44,8 +46,8 @@ def main(argv=None):
         return 0 if result["complete"] else 1
     embedding_handler = None
     if args.projection == "vector":
-        if not args.model_path or not args.model_id:
-            parser.error("--projection vector requires --model-path and --model-id")
+        if not args.model_path or not args.model_id or not args.tenant_id:
+            parser.error("--projection vector requires --model-path, --model-id and --tenant-id")
         from .embedding_projection import local_sentence_transformer, make_embedding_handler
         embedding_handler = make_embedding_handler(
             model_id=args.model_id, embed=local_sentence_transformer(args.model_path))
@@ -59,12 +61,14 @@ def main(argv=None):
                     consumer_id=args.consumer_id or "fts-v1",
                     event_type="memory.claim.created",
                     handler=project_claim_fts, limit=args.batch_size,
+                    tenant_id=args.tenant_id,
                 )
             elif args.projection == "vector":
                 done = worker.consume(
                     consumer_id=args.consumer_id or "vector:" + args.model_id,
                     event_type="memory.claim.created",
                     handler=embedding_handler, limit=args.batch_size,
+                    tenant_id=args.tenant_id,
                 )
             else:
                 from .age_graph import project_age_from_outbox
@@ -75,6 +79,7 @@ def main(argv=None):
                     done += worker.consume(
                         consumer_id=consumer, event_type=event_type,
                         handler=project_age_from_outbox, limit=args.batch_size,
+                        tenant_id=args.tenant_id,
                     )
         finally:
             db.close()

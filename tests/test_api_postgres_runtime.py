@@ -219,3 +219,42 @@ def test_public_api_full_memory_lifecycle_on_real_postgres(tmp_path):
     body=search.json()
     assert body["items"] and body["items"][0]["memory_id"]==memory_id
     assert {"sql","vector","graph"}.issubset(set(body["channels_used"]))
+
+
+@pytest.mark.integration
+def test_memory_post_idempotency_key_retries_and_conflicts():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real database required")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    from agent_memory_core.postgres import PostgresMemory
+    tenant="api-idempotency-"+uuid4().hex
+    key="test-api-idempotency-key-with-sufficient-length"
+    db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        db.migrate()
+    finally:
+        db.close()
+    client=TestClient(create_app(api_key=key,tenant_id=tenant,
+        store_factory=lambda: PostgresMemory(os.environ["MEMORY_TEST_DSN"])))
+    headers={"Authorization":"Bearer "+key,"Idempotency-Key":"request-001"}
+    payload={"subject_id":"room","predicate":"preference",
+             "value":{"level":"quiet"},"source_id":"s1",
+             "valid_from":"2026-11-01T00:00:00Z"}
+    a=client.post("/v1/memories",json=payload,headers=headers)
+    b=client.post("/v1/memories",json=payload,headers=headers)
+    assert a.status_code==201 and b.status_code==201
+    assert a.json()["id"]==b.json()["id"]
+    changed=client.post("/v1/memories",json={**payload,"value":{"level":"loud"}},
+                        headers=headers)
+    assert changed.status_code==409
+    check=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    try:
+        assert len(check.recall(tenant_id=tenant,subject_id="room",
+                                predicate="preference"))==1
+        assert check.conn.execute(
+            "SELECT count(*) FROM memory_outbox WHERE tenant_id=%s",
+            (tenant,)).fetchone()[0]==1
+    finally:
+        check.close()

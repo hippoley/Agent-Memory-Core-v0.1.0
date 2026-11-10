@@ -32,7 +32,7 @@ def test_webhook_delivery_status_replay_and_tenant_isolation():
         worker=WebhookWorker(db.conn,signing_master_key=master,
             allowed_hosts={"hooks.example.test"},max_attempts=1,
             http_client=transport)
-        assert worker.consume(limit=1)==1
+        assert worker.consume(limit=1,tenant_id=tenant)==1
         delivery_id=db.conn.execute(
             "SELECT delivery_id::text FROM memory_webhook_deliveries WHERE event_id=%s",
             (memory_id,)).fetchone()[0]

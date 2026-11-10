@@ -32,7 +32,7 @@ def main():
     if len(rows)<args.min_cases:
         parser.error(f"Need {args.min_cases} judged queries; found {len(rows)}")
     from agent_memory_core.sdk import MemoryClient
-    recall5=0
+    recall5=0.0
     reciprocal=[]
     latencies=[]
     failures=0
@@ -47,12 +47,12 @@ def main():
                 result=client.search(query=row["query"],limit=10,
                     embedding=row.get("embedding"),model_id=row.get("model_id"))
                 ids=[hit["memory_id"] for hit in result["items"]]
-                hit5=bool(expected.intersection(ids[:5]))
-                recall5+=int(hit5)
+                recalled5=len(expected.intersection(ids[:5]))/len(expected)
+                recall5+=recalled5
                 rank=next((rank for rank,mid in enumerate(ids,1) if mid in expected),None)
                 reciprocal.append(1/rank if rank else 0.0)
                 failures+=0
-                details.append({"index":index,"hit_at_5":hit5,"first_relevant_rank":rank,
+                details.append({"index":index,"recall_at_5":recalled5,"first_relevant_rank":rank,
                     "channels_used":result.get("channels_used",[]),
                     "degraded_channels":result.get("degraded_channels",{})})
             except Exception as exc:

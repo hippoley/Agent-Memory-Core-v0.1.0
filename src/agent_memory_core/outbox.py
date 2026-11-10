@@ -148,6 +148,28 @@ class ProjectionOutboxWorker:
                 break
         return processed
 
+    def status(self, *, consumer_id: str, tenant_id: str | None = None) -> dict:
+        """Read per-consumer backlog, dead letters and oldest pending age."""
+        if not consumer_id or (tenant_id is not None and not tenant_id):
+            raise ValueError("Valid consumer required")
+        row = self.conn.execute(
+            """SELECT count(*) FILTER (WHERE d.delivered_at IS NOT NULL),
+                      count(*) FILTER (WHERE d.delivered_at IS NULL
+                                         AND d.dead_letter_at IS NULL),
+                      count(*) FILTER (WHERE d.dead_letter_at IS NOT NULL),
+                      extract(epoch FROM
+                        (clock_timestamp()-min(o.created_at) FILTER (
+                          WHERE d.delivered_at IS NULL
+                            AND d.dead_letter_at IS NULL)))
+               FROM memory_outbox_deliveries d
+               JOIN memory_outbox o ON o.event_id=d.event_id
+               WHERE d.consumer_id=%s AND (%s::text IS NULL OR o.tenant_id=%s)""",
+            (consumer_id, tenant_id, tenant_id),
+        ).fetchone()
+        return {"consumer_id": consumer_id, "tenant_id": tenant_id,
+                "delivered": row[0], "pending": row[1], "dead_letter": row[2],
+                "oldest_pending_seconds": float(row[3]) if row[3] is not None else None}
+
     def retry_dead_letter(self, *, tenant_id: str, consumer_id: str,
                           event_id: str) -> bool:
         """Operator-controlled recovery after correcting the root cause."""

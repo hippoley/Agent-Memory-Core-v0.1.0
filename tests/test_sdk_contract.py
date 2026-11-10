@@ -93,3 +93,25 @@ def test_sdk_entity_and_observation_contract():
     assert [path for path,_ in calls]==[
         "/v1/entities","/v1/edges","/v1/observations"]
     assert calls[2][1]["source_event_id"]=="evt-1"
+
+
+def test_sdk_webhook_lifecycle_routes_and_one_time_secret():
+    calls=[]
+    def server(request):
+        calls.append((request.method,request.url.path))
+        if request.url.path=="/v1/webhooks" and request.method=="POST":
+            return httpx.Response(201,json={"subscription_id":"sub-1","signing_secret":"one-time"})
+        return httpx.Response(200,json={"items":[],"requeued":True})
+    with MemoryClient("http://localhost","secret",
+            transport=httpx.MockTransport(server)) as sdk:
+        assert sdk.create_webhook(target_url="https://hooks.example.test/a",
+            event_types=["memory.claim.created"])["signing_secret"]=="one-time"
+        sdk.list_webhooks()
+        sdk.webhook_deliveries("sub-1")
+        sdk.replay_webhook_delivery("delivery-1")
+        sdk.revoke_webhook("sub-1")
+    assert calls==[
+        ("POST","/v1/webhooks"),("GET","/v1/webhooks"),
+        ("GET","/v1/webhooks/sub-1/deliveries"),
+        ("POST","/v1/webhooks/deliveries/delivery-1/replay"),
+        ("DELETE","/v1/webhooks/sub-1")]

@@ -122,7 +122,7 @@ def test_webhook_failure_backoff_dead_letter_and_operator_replay():
             """UPDATE memory_webhook_deliveries SET available_at=clock_timestamp()
                WHERE event_id=%s""",(mid,))
         db.conn.commit()
-        assert worker.consume(limit=1)==1
+        assert worker.consume(limit=1,tenant_id=tenant)==1
         row=db.conn.execute(
             """SELECT status,attempts FROM memory_webhook_deliveries
                WHERE event_id=%s""",(mid,)).fetchone()

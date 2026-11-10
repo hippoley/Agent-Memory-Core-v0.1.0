@@ -233,3 +233,28 @@ def project_age_from_outbox(conn, tenant_id: str, event_id: str,
     graph.initialize()
     graph.reconcile_invalidated(tenant_id=tenant_id, limit=100)
     graph.project_pending(tenant_id=tenant_id, limit=100)
+
+
+def backfill_age_tenant(conn, *, tenant_id: str, batch_size: int = 100,
+                        max_batches: int = 1000) -> dict:
+    """Operator-initiated, bounded reconciliation for legacy edges.
+
+    Canonical SQL records are never changed. Each AGE batch uses its own
+    PostgreSQL transaction so a failure leaves completed batches intact.
+    """
+    if not tenant_id or not (1 <= batch_size <= 1000) or not (1 <= max_batches <= 10000):
+        raise ValueError("Valid tenant and bounded reconciliation limits required")
+    graph = AgeProjection(conn)
+    graph.initialize()
+    projected = removed = 0
+    for _ in range(max_batches):
+        n_removed = graph.reconcile_invalidated(
+            tenant_id=tenant_id, limit=batch_size)
+        n_projected = graph.project_pending(tenant_id=tenant_id, limit=batch_size).projected
+        removed += n_removed
+        projected += n_projected
+        if n_removed == 0 and n_projected == 0:
+            return {"tenant_id": tenant_id, "projected": projected,
+                    "removed": removed, "complete": True}
+    return {"tenant_id": tenant_id, "projected": projected,
+            "removed": removed, "complete": False}

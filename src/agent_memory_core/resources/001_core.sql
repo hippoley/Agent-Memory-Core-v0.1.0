@@ -176,3 +176,12 @@ CREATE TABLE IF NOT EXISTS memory_objects (
 );
 CREATE INDEX IF NOT EXISTS memory_objects_created
 ON memory_objects(tenant_id, created_at DESC);
+
+-- Tenant-controlled predicate cardinality. Model output cannot change it.
+CREATE TABLE IF NOT EXISTS memory_predicate_policies (
+  tenant_id text NOT NULL,
+  predicate text NOT NULL,
+  cardinality text NOT NULL CHECK (cardinality IN ('one','many')),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (tenant_id,predicate)
+);

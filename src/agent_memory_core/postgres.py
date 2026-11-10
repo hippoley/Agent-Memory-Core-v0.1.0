@@ -215,6 +215,46 @@ class PostgresMemory:
             )
         return memory_id
 
+    def process_idempotent(self, *, tenant_id: str, idempotency_key: str,
+                           request: dict, operation) -> dict:
+        """Atomic idempotent batch operation with durable response receipt.
+
+        The operation uses this same connection and must not commit itself.
+        Every nested claim write remains a savepoint in the parent transaction.
+        """
+        if (not tenant_id or not isinstance(idempotency_key, str)
+                or not 1 <= len(idempotency_key) <= 247):
+            raise ValueError("Invalid tenant or idempotency key")
+        # Prefix keys to prevent collisions between /memories and /process.
+        key = "process:" + idempotency_key
+        fingerprint = sha256(json.dumps(
+            request, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")).hexdigest()
+        with self.conn.transaction():
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 2))",
+                (json.dumps([tenant_id,key],ensure_ascii=False),),
+            )
+            prior = self.conn.execute(
+                """SELECT request_sha256,result FROM memory_idempotency
+                   WHERE tenant_id=%s AND idempotency_key=%s FOR UPDATE""",
+                (tenant_id,key),
+            ).fetchone()
+            if prior is not None:
+                if prior[0] != fingerprint:
+                    raise ValueError("Idempotency key reused with different request")
+                return prior[1]
+            result = operation()
+            self.conn.execute(
+                """INSERT INTO memory_idempotency
+                   (tenant_id,idempotency_key,request_sha256,result)
+                   VALUES (%s,%s,%s,%s::jsonb)""",
+                (tenant_id,key,fingerprint,json.dumps(
+                    result,ensure_ascii=False,sort_keys=True,allow_nan=False)),
+            )
+        return result
+
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:
         known_at = aware(known_at or datetime.now(timezone.utc))

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import math
 from typing import Callable
 
 
@@ -71,6 +72,8 @@ class MemoryProcessor:
                     or not isinstance(predicate, str) or not predicate.strip()
                     or not isinstance(value, dict)
                     or not isinstance(confidence, (int, float))
+                    or isinstance(confidence, bool)
+                    or not math.isfinite(confidence)
                     or not 0.0 <= confidence <= 1.0
                     or confidence < self.confidence_threshold):
                 report.rejected += 1

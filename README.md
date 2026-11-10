@@ -140,6 +140,66 @@ The quantitative requirements and unimplemented story steps are in
 A passing integration fixture does **not** establish actual Chinese model accuracy,
 public SaaS security or production SLA.
 
+## Durable outbound webhooks
+
+Webhook delivery is an optional outbound integration. It is **at least once**;
+receivers must deduplicate using `X-Memory-Delivery` (or the enclosed
+`delivery_id`). Configure an explicit hostname allowlist and a 32+ character
+signing master key before enabling subscriptions:
+
+```bash
+export MEMORY_WEBHOOK_SIGNING_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export MEMORY_WEBHOOK_ALLOWED_HOSTS="hooks.example.com"
+```
+
+The service accepts HTTPS callback URLs only when their hostname exactly
+matches the deployment allowlist. Redirects and environment HTTP proxies are
+disabled by the worker. The per-subscription HMAC secret is derived from the
+master key and subscription ID; it is returned once at subscription creation.
+Keep it in the receiver's secret manager. The database does not store per-hook
+plaintext signing secrets.
+
+Create a subscription:
+
+```http
+POST /v1/webhooks
+Authorization: Bearer <tenant-api-key>
+Content-Type: application/json
+
+{"target_url":"https://hooks.example.com/agent-memory","event_types":["memory.claim.created"]}
+```
+
+Verify the receiver signature over the exact raw request body:
+
+```python
+import hashlib, hmac
+expected = hmac.new(bytes.fromhex(SIGNING_SECRET),
+    timestamp.encode() + b"." + raw_body, hashlib.sha256).hexdigest()
+assert hmac.compare_digest(signature, "sha256=" + expected)
+```
+
+Run the independent worker (requires the `api` extra for HTTPX):
+
+```bash
+MEMORY_DSN="$MEMORY_DSN" \
+MEMORY_WEBHOOK_SIGNING_KEY="$MEMORY_WEBHOOK_SIGNING_KEY" \
+MEMORY_WEBHOOK_ALLOWED_HOSTS="hooks.example.com" \
+python -m agent_memory_core.webhook_worker
+```
+
+Subscriptions can be listed and revoked with `GET /v1/webhooks` and
+`DELETE /v1/webhooks/{subscription_id}`. Delivery attempts are inspectable at
+`GET /v1/webhooks/{subscription_id}/deliveries`; a tenant administrator can
+requeue a dead attempt with
+`POST /v1/webhooks/deliveries/{delivery_id}/replay`. These operations enforce
+the API key's server-bound tenant identity.
+
+Each matching event is persisted as a per-subscription delivery. Network I/O
+occurs outside the database transaction; delivery attempts are leased, signed,
+retried with exponential backoff, and dead-lettered after the configured
+attempt budget. Revocation stops future dispatch and outstanding delivery
+claims. A receiver should respond 2xx only after durably accepting the event.
+
 ## Explicit limitations
 
 - The API is single-tenant per process. It is not yet a full identity,

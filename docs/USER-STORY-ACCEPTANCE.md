@@ -19,7 +19,7 @@
 | S05 投影 | FTS、向量、AGE 独立任务，成功状态不能互相冒充 | `test_concrete_projections.py`, `test_projection_deliveries.py` | 真实数据库路径，质量另测 |
 | S06 检索 | 正确当前记忆、证据、双时间，跨渠道排序可解释 | `test_user_story_e2e.py`, `test_hybrid.py` | 机制可测；中文 Recall@k **未测** |
 | S07 纠正 | 当前仅新事实；known_at=纠正前仍返回旧事实 | `test_user_story_e2e.py` | 真实数据库测试 |
-| S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_api_objects_observations.py`, `test_user_story_e2e.py` | SSE/游标已有；Webhook **未实现** |
+| S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_webhooks_integration.py`, `test_webhook_api_integration.py`, `test_sdk_contract.py` | Webhook 订阅、签名、退避、死信、重放已实现；真实 PG 集成 CI 通过；外部真实接收端尚未实测 |
 | S09 故障恢复 | DB/Worker 故障后任务可重试、DLQ 重放、无静默丢数据 | `test_projection_deliveries.py`, `test_outbox_runtime.py` | 故障注入尚不完整 |
 | S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py` | API 层已测；DB RLS **未实现** |
 

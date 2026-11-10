@@ -29,6 +29,12 @@ class Claim(BaseModel):
     object_sha256: str | None = Field(default=None, description="Optional SHA-256 reference to separately stored evidence object.")
 
 
+class WebhookCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_url: str = Field(min_length=12,max_length=2048)
+    event_types: list[str] = Field(min_length=1,max_length=50)
+
+
 class ObservationWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
     device_id: str = Field(min_length=1, max_length=255)
@@ -90,7 +96,8 @@ class SearchRequest(BaseModel):
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
-               temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None):
+               temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None,
+               webhook_signing_key=None, webhook_allowed_hosts=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
@@ -513,6 +520,93 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     await asyncio.sleep(0.5)
         return StreamingResponse(generate(), media_type="text/event-stream",
                                  headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+    @app.post(
+        "/v1/webhooks", status_code=201, tags=["Events"],
+        summary="Create a signed, durable webhook subscription",
+    )
+    def create_webhook(item: WebhookCreate, t: str = Depends(auth)):
+        import hashlib, hmac
+        from .webhooks import WebhookStore, validate_target
+        master=webhook_signing_key or os.getenv("MEMORY_WEBHOOK_SIGNING_KEY")
+        allowed=webhook_allowed_hosts
+        if allowed is None:
+            allowed={x.strip().lower() for x in os.getenv("MEMORY_WEBHOOK_ALLOWED_HOSTS","").split(",") if x.strip()}
+        if not master or len(master)<32:
+            raise HTTPException(status_code=503,detail="Webhook signing key is not configured")
+        try:
+            target=validate_target(item.target_url,set(allowed))
+            db=store_factory()
+            try:
+                store=WebhookStore(db.conn)
+                subscription_id=store.create(tenant_id=t,target_url=target,event_types=item.event_types)
+            finally:
+                db.close()
+            secret=hmac.new(master.encode(),("agent-memory-webhook:"+subscription_id).encode(),hashlib.sha256).hexdigest()
+            return {"subscription_id":subscription_id,"active":True,
+                    "signing_secret":secret,"signature_header":"X-Memory-Signature",
+                    "signature_format":"sha256=HMAC-SHA256(secret, timestamp + '.' + raw_request_body)",
+                    "timestamp_header":"X-Memory-Timestamp",
+                    "delivery_header":"X-Memory-Delivery"}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
+    @app.get("/v1/webhooks",tags=["Events"],summary="List this tenant's webhook subscriptions")
+    def list_webhooks(t: str = Depends(auth)):
+        from .webhooks import WebhookStore
+        db=store_factory()
+        try:
+            return {"items":WebhookStore(db.conn).list(tenant_id=t)}
+        finally:
+            db.close()
+
+    @app.get("/v1/webhooks/{subscription_id}/deliveries",tags=["Events"],
+             summary="Inspect delivery attempts for a tenant-owned webhook")
+    def webhook_deliveries(subscription_id: str,limit: int=100,t: str = Depends(auth)):
+        from .webhooks import WebhookStore
+        try:
+            subscription_id=str(UUID(subscription_id))
+            db=store_factory()
+            try:
+                items=WebhookStore(db.conn).deliveries(tenant_id=t,subscription_id=subscription_id,limit=limit)
+            finally:
+                db.close()
+            return {"items":items}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
+    @app.post("/v1/webhooks/deliveries/{delivery_id}/replay",tags=["Events"],
+              summary="Requeue a dead webhook delivery belonging to this tenant")
+    def replay_webhook_delivery(delivery_id: str,t: str = Depends(auth)):
+        from .webhooks import WebhookStore
+        try:
+            delivery_id=str(UUID(delivery_id))
+            db=store_factory()
+            try:
+                replayed=WebhookStore(db.conn).requeue_dead(tenant_id=t,delivery_id=delivery_id)
+            finally:
+                db.close()
+            if not replayed:
+                raise HTTPException(status_code=404,detail="Dead webhook delivery not found")
+            return {"delivery_id":delivery_id,"requeued":True}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
+    @app.delete("/v1/webhooks/{subscription_id}",tags=["Events"],
+                summary="Revoke this tenant's webhook subscription")
+    def revoke_webhook(subscription_id: str,t: str = Depends(auth)):
+        from .webhooks import WebhookStore
+        try:
+            db=store_factory()
+            try:
+                revoked=WebhookStore(db.conn).revoke(tenant_id=t,subscription_id=subscription_id)
+            finally:
+                db.close()
+            if not revoked:
+                raise HTTPException(status_code=404,detail="Webhook subscription not found")
+            return {"subscription_id":subscription_id,"revoked":True}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
 
     @app.post(
         "/v1/memories/process", status_code=200, tags=["Memory"],

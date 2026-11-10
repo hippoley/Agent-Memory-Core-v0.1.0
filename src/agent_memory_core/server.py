@@ -88,4 +88,6 @@ app = create_app(search_factory=search_factory,
                  capability_flags=flags,
                  memory_extractor_factory=memory_extractor_factory if os.getenv('MEMORY_LOCAL_OLLAMA_MODEL') else None,
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
-                 temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"))
+                 temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"),
+                 webhook_signing_key=os.getenv("MEMORY_WEBHOOK_SIGNING_KEY"),
+                 webhook_allowed_hosts={x.strip().lower() for x in os.getenv("MEMORY_WEBHOOK_ALLOWED_HOSTS","").split(",") if x.strip()})

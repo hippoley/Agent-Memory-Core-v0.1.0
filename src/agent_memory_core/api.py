@@ -191,23 +191,29 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             "Tenant identity is derived from the API credential, never from request JSON."
         ),
     )
-    def add_claim(item: Claim, t: str = Depends(auth)):
+    def add_claim(item: Claim, request: Request, t: str = Depends(auth)):
+        from .postgres import IdempotencyConflict
         try:
             valid_from = aware_iso(item.valid_from)
             valid_to = aware_iso(item.valid_to)
             db = store_factory()
             try:
-                mid = db.remember(
+                kwargs=dict(
                     tenant_id=t, subject_id=item.subject_id, predicate=item.predicate,
                     value=item.value, source_id=item.source_id, valid_from=valid_from,
                     valid_to=valid_to, replaces_id=item.replaces_id,
                     object_sha256=item.object_sha256,
                 )
+                key=request.headers.get("Idempotency-Key")
+                mid=(db.remember_idempotent(idempotency_key=key,**kwargs)
+                     if key is not None else db.remember(**kwargs))
             finally:
                 db.close()
-            return {"id": mid, "tenant_id": t}
+            return {"id":mid,"tenant_id":t}
+        except IdempotencyConflict as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            raise HTTPException(status_code=422,detail=str(exc))
 
     @app.get(
         "/v1/memories/{subject_id}", tags=["Memory"], summary="Recall claims for a subject",

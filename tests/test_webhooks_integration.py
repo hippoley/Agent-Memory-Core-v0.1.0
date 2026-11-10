@@ -66,12 +66,12 @@ def test_signed_webhook_delivery_and_tenant_scoped_revocation():
         transport=httpx.Client(transport=httpx.MockTransport(receiver))
         worker=WebhookWorker(db.conn,signing_master_key=master,
             allowed_hosts={"hooks.example.test"},http_client=transport)
-        assert worker.enqueue()==1
+        assert worker.enqueue(tenant_id=tenant)==1
         queued=db.conn.execute(
             """SELECT subscription_id::text,event_id::text FROM memory_webhook_deliveries
                WHERE subscription_id=%s::uuid""",(sub["subscription_id"],)).fetchall()
         assert len(queued)==1 and queued[0][1]==mid,queued
-        attempted=worker.consume(limit=10)
+        attempted=worker.consume(limit=10,tenant_id=tenant)
         final_state=db.conn.execute(
             """SELECT delivery_id::text,status,attempts,lease_until,delivered_at
                FROM memory_webhook_deliveries WHERE subscription_id=%s::uuid
@@ -117,7 +117,7 @@ def test_webhook_failure_backoff_dead_letter_and_operator_replay():
             lambda request:httpx.Response(503)))
         worker=WebhookWorker(db.conn,signing_master_key=master,
             allowed_hosts={"hooks.example.test"},max_attempts=2,http_client=transport)
-        assert worker.consume(limit=1)==1
+        assert worker.consume(limit=1,tenant_id=tenant)==1
         db.conn.execute(
             """UPDATE memory_webhook_deliveries SET available_at=clock_timestamp()
                WHERE event_id=%s""",(mid,))
@@ -137,7 +137,7 @@ def test_webhook_failure_backoff_dead_letter_and_operator_replay():
             lambda request:httpx.Response(202)))
         replay=WebhookWorker(db.conn,signing_master_key=master,
             allowed_hosts={"hooks.example.test"},max_attempts=2,http_client=success)
-        assert replay.consume(limit=1)==1
+        assert replay.consume(limit=1,tenant_id=tenant)==1
         row=db.conn.execute(
             """SELECT status,attempts,response_status FROM memory_webhook_deliveries
                WHERE event_id=%s""",(mid,)).fetchone()

@@ -27,7 +27,7 @@ class MemoryProcessor:
 
     Extractor contract: extractor(text) returns an iterable of dictionaries.
     Each candidate has subject_id, predicate, value, and optional confidence.
-    Optional cardinality is 'one' (default) or 'many'.
+    Cardinality comes from tenant-scoped store policy (default 'one').
     An optional embedder receives the normalized candidate and returns a
     (model_id, vector) pair.
     """
@@ -58,7 +58,17 @@ class MemoryProcessor:
                 continue
             subject = candidate.get("subject_id")
             subject_name = candidate.get("subject_name")
-            cardinality = candidate.get("cardinality", "one")
+            predicate = candidate.get("predicate")
+            cardinality = "one"
+            if isinstance(predicate, str) and predicate.strip():
+                policy = getattr(self.store, "predicate_cardinality", None)
+                if callable(policy):
+                    cardinality = policy(tenant_id=tenant_id, predicate=predicate)
+            asserted = candidate.get("cardinality")
+            if asserted is not None and asserted != cardinality:
+                report.ambiguous += 1
+                report.rejected += 1
+                continue
             if subject_name is not None and (
                     not isinstance(subject_name, str) or not subject_name.strip()):
                 report.rejected += 1
@@ -79,7 +89,6 @@ class MemoryProcessor:
                     report.rejected += 1
                     continue
                 subject = resolved["entity_id"]
-            predicate = candidate.get("predicate")
             value = candidate.get("value")
             confidence = candidate.get("confidence", 1.0)
             if (not isinstance(subject, str) or not subject.strip()

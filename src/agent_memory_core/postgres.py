@@ -16,13 +16,19 @@ def aware(value: datetime) -> datetime:
         raise ValueError("Timezone-aware datetime required")
     return value.astimezone(timezone.utc)
 
+class IdempotencyConflict(ValueError):
+    pass
+
+
 class PostgresMemory:
     def __init__(self, dsn: str):
         try:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("Install the 'postgres' extra: pip install -e '.[postgres]'") from exc
-        self.conn = psycopg.connect(dsn)
+        # Every canonical mutation explicitly uses conn.transaction().
+        # Avoid implicit read transactions that could roll back nested writes.
+        self.conn = psycopg.connect(dsn, autocommit=True)
 
     def close(self) -> None:
         self.conn.close()
@@ -93,7 +99,61 @@ class PostgresMemory:
                    (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
                    VALUES (%s,%s,'claim',%s,'memory.claim.created',%s::jsonb)""",
                 (mid,tenant_id,str(mid),packed))
+            # Fanout tasks are created in the same transaction as the canonical
+            # claim and outbox event. A crash cannot leave an event undispatched.
+            self.conn.execute(
+                """INSERT INTO memory_projection_deliveries(event_id,channel)
+                   VALUES (%s,'fts'),(%s,'vector'),(%s,'graph')
+                   ON CONFLICT(event_id,channel) DO NOTHING""",
+                (mid,mid,mid))
         return str(mid)
+
+    def remember_idempotent(self, *, idempotency_key: str, tenant_id: str,
+                            subject_id: str, predicate: str, value: dict,
+                            source_id: str, valid_from: datetime,
+                            valid_to: datetime | None = None,
+                            replaces_id: str | None = None,
+                            object_sha256: str | None = None) -> str:
+        """One canonical write per (tenant,key,payload), even under races.
+
+        The ledger, canonical claim and outbox commit together. Key reuse with
+        a different request is a conflict; never create a second claim.
+        """
+        import hashlib
+        if not isinstance(idempotency_key,str) or not 1<=len(idempotency_key)<=255:
+            raise ValueError("Idempotency-Key must contain 1..255 characters")
+        request_data={
+            "subject_id":subject_id,"predicate":predicate,"value":value,
+            "source_id":source_id,"valid_from":aware(valid_from).isoformat(),
+            "valid_to":aware(valid_to).isoformat() if valid_to else None,
+            "replaces_id":replaces_id,"object_sha256":object_sha256,
+        }
+        digest=hashlib.sha256(json.dumps(request_data,sort_keys=True,
+            ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+        with self.conn.transaction():
+            # A per-tenant/key transaction advisory lock serializes first-writer
+            # creation; hash collisions only reduce concurrency, not isolation.
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (tenant_id+"\\x1f"+idempotency_key,))
+            found=self.conn.execute(
+                """SELECT request_sha256,result FROM memory_idempotency
+                   WHERE tenant_id=%s AND idempotency_key=%s""",
+                (tenant_id,idempotency_key)).fetchone()
+            if found is not None:
+                if found[0]!=digest:
+                    raise IdempotencyConflict("Idempotency key reused with a different request")
+                return found[1]["id"]
+            mid=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                predicate=predicate,value=value,source_id=source_id,
+                valid_from=valid_from,valid_to=valid_to,
+                replaces_id=replaces_id,object_sha256=object_sha256)
+            self.conn.execute(
+                """INSERT INTO memory_idempotency
+                   (tenant_id,idempotency_key,request_sha256,result)
+                   VALUES (%s,%s,%s,%s::jsonb)""",
+                (tenant_id,idempotency_key,digest,json.dumps({"id":mid})))
+            return mid
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:
@@ -149,6 +209,33 @@ class PostgresMemory:
                 (model_id,literal,memory_id,tenant_id))
             if result.rowcount != 1:
                 raise PermissionError("Memory does not belong to requested tenant")
+
+    def fulltext_search(self, *, tenant_id: str, query: str, limit: int = 50,
+                        valid_at: datetime | None = None,
+                        known_at: datetime | None = None) -> list[str]:
+        """Ranked FTS projection with canonical tenant and bitemporal filtering.
+
+        The simple dictionary is language-neutral but NOT a Chinese word
+        segmenter. Hybrid retrieval retains literal SQL fallback.
+        """
+        if not tenant_id or not query or not query.strip() or not 1 <= limit <= 100:
+            raise ValueError("Invalid fulltext search parameters")
+        known_at=aware(known_at or datetime.now(timezone.utc))
+        valid_at=aware(valid_at or known_at)
+        rows=self.conn.execute(
+            """SELECT s.memory_id::text
+               FROM memory_claim_search s
+               JOIN memory_claims c ON c.id=s.memory_id
+               WHERE c.tenant_id=%s AND s.tenant_id=%s
+                 AND s.document @@ websearch_to_tsquery('simple',%s)
+                 AND c.recorded_at<=%s
+                 AND (c.superseded_at IS NULL OR c.superseded_at>%s)
+                 AND c.valid_from<=%s AND (c.valid_to IS NULL OR c.valid_to>%s)
+               ORDER BY ts_rank_cd(s.document,websearch_to_tsquery('simple',%s))
+                        DESC,c.recorded_at DESC,s.memory_id
+               LIMIT %s""",
+            (tenant_id,tenant_id,query,known_at,known_at,valid_at,valid_at,query,limit))
+        return [row[0] for row in rows]
 
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
                       limit: int = 10, valid_at: datetime | None = None,
@@ -285,6 +372,18 @@ class PostgresMemory:
                 """INSERT INTO memory_edges(edge_id,tenant_id,from_entity,predicate,to_entity,source_memory_id)
                    VALUES (%s,%s,%s,%s,%s,%s)""",
                 (eid,tenant_id,from_entity,predicate,to_entity,source_memory_id))
+            payload=json.dumps({"edge_id":str(eid)},sort_keys=True)
+            self.conn.execute(
+                """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
+                   VALUES (%s,%s,'memory.edge.created',%s::jsonb)""",
+                (tenant_id,str(eid),payload))
+            self.conn.execute(
+                """INSERT INTO memory_outbox(event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                   VALUES (%s,%s,'edge',%s,'memory.edge.created',%s::jsonb)""",
+                (eid,tenant_id,str(eid),payload))
+            self.conn.execute(
+                """INSERT INTO memory_projection_deliveries(event_id,channel)
+                   VALUES (%s,'graph') ON CONFLICT DO NOTHING""",(eid,))
         return str(eid)
 
 

@@ -69,6 +69,22 @@ class HybridMemorySearch:
             except Exception as exc:
                 degraded["vector"]=f"{type(exc).__name__}: {str(exc)[:240]}"
 
+        # Search the rebuildable ranked full-text index when the backend
+        # supports it. Its results are always revalidated below against
+        # canonical tenant/known-at/valid-at state.
+        fts_search=getattr(self.store,"fulltext_search",None)
+        if query and query.strip() and callable(fts_search):
+            try:
+                with _channel_transaction(self.store):
+                    fts_rows=fts_search(
+                        tenant_id=tenant_id,query=query,
+                        limit=min(limit*10,100),
+                        valid_at=valid_at,known_at=known_at)
+                for rank,mid in enumerate(fts_rows,1):
+                    ranked.setdefault(mid,[]).append(("fts",rank))
+            except Exception as exc:
+                degraded["fts"]=f"{type(exc).__name__}: {str(exc)[:240]}"
+
         if query and query.strip():
             # POSITION treats the user query literally; no LIKE wildcard or
             # ESCAPE dialect ambiguity across PostgreSQL versions.

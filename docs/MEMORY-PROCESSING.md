@@ -68,37 +68,48 @@ resolution), contradiction classification, consolidation/summarization,
 forgetting policies and a Chinese extraction/retrieval benchmark remain to be
 implemented and evaluated.
 
-## Association safety and cardinality (November 2026)
+## Association safety and trusted cardinality (November 2026)
 
-A candidate may declare `"cardinality": "one"` (default) or
-`"cardinality": "many"`. The extractor/schema owner must know which
-predicates are multi-valued; this field is **not** an authorization mechanism.
+Predicate cardinality is a **tenant-scoped server policy** stored in
+`memory_predicate_policies`. Its default is `one` for compatibility.
+An unconfigured predicate must not be changed to `many` by an extractor.
+The optional candidate `cardinality` field is only a consistency assertion.
+If it disagrees with the stored policy the candidate is rejected as ambiguous.
 
-For `many`, a distinct value creates a coexisting claim rather than
-superseding an unrelated target. Canonical duplicates still attach provenance.
-For `one`, exactly one differing active claim may be superseded. When
-multiple different active claims exist, processing rejects the ambiguous
-correction instead of arbitrarily replacing the newest row.
+Configure a known multi-value relation from a trusted administrative context,
+not from the LLM extractor or public untrusted request body:
 
-If `subject_name` is provided and an entity resolver is configured, its
-result must be a nonempty canonical entity ID; unresolved names and explicit
-`subject_id` mismatches are rejected. `report.ambiguous` counts these
-rejections and ambiguous single-valued corrections (already included in
-`report.rejected`).
+```python
+db.migrate()
+db.set_predicate_cardinality(
+    tenant_id="home", predicate="HAS_WINDOW", cardinality="many")
+```
 
-Example relationship candidate:
+Then a model-generated candidate may omit cardinality entirely, or assert
+`"cardinality": "many"`:
 
 ```python
 {
     "subject_id": "living-room",
     "predicate": "HAS_WINDOW",
-    "value": {"target_id": "window-b"},
-    "cardinality": "many",
+    "value": {"target_id": "window-b"}
 }
 ```
 
-**Boundaries:** This does not yet verify `value.target_id` against
-`memory_entities`, deduplicate concurrent transactions, define a persistent
-per-predicate cardinality registry, or implement negative assertions and
-retractions. Treat the candidate's cardinality as a trusted application
-contract, not as a reliable output from an untrusted extraction model.
+Different values coexist for a multi-valued predicate, while canonical
+duplicates link their source. For a single-valued predicate, a different fact
+supersedes the sole active one. Multiple active single-valued claims are
+ambiguous and never arbitrarily resolved.
+
+If `subject_name` is supplied and an entity resolver is configured,
+a missing, ambiguous, or contradictory resolution is rejected.
+`report.ambiguous` is a subset of `report.rejected`.
+
+**Security and reliability boundaries:** Calling
+`set_predicate_cardinality` must be limited to an authenticated trusted
+administrative control plane. The registry by itself does not validate
+`value.target_id` ownership, implement atomic check-then-insert under
+concurrent agents, retractions/negative assertions, or clean up stale graph
+projections. Changing a policy for an existing populated predicate requires
+a separate audited data reconciliation; no automated migration of existing
+claims is implied.

@@ -175,3 +175,22 @@ class MemoryClient:
                 name,separator,value=line.partition(":")
                 if separator and name in ("id","event","data"):
                     frame[name]=value.lstrip(" ")
+
+
+    def create_webhook(self, *, target_url: str, event_types: list[str]):
+        """Create a callback and return its one-time signing secret."""
+        return self._request("POST","/v1/webhooks",
+                             json={"target_url":target_url,"event_types":event_types})
+
+    def list_webhooks(self):
+        return self._request("GET","/v1/webhooks")
+
+    def revoke_webhook(self, subscription_id: str):
+        return self._request("DELETE",f"/v1/webhooks/{subscription_id}")
+
+    def webhook_deliveries(self, subscription_id: str, *, limit: int = 100):
+        return self._request("GET",f"/v1/webhooks/{subscription_id}/deliveries",
+                             params={"limit":limit})
+
+    def replay_webhook_delivery(self, delivery_id: str):
+        return self._request("POST",f"/v1/webhooks/deliveries/{delivery_id}/replay")

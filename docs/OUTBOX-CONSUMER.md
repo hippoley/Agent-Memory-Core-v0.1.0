@@ -45,9 +45,9 @@ mechanics only, not functioning vector or AGE projection.
 
 - No provided vector embedding worker or canonical FTS materializer yet.
 - No automatic dispatch daemon or background worker lifecycle.
-- Each poll currently scans and registers all unseen matching events for the
-  selected consumer. Large backlogs need bounded registration and monitoring.
-- The five-second retry delay is fixed, not exponential or jittered.
+- Each poll registers a bounded ordered batch of unseen events for the selected
+  consumer (up to 1,000); high-volume backlogs still need metrics and tuning.
+- Retry uses capped exponential delays (5 to 300 seconds) without jitter.
 - This is **at-least-once**; external HTTP subscribers require a stable
   idempotency key and independent downstream acknowledgements.
 - Dead letters must be inspected and requeued by an authorized operator.

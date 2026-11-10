@@ -62,6 +62,20 @@ class OutboxWorker:
         return done
 
 
+    def requeue_dead(self, *, tenant_id: str, event_id: str) -> bool:
+        """Operator-controlled replay of a dead event for its owning tenant."""
+        if not tenant_id or not event_id:
+            raise ValueError("tenant_id and event_id required")
+        with self.conn.transaction():
+            row=self.conn.execute(
+                """UPDATE memory_outbox SET dead_lettered_at=NULL,
+                   attempts=0,available_at=clock_timestamp(),last_error=NULL
+                   WHERE tenant_id=%s AND event_id=%s::uuid
+                     AND processed_at IS NULL AND dead_lettered_at IS NOT NULL
+                   RETURNING event_id""",(tenant_id,event_id)).fetchone()
+        return row is not None
+
+
 def persist_verification_receipt(conn, tenant_id: str, event_id: str,
                                  aggregate_id: str, payload) -> None:
     """Durably record a Temporal verification result; duplicate deliveries are safe."""

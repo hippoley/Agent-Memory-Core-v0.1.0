@@ -203,6 +203,41 @@ class AgeProjection:
                 removed+=1
         return removed
 
+    def rebuild_tenant(self, *, tenant_id: str, batch_size: int = 500) -> int:
+        """Rebuild one tenant's AGE edges from canonical PostgreSQL.
+
+        Operator-only maintenance operation. AGE edges and the projection ledger
+        are cleared/repopulated in one transaction. Concurrent canonical edge
+        updates are serialized by locking this tenant's existing edge rows.
+        Never recreates claims or changes bitemporal source history.
+        """
+        if not tenant_id or not 1 <= batch_size <= 1000:
+            raise ValueError("Invalid tenant or batch size")
+        with self.conn.transaction():
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                ("agent-memory-age-rebuild:"+tenant_id,))
+            # Preserve a stable snapshot of existing canonical edges while
+            # replaying the graph. Competing projectors skip these locked rows.
+            self.conn.execute(
+                "SELECT edge_id FROM memory_edges WHERE tenant_id=%s FOR UPDATE",
+                (tenant_id,)).fetchall()
+            tenant=_cypher_string(tenant_id)
+            self._cypher(
+                f"MATCH ()-[r:MEMORY_REL {{tenant_id: {tenant}}}]->() "
+                "DELETE r RETURN r")
+            self.conn.execute(
+                """DELETE FROM memory_graph_projection p USING memory_edges e
+                   WHERE p.edge_id=e.edge_id AND e.tenant_id=%s""",(tenant_id,))
+            projected=0
+            while True:
+                progress=self.project_pending(
+                    tenant_id=tenant_id,limit=batch_size)
+                projected+=progress.projected
+                if progress.projected<batch_size:
+                    break
+            return projected
+
     def neighbors(self, *, tenant_id: str, from_entity: str, hops: int = 1) -> list[str]:
         if not tenant_id or not from_entity:
             raise ValueError("Tenant and entity required")

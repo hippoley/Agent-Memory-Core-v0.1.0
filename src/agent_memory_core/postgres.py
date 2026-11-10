@@ -16,6 +16,10 @@ def aware(value: datetime) -> datetime:
         raise ValueError("Timezone-aware datetime required")
     return value.astimezone(timezone.utc)
 
+class IdempotencyConflict(ValueError):
+    pass
+
+
 class PostgresMemory:
     def __init__(self, dsn: str):
         try:
@@ -103,6 +107,53 @@ class PostgresMemory:
                    ON CONFLICT(event_id,channel) DO NOTHING""",
                 (mid,mid,mid))
         return str(mid)
+
+    def remember_idempotent(self, *, idempotency_key: str, tenant_id: str,
+                            subject_id: str, predicate: str, value: dict,
+                            source_id: str, valid_from: datetime,
+                            valid_to: datetime | None = None,
+                            replaces_id: str | None = None,
+                            object_sha256: str | None = None) -> str:
+        """One canonical write per (tenant,key,payload), even under races.
+
+        The ledger, canonical claim and outbox commit together. Key reuse with
+        a different request is a conflict; never create a second claim.
+        """
+        import hashlib
+        if not isinstance(idempotency_key,str) or not 1<=len(idempotency_key)<=255:
+            raise ValueError("Idempotency-Key must contain 1..255 characters")
+        request_data={
+            "subject_id":subject_id,"predicate":predicate,"value":value,
+            "source_id":source_id,"valid_from":aware(valid_from).isoformat(),
+            "valid_to":aware(valid_to).isoformat() if valid_to else None,
+            "replaces_id":replaces_id,"object_sha256":object_sha256,
+        }
+        digest=hashlib.sha256(json.dumps(request_data,sort_keys=True,
+            ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()).hexdigest()
+        with self.conn.transaction():
+            # A per-tenant/key transaction advisory lock serializes first-writer
+            # creation; hash collisions only reduce concurrency, not isolation.
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (tenant_id+"\\x1f"+idempotency_key,))
+            found=self.conn.execute(
+                """SELECT request_sha256,result FROM memory_idempotency
+                   WHERE tenant_id=%s AND idempotency_key=%s""",
+                (tenant_id,idempotency_key)).fetchone()
+            if found is not None:
+                if found[0]!=digest:
+                    raise IdempotencyConflict("Idempotency key reused with a different request")
+                return found[1]["id"]
+            mid=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                predicate=predicate,value=value,source_id=source_id,
+                valid_from=valid_from,valid_to=valid_to,
+                replaces_id=replaces_id,object_sha256=object_sha256)
+            self.conn.execute(
+                """INSERT INTO memory_idempotency
+                   (tenant_id,idempotency_key,request_sha256,result)
+                   VALUES (%s,%s,%s,%s::jsonb)""",
+                (tenant_id,idempotency_key,digest,json.dumps({"id":mid})))
+            return mid
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:

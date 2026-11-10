@@ -26,6 +26,8 @@ def test_projection_fanout_isolated_retry_and_dead_letter():
         worker = ProjectionWorker(db.conn, max_attempts=2)
         assert worker.enqueue(event_type=event_type,channels=("fts","graph")) == 2
         assert worker.enqueue(event_type=event_type,channels=("fts","graph")) == 0
+        # End the setup transaction before the worker owns this connection.
+        db.conn.commit()
 
         def success(conn, tenant_id, event_id, aggregate, kind, payload):
             conn.execute(

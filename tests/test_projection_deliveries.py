@@ -44,8 +44,8 @@ def test_projection_fanout_isolated_retry_and_dead_letter():
                 (tenant_id,event_id+"-failed"))
             raise RuntimeError("simulated graph outage")
 
-        assert worker.consume(channel="fts",handler=success,limit=1) == 1
-        assert worker.consume(channel="graph",handler=failure,limit=1) == 0
+        assert worker.consume(channel="fts",handler=success,limit=1,event_id=str(event)) == 1
+        assert worker.consume(channel="graph",handler=failure,limit=1,event_id=str(event)) == 0
         db.conn.execute(
             """UPDATE memory_projection_deliveries SET available_at=clock_timestamp()
                WHERE event_id=%s AND channel='graph'""",(event,))
@@ -60,7 +60,7 @@ def test_projection_fanout_isolated_retry_and_dead_letter():
         ).fetchone()[0] == 1
         db.conn.commit()
         assert worker.requeue_dead(event_id=str(event),channel="graph")
-        assert worker.consume(channel="graph",handler=success,limit=1) == 1
+        assert worker.consume(channel="graph",handler=success,limit=1,event_id=str(event)) == 1
         rows = db.conn.execute(
             """SELECT channel,status FROM memory_projection_deliveries
                WHERE event_id=%s ORDER BY channel""",(event,)).fetchall()

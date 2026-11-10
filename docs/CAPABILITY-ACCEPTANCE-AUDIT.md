@@ -9,11 +9,12 @@ Repository: `hippoley/Agent-Memory-Core-v0.1.0`
 > remains unchanged until merge. The draft branch additionally introduces
 > explicit PostgreSQL read/write transaction boundaries, serialized
 > single-value claim enforcement, trusted predicate policies, verified graph
-> relation endpoints, independent Outbox consumer receipts/DLQ,
+> relation endpoints, independent Outbox consumer receipts/DLQ, a real PostgreSQL FTS projector
+> with a dedicated polling worker and tenant/bitemporal query,
 > processing confidence floor and ambiguity reporting, and optional
 > Idempotency-Key for POST /v1/memories.
 > Recheck every job for the exact HEAD SHA before marking this PR accepted.
-> The new fan-out ledger does not include vector/FTS/AGE materializer workers,
+> The ledger now has an FTS baseline, but not vector/AGE materializer workers,
 > and two-connection concurrency tests do not qualify as 100-agent load tests.
 
 This replaces earlier audit snapshots that predated the expanded REST facade.
@@ -125,8 +126,9 @@ runs from different commits and call the latest main fully qualified.
 ## Next engineering gates
 
 1. Add real MinIO integration tests, object lifecycle/deletion, quota and orphan cleanup.
-2. Connect real vector, FTS, and AGE projector handlers to the new independent
-   consumer ledger, add daemon lifecycle, operational metrics, and backpressure.
+2. Connect actual vector and AGE projector handlers to the independent
+   consumer ledger; improve FTS Chinese tokenization and add worker supervision,
+   per-consumer lag metrics and backpressure.
 3. Add observation retention/partition policy and sustained ingestion tests.
 4. Expand the two-connection atomic processor tests to 100-Agent sustained
    concurrency/load; implement processing-endpoint idempotency and a Chinese

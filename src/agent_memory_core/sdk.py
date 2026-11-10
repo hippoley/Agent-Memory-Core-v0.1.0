@@ -194,3 +194,7 @@ class MemoryClient:
 
     def replay_webhook_delivery(self, delivery_id: str):
         return self._request("POST",f"/v1/webhooks/deliveries/{delivery_id}/replay")
+
+    def replay_outbox_event(self, event_id: str):
+        """Requeue a dead outbox event owned by this API key's tenant."""
+        return self._request("POST",f"/v1/events/outbox/{event_id}/replay")

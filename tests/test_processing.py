@@ -90,3 +90,16 @@ def test_processor_uses_canonical_entity_resolution():
                               "value":{"target":"good"}}])
     assert report.created==["memory-1"]
     assert store.rows[0]["subject_id"]=="canonical-bedroom-1"
+
+
+def test_processor_rejects_boolean_and_nonfinite_confidence():
+    import math
+    processor=MemoryProcessor(FakeStore(),confidence_threshold=0.0)
+    report=processor.process(tenant_id="home",text="hello",source_id="s1",
+        extractor=lambda _: [
+            {"subject_id":"room","predicate":"noise","value":{"level":"quiet"},"confidence":True},
+            {"subject_id":"room","predicate":"noise","value":{"level":"quiet"},"confidence":math.nan},
+            {"subject_id":"room","predicate":"noise","value":{"level":"quiet"},"confidence":math.inf},
+        ])
+    assert report.created==[]
+    assert report.rejected==3

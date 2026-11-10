@@ -115,3 +115,14 @@ def test_sdk_webhook_lifecycle_routes_and_one_time_secret():
         ("GET","/v1/webhooks/sub-1/deliveries"),
         ("POST","/v1/webhooks/deliveries/delivery-1/replay"),
         ("DELETE","/v1/webhooks/sub-1")]
+
+
+def test_sdk_replays_dead_outbox_event_for_current_tenant():
+    calls=[]
+    def server(request):
+        calls.append((request.method,request.url.path))
+        return httpx.Response(200,json={"event_id":"event-1","requeued":True})
+    with MemoryClient("http://localhost","secret",
+            transport=httpx.MockTransport(server)) as sdk:
+        assert sdk.replay_outbox_event("event-1")["requeued"] is True
+    assert calls==[("POST","/v1/events/outbox/event-1/replay")]

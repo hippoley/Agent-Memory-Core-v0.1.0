@@ -608,6 +608,24 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         except ValueError as exc:
             raise HTTPException(status_code=422,detail=str(exc))
 
+    @app.post("/v1/events/outbox/{event_id}/replay",tags=["Events"],
+              summary="Replay a dead transactional outbox event for this tenant")
+    def replay_outbox_event(event_id: str,t: str = Depends(auth)):
+        from .outbox import OutboxWorker
+        try:
+            event_id=str(UUID(event_id))
+            db=store_factory()
+            try:
+                replayed=OutboxWorker(db.conn).requeue_dead(
+                    tenant_id=t,event_id=event_id)
+            finally:
+                db.close()
+            if not replayed:
+                raise HTTPException(status_code=404,detail="Dead outbox event not found")
+            return {"event_id":event_id,"requeued":True}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+
     @app.post(
         "/v1/memories/process", status_code=200, tags=["Memory"],
         summary="Process extracted facts into canonical memories",

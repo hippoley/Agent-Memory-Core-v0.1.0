@@ -20,6 +20,7 @@ EXPECTED={
     "/v1/observations/{device_id}/aggregate":{"get"},
     "/v1/events":{"get"},
     "/v1/events/stream":{"get"},
+    "/v1/events/outbox/{event_id}/replay":{"post"},
     "/v1/webhooks":{"get","post"},
     "/v1/webhooks/{subscription_id}":{"delete"},
     "/v1/webhooks/{subscription_id}/deliveries":{"get"},

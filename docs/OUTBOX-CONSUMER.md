@@ -1,21 +1,55 @@
 # Transactional outbox: supported and unsupported semantics
 
-`OutboxWorker.consume(event_type=...,handler=...,limit=...)` uses
-`FOR UPDATE SKIP LOCKED` to claim one pending row and invokes a database-local
-handler in the same PostgreSQL transaction. The event acknowledgement and the
-handler's SQL effects commit together; if the handler fails, its changes roll
-back and the event is rescheduled with a recorded error.
+There are now two consumers. The existing `OutboxWorker` preserves the
+single-event processed flag behavior for existing Temporal receipts.
 
-Verified adapter: `memory.claim.verified` receipt from Temporal is consumed
-into canonical `memory_events` using event ID idempotency.
+`ProjectionOutboxWorker` provides a separate durable delivery receipt for
+each (`event_id`, `consumer_id`) pair. One consumer's success never marks
+another consumer's event as delivered. Registration reads canonical
+`memory_outbox` entries, including entries previously handled by a legacy
+consumer. PostgreSQL-local handlers execute with the receipt update in the
+same transaction using `FOR UPDATE SKIP LOCKED`. On failure the handler
+transaction rolls back, a separate transaction increments retries, and after
+`max_attempts` the delivery enters a dead-letter state.
 
-Not yet implemented:
-- an embedding worker that produces vectors from raw text,
-- full SQL FTS projection and AGE task acknowledgement,
-- per-channel task accounting for a single `memory.claim.created` event,
-- background daemon service lifecycle and retry exhaustion/DLQ,
-- external side effects exactly-once semantics.
+## Example
 
-A durable outbox is an at-least-once delivery primitive. Do not use one
-`processed_at` flag to claim that all of embeddings, AGE, FTS and remote
-side effects have completed; split them into independent durable tasks.
+```python
+from agent_memory_core.outbox import ProjectionOutboxWorker
+
+worker = ProjectionOutboxWorker(db.conn)
+worker.consume(
+    consumer_id="fts-v1",
+    event_type="memory.claim.created",
+    handler=project_fts_using_same_connection,
+    limit=20,
+    max_attempts=5,
+)
+```
+
+The handler accepts `(conn, tenant_id, event_id, aggregate_id, payload)`.
+It must **not commit** its own PostgreSQL transaction. Only a trusted
+operator should invoke:
+
+```python
+worker.retry_dead_letter(
+    tenant_id="home", consumer_id="fts-v1", event_id="event-uuid")
+```
+
+Consumers can be named `vector-v1`, `fts-v1`, `age-v1`, or a custom
+subscriber. The ledger records those names but does **not** create their
+actual projection handlers. A successful no-op handler proves receipt
+mechanics only, not functioning vector or AGE projection.
+
+## Known limitations
+
+- No provided vector embedding worker or canonical FTS materializer yet.
+- No automatic dispatch daemon or background worker lifecycle.
+- Each poll currently scans and registers all unseen matching events for the
+  selected consumer. Large backlogs need bounded registration and monitoring.
+- The five-second retry delay is fixed, not exponential or jittered.
+- This is **at-least-once**; external HTTP subscribers require a stable
+  idempotency key and independent downstream acknowledgements.
+- Dead letters must be inspected and requeued by an authorized operator.
+- Legacy `memory_outbox.processed_at` and the new delivery ledger coexist;
+  never interpret the legacy flag as success for every projection.

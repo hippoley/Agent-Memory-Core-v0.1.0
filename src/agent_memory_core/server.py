@@ -9,13 +9,29 @@ from .api import create_app
 from .objects import ObjectStore, S3ObjectStore
 
 
+def secure_store_factory():
+    """Open a tenant-login database connection; reject admin or mismatched DSNs."""
+    from .postgres import PostgresMemory
+    db=PostgresMemory(os.environ["MEMORY_DSN"])
+    try:
+        db.assert_database_tenant(os.environ["MEMORY_TENANT_ID"])
+    except Exception:
+        db.close()
+        raise
+    return db
+
+
+def rls_mode():
+    return os.getenv("MEMORY_DB_RLS_MODE","0")=="1"
+
+
 def search_factory():
     from .postgres import PostgresMemory
     from .hybrid import HybridMemorySearch
 
-    db = PostgresMemory(os.environ["MEMORY_DSN"])
+    db = secure_store_factory() if rls_mode() else PostgresMemory(os.environ["MEMORY_DSN"])
     graph = None
-    if os.getenv("MEMORY_ENABLE_AGE", "0") == "1":
+    if os.getenv("MEMORY_ENABLE_AGE", "0") == "1" and not rls_mode():
         from .age_graph import AgeProjection
         try:
             graph = AgeProjection(db.conn)
@@ -69,7 +85,7 @@ async def temporal_client_factory():
 
 flags = {
     "semantic": os.getenv("MEMORY_ENABLE_VECTOR", "0") == "1",
-    "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1",
+    "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1" and not rls_mode(),
     "objects": True,
     "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
 }
@@ -83,7 +99,8 @@ def memory_extractor_factory(tenant_id):
     )
 
 
-app = create_app(search_factory=search_factory,
+app = create_app(store_factory=secure_store_factory if rls_mode() else None,
+                 search_factory=search_factory,
                  object_store_factory=object_store_factory,
                  capability_flags=flags,
                  memory_extractor_factory=memory_extractor_factory if os.getenv('MEMORY_LOCAL_OLLAMA_MODEL') else None,

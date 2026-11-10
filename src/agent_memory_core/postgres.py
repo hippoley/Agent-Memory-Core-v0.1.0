@@ -30,6 +30,33 @@ class PostgresMemory:
         # Avoid implicit read transactions that could roll back nested writes.
         self.conn = psycopg.connect(dsn, autocommit=True)
 
+    def assert_database_tenant(self, tenant_id: str) -> None:
+        """Fail closed unless the login is an RLS-bound, nonprivileged tenant.
+
+        The tenant identity comes from PostgreSQL's authenticated session_user
+        through an admin-owned SECURITY DEFINER mapping, not app.tenant_id.
+        This does not grant API users an arbitrary SET ROLE capability.
+        """
+        if not isinstance(tenant_id,str) or not tenant_id:
+            raise ValueError("tenant_id required")
+        try:
+            row=self.conn.execute(
+                """SELECT session_user::text,current_user::text,
+                          public.memory_authenticated_tenant(),
+                          r.rolsuper,r.rolbypassrls,r.rolcreaterole,
+                          r.rolcreatedb,pg_has_role(session_user,'memory_tenant','USAGE'),
+                          pg_get_userbyid(c.relowner)
+                   FROM pg_roles r
+                   JOIN pg_class c ON c.oid='public.memory_claims'::regclass
+                   WHERE r.rolname=session_user"""
+            ).fetchone()
+        except Exception as exc:
+            raise RuntimeError("Database RLS principal mapping is not installed") from exc
+        if (not row or row[0]!=row[1] or row[2]!=tenant_id
+                or row[3] or row[4] or row[5] or row[6]
+                or not row[7] or row[0]==row[8]):
+            raise PermissionError("Database login is not the expected restricted tenant principal")
+
     def close(self) -> None:
         self.conn.close()
 

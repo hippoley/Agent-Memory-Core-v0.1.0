@@ -176,3 +176,22 @@ CREATE TABLE IF NOT EXISTS memory_objects (
 );
 CREATE INDEX IF NOT EXISTS memory_objects_created
 ON memory_objects(tenant_id, created_at DESC);
+
+
+-- Independent durable projections for one canonical outbox event.
+-- Each (event_id, channel) is separately retryable and acknowledged.
+CREATE TABLE IF NOT EXISTS memory_projection_deliveries (
+  event_id uuid NOT NULL REFERENCES memory_outbox(event_id) ON DELETE CASCADE,
+  channel text NOT NULL CHECK (channel <> ''),
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','done','dead')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  available_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  processed_at timestamptz,
+  last_error text,
+  PRIMARY KEY(event_id,channel),
+  CHECK ((status = 'done') = (processed_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS memory_projection_deliveries_pending
+  ON memory_projection_deliveries(channel,available_at,event_id)
+  WHERE status = 'pending';

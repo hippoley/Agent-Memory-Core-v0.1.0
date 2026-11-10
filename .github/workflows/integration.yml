@@ -36,6 +36,10 @@ jobs:
           pytest -q -m integration
           python scripts/check_extensions.py
           pytest -q tests/test_api_postgres_runtime.py
+      - name: Benchmark 100 logical Agent requests (16 database connections)
+        env:
+          MEMORY_TEST_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
+        run: python scripts/benchmark_memory_concurrency.py --agents 100 --concurrency 16
       - name: Database logs on failure
         if: failure()
         run: docker compose logs --tail=100

@@ -82,7 +82,7 @@ def test_signed_webhook_delivery_and_tenant_scoped_revocation():
             """SELECT status,attempts,response_status FROM memory_webhook_deliveries
                WHERE event_id=%s""",(mid,)).fetchone()
         assert state==("delivered",1,204)
-        assert worker.consume(limit=10)==0
+        assert worker.consume(limit=10,tenant_id=tenant)==0
 
         # A different tenant cannot list or revoke this subscription.
         other=TestClient(create_app(api_key="other-webhook-key-strong-enough",

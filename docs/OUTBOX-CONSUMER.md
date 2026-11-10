@@ -53,3 +53,29 @@ mechanics only, not functioning vector or AGE projection.
 - Dead letters must be inspected and requeued by an authorized operator.
 - Legacy `memory_outbox.processed_at` and the new delivery ledger coexist;
   never interpret the legacy flag as success for every projection.
+
+## Real lexical projection worker (FTS-v1)
+
+The repository now includes a built-in PostgreSQL-local FTS handler:
+
+```bash
+# First apply the SQL migration through db.migrate() as an operator.
+export MEMORY_DSN='postgresql://...'
+python -m agent_memory_core.projection_worker --consumer-id fts-v1 --batch-size 20
+# For a single bounded poll:
+python -m agent_memory_core.projection_worker --once
+```
+
+`project_claim_fts` reads the canonical tenant-scoped JSON value and updates
+`memory_claim_fts` in the same transaction as the consumer receipt.
+`PostgresMemory.fts_search(...)` enforces tenant and bitemporal scope.
+`HybridMemorySearch` can add the `fts` rank to its reciprocal-rank
+fusion alongside the existing SQL/pgvector/AGE paths.
+
+This materializer is **not** a Chinese NLP tokenizer: the stock PostgreSQL
+`simple` configuration is a token-based baseline. It must be evaluated
+against a labeled Chinese benchmark and replaced/extended with an appropriate
+Chinese tokenizer before claiming Chinese full-text search quality.
+Index lag is possible while the worker is down; canonical SQL remains the
+source of truth. A production supervisor, metrics, stale-projection alarms,
+resync controls and recovery exercises are still required.

@@ -14,8 +14,8 @@ The repository is a **working local research prototype**, NOT a secure productio
 | G7 | Local embeddings, retrieval quality and latency benchmarks | Fixed 384-dim profile, no local encoder or Recall@k | ◻ Incomplete |
 | G8 | Real sensor time-series partitioning and object lifecycle | Observation schema and SHA-256 store only | ◻ Incomplete |
 | G9 | Temporal / Restate / WindowPilot adapters | Temporal SDK Workflow + real local Worker/Activities + PostgreSQL idempotent receipt CI; Restate/WindowPilot not implemented | 🟡 Temporal prototype verified |
-| G11 | Mem0-inspired extraction and multi-signal retrieval | Architecture decision recorded; pipeline not yet implemented | ◻ Planned |
-| G12 | Realtime outbox + change feed + snapshot query | PostgreSQL events exist; durable outbox/subscription API missing | ◻ Planned |
+| G11 | Mem0-inspired extraction and multi-signal retrieval | Structured candidate pipeline, confidence filter, exact dedupe, provenance and atomic per-key PostgreSQL processing implemented; real Chinese model evaluation pending | 🟡 Prototype verified |
+| G12 | Realtime outbox + change feed + snapshot query | Durable event log, cursor replay, SSE, signed Webhook subscriptions, delivery retry/DLQ/replay and transactional outbox recovery implemented; production fan-out/load pending | 🟡 Prototype verified |
 | G13 | Temporal durable orchestration adapter | Optional SDK adapter; real local Temporal dev service CI, no Temporal dependency in core | 🟡 Prototype verified |
 | G10 | Interop spec + external reproducer | Versioned MemoryPort + local REST contract, authenticated tenant-scoped API tests; external adopter absent | 🟡 Prototype verified |
 
@@ -80,3 +80,22 @@ Remaining critical gaps:
    audit, backup/restore and retention/erasure.
 6. Chinese retrieval benchmark: Recall@k, MRR/nDCG, p50/p95 latency, memory,
    CPU and integration overhead on the same corpus.
+
+
+## RSI implementation delta (2026-11-10)
+
+- Same-key memory processing is now serialized with PostgreSQL transaction
+  advisory locks; concurrent duplicate candidates preserve provenance while
+  producing one canonical fact and one outbox event.
+- Transactional outbox now has bounded retries, exponential backoff, dead-letter
+  state and tenant-scoped replay.
+- Local Ollama extraction enforces a strict fact schema and marks utterance
+  content as untrusted input.
+- Added real-service evaluation runners for Chinese extraction and retrieval.
+  They intentionally require 200+ human-adjudicated examples and do not report
+  success until measured thresholds are met.
+
+These are implementation advances, not a release sign-off. Database RLS,
+measured local model quality, Chinese retrieval quality, process/database
+fault recovery, and load/performance evidence remain release blockers.
+

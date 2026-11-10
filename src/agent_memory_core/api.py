@@ -67,7 +67,7 @@ class ProcessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=100000, description="Original text retained as processing context; source_id identifies its durable source.")
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
-    candidates: list[dict] = Field(min_length=1, max_length=500, description="Structured facts emitted by the caller's local extractor. Each item requires subject_id or resolvable subject_name, predicate, and object value.")
+    candidates: list[dict] | None = Field(default=None, max_length=500, description="Optional structured facts. If omitted, a server-configured local extractor must be available.")
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
 
 
@@ -90,7 +90,7 @@ class SearchRequest(BaseModel):
 
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
-               temporal_client_factory=None, temporal_task_queue=None):
+               temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
@@ -520,6 +520,17 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         from .processing import MemoryProcessor
         db = store_factory()
         try:
+            if item.candidates is not None:
+                extractor = lambda _text: item.candidates
+            elif memory_extractor_factory is not None:
+                extractor = memory_extractor_factory(t)
+                if not callable(extractor):
+                    raise RuntimeError("Configured local memory extractor is unavailable")
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No local memory extractor configured; provide candidates or configure memory_extractor_factory",
+                )
             processor = MemoryProcessor(
                 db,
                 confidence_threshold=item.confidence_threshold,
@@ -528,7 +539,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             )
             report = processor.process(
                 tenant_id=t, text=item.text, source_id=item.source_id,
-                extractor=lambda _text: item.candidates,
+                extractor=extractor,
             )
             return {
                 "tenant_id": t,

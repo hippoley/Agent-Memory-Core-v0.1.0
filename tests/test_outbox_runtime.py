@@ -135,3 +135,40 @@ def test_projection_fanout_independent_receipts_and_dead_letter_replay():
                WHERE event_id=%s AND consumer_id='fts'""",(eid,)).fetchone()[0]
     finally:
         db.close()
+
+
+@pytest.mark.integration
+def test_fts_projector_rebuildable_tenant_scoped_and_bitemporal():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real PostgreSQL required")
+    from datetime import datetime, timezone
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.outbox import ProjectionOutboxWorker, project_claim_fts
+    db = PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+    tenant = "fts-" + uuid4().hex
+    other = "other-" + tenant
+    word = "zenithpomegranate" + uuid4().hex[:12]
+    try:
+        db.migrate()
+        mid = db.remember(tenant_id=tenant, subject_id="room",
+            predicate="fact", value={"text":word}, source_id="speech",
+            valid_from=datetime(2026, 11, 1, tzinfo=timezone.utc))
+        worker=ProjectionOutboxWorker(db.conn)
+        assert db.fts_search(tenant_id=tenant,query=word)==[]
+        # A bounded batch may first contain older events in a shared DB.
+        for _ in range(30):
+            worker.consume(consumer_id="fts-test-v1",
+                           event_type="memory.claim.created",
+                           handler=project_claim_fts,limit=100)
+            if db.fts_search(tenant_id=tenant,query=word):
+                break
+        assert db.fts_search(tenant_id=tenant,query=word)==[mid]
+        assert db.fts_search(tenant_id=other,query=word)==[]
+        assert db.fts_search(tenant_id=tenant,query=word,
+               valid_at=datetime(2026,10,1,tzinfo=timezone.utc))==[]
+        assert db.conn.execute(
+            "SELECT count(*) FROM memory_outbox_deliveries WHERE "
+            "event_id=%s AND consumer_id='fts-test-v1' AND delivered_at IS NOT NULL",
+            (mid,)).fetchone()[0]==1
+    finally:
+        db.close()

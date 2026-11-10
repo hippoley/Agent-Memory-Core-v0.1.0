@@ -22,6 +22,8 @@ EXPECTED={
     "/v1/events/stream":{"get"},
     "/v1/webhooks":{"get","post"},
     "/v1/webhooks/{subscription_id}":{"delete"},
+    "/v1/webhooks/{subscription_id}/deliveries":{"get"},
+    "/v1/webhooks/deliveries/{delivery_id}/replay":{"post"},
     "/v1/memories/{memory_id}/embedding":{"put"},
     "/v1/memories/{memory_id}/sources":{"get"},
     "/v1/entities":{"post"},

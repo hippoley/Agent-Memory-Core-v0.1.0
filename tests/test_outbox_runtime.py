@@ -172,6 +172,25 @@ def test_fts_projector_rebuildable_tenant_scoped_and_bitemporal():
         assert db.fts_search(tenant_id=other,query=word)==[]
         assert db.fts_search(tenant_id=tenant,query=word,
                valid_at=datetime(2026,10,1,tzinfo=timezone.utc))==[]
+        # Superseded claims must disappear from current retrieval, but remain
+        # visible to correct historical as-of queries.
+        past_known = db.current_time()
+        db.remember(tenant_id=tenant, subject_id="room", predicate="fact",
+                    value={"text":"revised"}, source_id="correction",
+                    valid_from=datetime(2026,11,1,tzinfo=timezone.utc),
+                    replaces_id=mid)
+        assert db.fts_search(tenant_id=tenant,query=word)==[]
+        assert db.fts_search(tenant_id=tenant,query=word,
+              valid_at=datetime(2026,11,2,tzinfo=timezone.utc),
+              known_at=past_known)==[mid]
+        # A second connection sees the same persisted projection.
+        reopened=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+        try:
+            assert reopened.fts_search(tenant_id=tenant,query=word,
+                 valid_at=datetime(2026,11,2,tzinfo=timezone.utc),
+                 known_at=past_known)==[mid]
+        finally:
+            reopened.close()
         assert db.conn.execute(
             "SELECT count(*) FROM memory_outbox_deliveries WHERE "
             "event_id=%s AND consumer_id='fts-test-v1' AND delivered_at IS NOT NULL",

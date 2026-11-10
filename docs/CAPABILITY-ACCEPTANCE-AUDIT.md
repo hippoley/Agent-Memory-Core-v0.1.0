@@ -42,6 +42,30 @@ service integration test.
 | Memory consolidation / forgetting | Not complete | No | Summarization, consolidation scheduling, policy-based forgetting, contradiction classification and benchmark remain |
 | Third-party REST contract | Yes, broad prototype | Yes | Swagger/OpenAPI and route contract tests; not yet hardened for untrusted multi-customer public SaaS |
 
+## Draft PR #2 implementation evidence, 2026-11-10
+
+- PostgreSQL FTS: `memory_claim_fts`, `project_claim_fts`,
+  `PostgresMemory.fts_search`, and `projection_worker.py`, with
+  bitemporal and tenant-isolation integration tests. Hybrid search now
+  accepts an FTS channel if the projection is present.
+- Graph endpoints: composite tenant/entity foreign keys on new writes,
+  with historical existing rows intentionally left `NOT VALID` pending
+  clean-up; direct SQL rejection is tested.
+- Observability: `ProjectionOutboxWorker.status()` returns delivered,
+  pending, dead-letter counts and oldest pending age for one consumer.
+- Concurrency: the PostgreSQL CI workflow exercises **100 logical
+  Agent requests at 16 simultaneous worker connections** using
+  `scripts/benchmark_memory_concurrency.py`. This does not establish
+  100 simultaneous connections or production p95 latency.
+- REST idempotency: `Idempotency-Key` now also covers
+  `POST /v1/memories/process` as one canonical transaction including
+  all accepted candidates, provenance links, events, and its response
+  receipt. A changed payload under the same key yields HTTP 409.
+
+Outstanding: 100 concurrent physical clients, high-load recovery,
+Chinese tokenizer/evaluation, vector/AGE auto-projectors, RLS,
+key rotation and public SaaS hardening.
+
 ## Current public HTTP endpoints
 
 - `GET /v1/health`

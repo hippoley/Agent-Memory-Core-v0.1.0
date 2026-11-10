@@ -195,3 +195,16 @@ CREATE TABLE IF NOT EXISTS memory_projection_deliveries (
 CREATE INDEX IF NOT EXISTS memory_projection_deliveries_pending
   ON memory_projection_deliveries(channel,available_at,event_id)
   WHERE status = 'pending';
+
+
+-- Rebuildable PostgreSQL full-text projection, independent from canonical claims.
+CREATE TABLE IF NOT EXISTS memory_claim_search (
+  memory_id uuid PRIMARY KEY REFERENCES memory_claims(id) ON DELETE CASCADE,
+  tenant_id text NOT NULL,
+  document tsvector NOT NULL,
+  projected_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS memory_claim_search_tenant
+  ON memory_claim_search(tenant_id);
+CREATE INDEX IF NOT EXISTS memory_claim_search_gin
+  ON memory_claim_search USING gin(document);

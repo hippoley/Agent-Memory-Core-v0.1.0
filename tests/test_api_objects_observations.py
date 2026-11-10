@@ -355,3 +355,22 @@ def test_memory_claim_cannot_reference_another_tenants_object(tmp_path):
     })
     assert claim.status_code==422
     assert shared_db.memories==[]
+
+
+def test_processing_api_exposes_ambiguity_and_enforces_confidence_floor(tmp_path):
+    client, headers = make_client(tmp_path)
+    low = client.post("/v1/memories/process", headers=headers, json={
+        "text": "unsafe threshold", "source_id": "source-a",
+        "confidence_threshold": 0.01,
+        "candidates": [{"subject_id": "room", "predicate": "p",
+                        "value": {"v": 1}, "confidence": 0.02}],
+    })
+    assert low.status_code == 422
+    accepted = client.post("/v1/memories/process", headers=headers, json={
+        "text": "ambiguous candidate", "source_id": "source-a",
+        "candidates": [{"subject_id": "room", "predicate": "p",
+                        "value": {"v": 1}, "cardinality": "many"}],
+    })
+    assert accepted.status_code == 200
+    assert accepted.json()["created"] == []
+    assert accepted.json()["ambiguous"] == 1

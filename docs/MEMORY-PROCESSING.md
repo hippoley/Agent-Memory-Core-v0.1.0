@@ -67,3 +67,38 @@ The extractor is injected and must be provided by the application. Model-native 
 resolution), contradiction classification, consolidation/summarization,
 forgetting policies and a Chinese extraction/retrieval benchmark remain to be
 implemented and evaluated.
+
+## Association safety and cardinality (November 2026)
+
+A candidate may declare `"cardinality": "one"` (default) or
+`"cardinality": "many"`. The extractor/schema owner must know which
+predicates are multi-valued; this field is **not** an authorization mechanism.
+
+For `many`, a distinct value creates a coexisting claim rather than
+superseding an unrelated target. Canonical duplicates still attach provenance.
+For `one`, exactly one differing active claim may be superseded. When
+multiple different active claims exist, processing rejects the ambiguous
+correction instead of arbitrarily replacing the newest row.
+
+If `subject_name` is provided and an entity resolver is configured, its
+result must be a nonempty canonical entity ID; unresolved names and explicit
+`subject_id` mismatches are rejected. `report.ambiguous` counts these
+rejections and ambiguous single-valued corrections (already included in
+`report.rejected`).
+
+Example relationship candidate:
+
+```python
+{
+    "subject_id": "living-room",
+    "predicate": "HAS_WINDOW",
+    "value": {"target_id": "window-b"},
+    "cardinality": "many",
+}
+```
+
+**Boundaries:** This does not yet verify `value.target_id` against
+`memory_entities`, deduplicate concurrent transactions, define a persistent
+per-predicate cardinality registry, or implement negative assertions and
+retractions. Treat the candidate's cardinality as a trusted application
+contract, not as a reliable output from an untrusted extraction model.

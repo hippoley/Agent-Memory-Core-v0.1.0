@@ -137,6 +137,8 @@ def test_agent_user_story_cross_component_runtime():
     assert search.status_code==200,search.text
     assert any(hit["memory_id"]==new_mid for hit in search.json()["items"])
     assert all(hit["memory_id"]!=mid for hit in search.json()["items"])
+    assert "fts" in search.json()["channels_used"]
+    assert "vector" in search.json()["channels_used"]
 
     # US01-07 externally visible event page and durable cursor replay.
     page=client.get("/v1/events",headers=headers,params={"limit":100})

@@ -130,6 +130,12 @@ def test_projection_fanout_independent_receipts_and_dead_letter_replay():
                                             consumer_id="fts",event_id=str(eid))
         assert worker.consume(consumer_id="fts",event_type="memory.test.fanout",
                               handler=lambda *args: None) >= 1
+        metrics = worker.status(consumer_id="fts",tenant_id=tenant)
+        assert metrics["delivered"] == 1
+        assert metrics["pending"] == 0
+        assert metrics["dead_letter"] == 0
+        assert metrics["oldest_pending_seconds"] is None
+        assert worker.status(consumer_id="fts",tenant_id="foreign-"+tenant)["delivered"] == 0
         assert db.conn.execute(
             """SELECT delivered_at IS NOT NULL FROM memory_outbox_deliveries
                WHERE event_id=%s AND consumer_id='fts'""",(eid,)).fetchone()[0]

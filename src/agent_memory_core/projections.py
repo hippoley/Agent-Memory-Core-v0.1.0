@@ -98,3 +98,70 @@ class ProjectionWorker:
                    AND status='dead' RETURNING event_id""",
                 (event_id,channel)).fetchone()
         return row is not None
+
+
+class PostgresProjectionHandlers:
+    """Concrete local PostgreSQL projection handlers.
+
+    The embedder is an injected local function; this package never calls a
+    hosted model. It receives a canonical claim dict and returns (model_id,
+    vector). Vector persistence and delivery acknowledgement share a tx.
+    """
+    def __init__(self, *, embedder=None):
+        self.embedder = embedder
+
+    @staticmethod
+    def full_text(conn, tenant_id, event_id, aggregate_id, event_type, payload):
+        memory_id = payload.get("memory_id") or aggregate_id
+        conn.execute(
+            """INSERT INTO memory_claim_search(memory_id,tenant_id,document)
+               SELECT id,tenant_id,
+                 to_tsvector('simple',
+                   coalesce(subject_id,'') || ' ' || coalesce(predicate,'') || ' ' ||
+                   coalesce(value::text,''))
+               FROM memory_claims WHERE id=%s::uuid AND tenant_id=%s
+               ON CONFLICT(memory_id) DO UPDATE SET
+                 tenant_id=EXCLUDED.tenant_id,document=EXCLUDED.document,
+                 projected_at=clock_timestamp()""",
+            (memory_id,tenant_id))
+
+    def vector(self, conn, tenant_id, event_id, aggregate_id, event_type, payload):
+        if self.embedder is None:
+            raise RuntimeError("No local embedding function configured")
+        import json
+        from .vector_validation import vector_literal
+        memory_id = payload.get("memory_id") or aggregate_id
+        row = conn.execute(
+            """SELECT id::text,subject_id,predicate,value,source_id
+               FROM memory_claims WHERE id=%s::uuid AND tenant_id=%s""",
+            (memory_id,tenant_id)).fetchone()
+        if row is None:
+            # A deleted canonical row is a no-op; never index data from payload.
+            return
+        claim = {"id":row[0],"subject_id":row[1],"predicate":row[2],
+                 "value":row[3],"source_id":row[4]}
+        model_id, vector = self.embedder(claim)
+        literal = vector_literal(vector)
+        dimension = len(vector)
+        if dimension == 384:
+            table = "memory_embeddings"
+        elif dimension == 512:
+            table = "memory_embeddings_512"
+        else:
+            raise ValueError("Embedding dimension must be 384 or 512")
+        conn.execute(
+            """INSERT INTO memory_embedding_models(tenant_id,model_id,dimensions)
+               VALUES (%s,%s,%s) ON CONFLICT(tenant_id,model_id) DO NOTHING""",
+            (tenant_id,model_id,dimension))
+        known = conn.execute(
+            """SELECT dimensions FROM memory_embedding_models
+               WHERE tenant_id=%s AND model_id=%s FOR UPDATE""",
+            (tenant_id,model_id)).fetchone()
+        if known[0] != dimension:
+            raise ValueError("Embedding model dimension mismatch")
+        conn.execute(
+            f"""INSERT INTO {table}(memory_id,model_id,embedding)
+                VALUES (%s::uuid,%s,%s::vector)
+                ON CONFLICT(memory_id,model_id)
+                DO UPDATE SET embedding=EXCLUDED.embedding""",
+            (memory_id,model_id,literal))

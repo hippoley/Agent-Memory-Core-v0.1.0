@@ -45,10 +45,11 @@ def run(*, poll_seconds: float = 1.0, batch_size: int = 20) -> None:
             worker = ProjectionWorker(db.conn)
             handlers = PostgresProjectionHandlers(embedder=embedder)
             fts_done = worker.consume(channel="fts", handler=handlers.full_text, limit=batch_size)
+            graph_done = worker.consume(channel="graph", handler=handlers.graph, limit=batch_size)
             vector_done = 0
             if embedder is not None:
                 vector_done = worker.consume(channel="vector", handler=handlers.vector, limit=batch_size)
-            if not (fts_done or vector_done):
+            if not (fts_done or graph_done or vector_done):
                 time.sleep(poll_seconds)
         finally:
             db.close()

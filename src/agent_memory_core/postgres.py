@@ -270,6 +270,31 @@ class PostgresMemory:
             if result.rowcount != 1:
                 raise PermissionError("Memory does not belong to requested tenant")
 
+    def fts_search(self, *, tenant_id: str, query: str, limit: int = 10,
+                   valid_at: datetime | None = None,
+                   known_at: datetime | None = None) -> list[str]:
+        """Tenant- and bitemporal-scoped token search over projected claims."""
+        if not tenant_id or not isinstance(query, str) or not 1 <= limit <= 100:
+            raise ValueError("Invalid tenant, query or limit")
+        if not query.strip():
+            return []
+        known = aware(known_at or datetime.now(timezone.utc))
+        valid = aware(valid_at or known)
+        rows = self.conn.execute(
+            """SELECT c.id::text
+               FROM memory_claim_fts f JOIN memory_claims c ON c.id=f.memory_id
+               WHERE f.tenant_id=%s AND c.tenant_id=%s
+                 AND f.document @@ plainto_tsquery('simple',%s)
+                 AND c.recorded_at<=%s
+                 AND (c.superseded_at IS NULL OR c.superseded_at>%s)
+                 AND c.valid_from<=%s
+                 AND (c.valid_to IS NULL OR c.valid_to>%s)
+               ORDER BY ts_rank(f.document,plainto_tsquery('simple',%s)) DESC,
+                        c.id LIMIT %s""",
+            (tenant_id,tenant_id,query,known,known,valid,valid,query,limit),
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def vector_search(self, *, tenant_id: str, model_id: str, vector: list[float],
                       limit: int = 10, valid_at: datetime | None = None,
                       known_at: datetime | None = None) -> list[tuple[str,float]]:

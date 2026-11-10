@@ -187,6 +187,13 @@ MEMORY_WEBHOOK_ALLOWED_HOSTS="hooks.example.com" \
 python -m agent_memory_core.webhook_worker
 ```
 
+Subscriptions can be listed and revoked with `GET /v1/webhooks` and
+`DELETE /v1/webhooks/{subscription_id}`. Delivery attempts are inspectable at
+`GET /v1/webhooks/{subscription_id}/deliveries`; a tenant administrator can
+requeue a dead attempt with
+`POST /v1/webhooks/deliveries/{delivery_id}/replay`. These operations enforce
+the API key's server-bound tenant identity.
+
 Each matching event is persisted as a per-subscription delivery. Network I/O
 occurs outside the database transaction; delivery attempts are leased, signed,
 retried with exponential backoff, and dead-lettered after the configured

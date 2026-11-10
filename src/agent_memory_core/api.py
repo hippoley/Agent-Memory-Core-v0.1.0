@@ -551,6 +551,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             }
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="Local memory extractor unavailable or invalid") from exc
         finally:
             db.close()
 

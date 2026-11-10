@@ -56,3 +56,40 @@ def test_sdk_error_codes_for_auth_and_unavailable():
             with pytest.raises(MemoryAPIError) as err:
                 sdk.ready()
         assert err.value.code==code and "denied" in str(err.value)
+
+
+def test_sdk_resumable_sse_parses_frames_and_cursors():
+    received=[]
+    def server(request):
+        assert request.url.path=="/v1/events/stream"
+        assert request.url.params["after"]=="previous"
+        received.append(request)
+        return httpx.Response(200,content=(
+            b": keepalive\\n\\n"
+            b"id: event-2\\n"
+            b"event: memory.claim.created\\n"
+            b'data: {"event_id":"event-2","payload":{"subject_id":"bedroom"}}\\n\\n'
+        ).replace(b"\\\\n",b"\\n"),
+        headers={"content-type":"text/event-stream"})
+    with MemoryClient("http://localhost","secret",transport=httpx.MockTransport(server)) as sdk:
+        events=list(sdk.stream_events(after="previous",max_seconds=1))
+    assert len(events)==1
+    assert events[0]["id"]=="event-2"
+    assert events[0]["data"]["payload"]["subject_id"]=="bedroom"
+    assert len(received)==1
+
+
+def test_sdk_entity_and_observation_contract():
+    calls=[]
+    def server(request):
+        calls.append((request.url.path,json.loads(request.content)))
+        return httpx.Response(201,json={"accepted":True})
+    with MemoryClient("http://localhost","secret",transport=httpx.MockTransport(server)) as sdk:
+        sdk.add_entity(entity_id="room-1",entity_type="room",canonical_name="主卧")
+        sdk.add_edge(from_entity="room-1",predicate="HAS_WINDOW",to_entity="window-1")
+        sdk.observe(device_id="window-1",source_event_id="evt-1",
+            observed_at="2026-11-10T00:00:00Z",property="angle",
+            value=35.0,unit="degree",source_id="gateway")
+    assert [path for path,_ in calls]==[
+        "/v1/entities","/v1/edges","/v1/observations"]
+    assert calls[2][1]["source_event_id"]=="evt-1"

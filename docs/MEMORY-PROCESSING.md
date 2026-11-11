@@ -67,3 +67,38 @@ The extractor is injected and must be provided by the application. Model-native 
 resolution), contradiction classification, consolidation/summarization,
 forgetting policies and a Chinese extraction/retrieval benchmark remain to be
 implemented and evaluated.
+
+
+## Trusted predicate cardinality
+
+Each tenant can configure a predicate as `one` or `many` before writing facts.
+Absent policies default to `one`. The policy is stored in
+`memory_predicate_policies` and is read by the atomic candidate path and the
+direct PostgreSQL write path.
+
+- `one`: overlapping active facts for the same tenant, subject and predicate
+  are rejected unless the write explicitly replaces the only overlapping fact.
+  If historical data contains multiple active facts, automated processing fails
+  closed rather than choosing an arbitrary row.
+- `many`: distinct values coexist; exact duplicates add provenance without
+  creating another canonical claim or outbox event.
+- Model output cannot set policy. A candidate-supplied cardinality that
+  disagrees with the trusted policy is rejected.
+- Policy changes are serialized with writes and are blocked once claims for
+  that tenant/predicate exist. Reconciliation must happen before changing
+  existing history.
+- Under principal-bound RLS, tenant logins can read their policy but cannot
+  insert, update or delete it. Provision policy through an administrative
+  connection before normal API ingestion.
+
+Example:
+
+```python
+db.set_predicate_cardinality(
+    tenant_id="home-a", predicate="HAS_WINDOW", cardinality="many"
+)
+```
+
+Do not use `many` merely because an extractor emits multiple candidates.
+It is a domain rule: for example, `HAS_WINDOW` may be many, while a
+single-valued current setting should remain one.

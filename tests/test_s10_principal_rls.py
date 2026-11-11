@@ -35,6 +35,26 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
     db_a=db_b=None
     try:
         admin.migrate()
+        admin_id_a=admin.remember(
+            tenant_id=tenant_a,subject_id="bedroom",predicate="night_mode",
+            value={"enabled":True},source_id="a",valid_from=datetime(2026,1,1,tzinfo=timezone.utc))
+        admin_id_b=admin.remember(
+            tenant_id=tenant_b,subject_id="bedroom",predicate="night_mode",
+            value={"enabled":False},source_id="b",valid_from=datetime(2026,1,1,tzinfo=timezone.utc))
+        with admin.conn.transaction():
+            admin.conn.execute(
+                "INSERT INTO memory_objects(tenant_id,object_sha256,byte_size) VALUES (%s,%s,4),(%s,%s,4)",
+                (tenant_a,"a"*64,tenant_b,"b"*64))
+        admin.set_predicate_cardinality(tenant_id=tenant_a,predicate="HAS_WINDOW",cardinality="many")
+        admin.set_predicate_cardinality(tenant_id=tenant_b,predicate="HAS_WINDOW",cardinality="one")
+        sub_b=WebhookStore(admin.conn).create(tenant_id=tenant_b,
+            target_url="https://hooks.example.test/memory",
+            event_types=["memory.claim.created"])
+        admin.store_embedding(tenant_id=tenant_b,memory_id=admin_id_b,
+            model_id="test384",vector=[1.0]+[0.0]*383)
+
+        # Seed canonical rows and trusted policy before enabling RLS. The
+        # restricted tenant role must never perform administrative setup.
         script=(Path(__file__).resolve().parents[1]/
                 "sql/postgresql/security/001_principal_bound_rls.sql")
         admin.conn.execute(script.read_text(encoding="utf-8"))
@@ -48,21 +68,6 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             admin.conn.execute(
                 "INSERT INTO public.memory_rls_principals(role_name,tenant_id) VALUES (%s,%s)",
                 (role,tenant))
-        admin_id_a=admin.remember(
-            tenant_id=tenant_a,subject_id="bedroom",predicate="night_mode",
-            value={"enabled":True},source_id="a",valid_from=datetime(2026,1,1,tzinfo=timezone.utc))
-        admin_id_b=admin.remember(
-            tenant_id=tenant_b,subject_id="bedroom",predicate="night_mode",
-            value={"enabled":False},source_id="b",valid_from=datetime(2026,1,1,tzinfo=timezone.utc))
-        with admin.conn.transaction():
-            admin.conn.execute(
-                "INSERT INTO memory_objects(tenant_id,object_sha256,byte_size) VALUES (%s,%s,4),(%s,%s,4)",
-                (tenant_a,"a"*64,tenant_b,"b"*64))
-        sub_b=WebhookStore(admin.conn).create(tenant_id=tenant_b,
-            target_url="https://hooks.example.test/memory",
-            event_types=["memory.claim.created"])
-        admin.store_embedding(tenant_id=tenant_b,memory_id=admin_id_b,
-            model_id="test384",vector=[1.0]+[0.0]*383)
 
         db_a=PostgresMemory(make_conninfo(dsn,user=role_a,password=password_a))
         db_b=PostgresMemory(make_conninfo(dsn,user=role_b,password=password_b))
@@ -88,6 +93,13 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             "SELECT subscription_id::text FROM memory_webhook_subscriptions").fetchall()==[]
         assert db_b.conn.execute(
             "SELECT subscription_id::text FROM memory_webhook_subscriptions").fetchall()==[(sub_b,)]
+        assert db_a.conn.execute(
+            "SELECT predicate,cardinality FROM memory_predicate_policies").fetchall()==[("HAS_WINDOW","many")]
+        assert db_b.conn.execute(
+            "SELECT predicate,cardinality FROM memory_predicate_policies").fetchall()==[("HAS_WINDOW","one")]
+        with pytest.raises(psycopg.Error):
+            db_a.conn.execute(
+                "UPDATE memory_predicate_policies SET cardinality='one' WHERE predicate='HAS_WINDOW'")
 
         # A caller may mutate this custom GUC, but policy ignores it entirely.
         db_a.conn.execute("SELECT set_config('app.tenant_id',%s,false)",(tenant_b,))

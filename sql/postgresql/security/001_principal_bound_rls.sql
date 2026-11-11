@@ -44,7 +44,7 @@ BEGIN
     'memory_claims','memory_events','memory_embedding_models',
     'memory_edges','memory_observations','memory_entities','memory_sources',
     'memory_claim_sources','memory_outbox','memory_idempotency','memory_objects',
-    'memory_claim_search','memory_webhook_subscriptions'
+    'memory_claim_search','memory_webhook_subscriptions','memory_predicate_policies'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',tab);
     EXECUTE format('DROP POLICY IF EXISTS memory_authenticated_tenant_policy ON public.%I',tab);
@@ -57,6 +57,10 @@ BEGIN
   END LOOP;
 END
 $policies$;
+
+-- Predicate cardinality is trusted tenant configuration. Tenant API roles
+-- may read their policy but cannot change it through direct SQL.
+REVOKE INSERT,UPDATE,DELETE ON public.memory_predicate_policies FROM memory_tenant;
 
 -- Derived tables without a tenant_id are guarded through canonical parent.
 ALTER TABLE public.memory_embeddings ENABLE ROW LEVEL SECURITY;

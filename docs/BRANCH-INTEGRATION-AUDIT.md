@@ -10,7 +10,7 @@ is part of this consolidation.
 
 At initial audit GitHub exposed 16 branches including `main`, and two open Draft
 PRs (#1 and #2). After creating and retaining this consolidation branch, the
-repository currently has 17 branches including `main`; PR #14 is merged and
+repository currently has 18 branches including `main` (the retained consolidation and audit branches are included); PR #14 is merged and
 PRs #1 and #2 are closed as superseded. The following dispositions were made by comparing actual
 Git trees and code, not by merging branch names blindly.
 

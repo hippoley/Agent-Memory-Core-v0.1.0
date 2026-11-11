@@ -35,6 +35,11 @@ class CapabilitiesResponse(BaseModel):
 class MemoryWriteResponse(BaseModel):
     id: str = Field(description="UUID of newly inserted canonical claim.")
     tenant_id: str = Field(description="Tenant taken from server authentication, not the request body.")
+    embedded: bool | None = Field(
+        default=None,
+        description=("Present only when a server-side embedding provider is configured: "
+                     "true when the claim was vectorised on write, false when the provider "
+                     "failed and the vector can be retried by a projection worker."))
 
 
 class MemoryItem(BaseModel):

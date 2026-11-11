@@ -97,8 +97,16 @@ class SearchRequest(BaseModel):
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
                temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None,
+               embedder=None, auto_embed=True,
                webhook_signing_key=None, webhook_allowed_hosts=None):
-    """Create a single-tenant app. Tenant identity is bound server-side to the API key."""
+    """Create a single-tenant app. Tenant identity is bound server-side to the API key.
+
+    ``embedder`` is an optional provider-backed object exposing ``model_id``,
+    ``embed_text(text) -> vector`` and ``__call__(candidate) -> (model_id, vector)``.
+    When present and ``auto_embed`` is true, claims are vectorised on write and
+    queries are vectorised on search, so the semantic channel works without the
+    caller computing vectors. Provider failure never fails the canonical write.
+    """
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
     if not key or len(key) < 24 or not tenant:
@@ -191,6 +199,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     @app.post(
         "/v1/memories", status_code=201, tags=["Memory"], summary="Store a memory claim",
         response_model=MemoryWriteResponse,
+        response_model_exclude_none=True,
         description=(
             "Writes a provenance-aware claim to the canonical store. valid_from/valid_to "
             "describe real-world validity; valid_to is exclusive. To correct a claim, "
@@ -214,9 +223,21 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 key=request.headers.get("Idempotency-Key")
                 mid=(db.remember_idempotent(idempotency_key=key,**kwargs)
                      if key is not None else db.remember(**kwargs))
+                response={"id":mid,"tenant_id":t}
+                if embedder is not None and auto_embed:
+                    try:
+                        model_id,vector=embedder({"subject_id":item.subject_id,
+                            "predicate":item.predicate,"value":item.value})
+                        db.store_embedding(tenant_id=t,memory_id=mid,
+                                           model_id=model_id,vector=vector)
+                        response["embedded"]=True
+                    except Exception:
+                        # Canonical claim is committed; a projection worker can
+                        # retry vector indexing. Vector failure must not fail a write.
+                        response["embedded"]=False
             finally:
                 db.close()
-            return {"id":mid,"tenant_id":t}
+            return response
         except IdempotencyConflict as exc:
             raise HTTPException(status_code=409,detail=str(exc))
         except ValueError as exc:
@@ -704,6 +725,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 confidence_threshold=item.confidence_threshold,
                 entity_resolver=lambda tenant_id, name: db.resolve_entity(
                     tenant_id=tenant_id, name=name),
+                embedder=embedder if (embedder is not None and auto_embed) else None,
             )
             report = processor.process(
                 tenant_id=t, text=item.text, source_id=item.source_id,
@@ -809,11 +831,23 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         if search_factory is None:
             raise HTTPException(status_code=503, detail="Hybrid search adapter is not configured")
         try:
+            query_embedding = item.embedding
+            query_model_id = item.model_id
+            if (query_embedding is None and embedder is not None and auto_embed
+                    and flags.get("semantic", False)):
+                try:
+                    query_embedding = embedder.embed_text(item.query)
+                    query_model_id = embedder.model_id
+                except Exception:
+                    # Provider outage degrades to lexical channels instead of
+                    # failing the whole search.
+                    query_embedding = None
+                    query_model_id = None
             service = search_factory()
             try:
                 report = service.search_detailed(
-                    tenant_id=t, query=item.query, embedding=item.embedding,
-                    model_id=item.model_id, anchor_entity=item.anchor_entity,
+                    tenant_id=t, query=item.query, embedding=query_embedding,
+                    model_id=query_model_id, anchor_entity=item.anchor_entity,
                     limit=item.limit, valid_at=aware_iso(item.valid_at),
                     known_at=aware_iso(item.known_at),
                 )

@@ -12,7 +12,8 @@ class Capability:
     reason: str = ""
 
 def capabilities(*,graph=False,semantic=False,temporal=False,objects=False,
-                 observations=True,events=True,processing=True,extraction=""):
+                 observations=True,events=True,processing=True,extraction="",
+                 embedding=""):
     return [asdict(x) for x in (
         Capability("memory.claims",True),
         Capability("memory.bitemporal",True),
@@ -21,6 +22,9 @@ def capabilities(*,graph=False,semantic=False,temporal=False,objects=False,
                    f"text extractor provider: {extraction}" if extraction
                    else "no text extractor configured; supply structured candidates"),
         Capability("memory.vector",semantic,"caller-generated embeddings; vector index disabled" if not semantic else ""),
+        Capability("memory.embedding",bool(embedding),
+                   f"server-side embedding model: {embedding}" if embedding
+                   else "no embedding provider; supply caller-generated vectors"),
         Capability("memory.graph",graph,"AGE adapter not enabled" if not graph else ""),
         Capability("memory.objects",objects,"object adapter not enabled" if not objects else ""),
         Capability("memory.observations",observations,"observation API is disabled" if not observations else ""),

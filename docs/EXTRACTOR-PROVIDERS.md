@@ -15,13 +15,78 @@ configured, the text path returns 503 while every other endpoint keeps working.
 | --- | --- | --- | --- |
 | *(unset)* | none | none | callers supply structured candidates |
 | `rule` | none | none | offline/free text extraction from template rules |
-| `openai-compat` | any LLM | outbound to your endpoint | hosted API key or self-hosted runtime |
-| `ollama` | any local LLM | loopback only | fully local model, no egress |
+| `deepseek` `dashscope` `zhipu` `openai` | any LLM | outbound | hosted API key, two lines of config |
+| `vllm` `ollama-openai` | any local LLM | your GPU box | self-hosted OpenAI-compatible runtime |
+| `custom` | any LLM | outbound to your endpoint | any other `/chat/completions` URL |
+| `ollama` | any local LLM | loopback only | fully local native Ollama, no egress |
+
+Presets supply `base_url` and a default `model`, so a hosted provider needs
+only two variables:
+
+```bash
+MEMORY_EXTRACTOR_PROVIDER=deepseek
+MEMORY_EXTRACTOR_API_KEY=sk-...
+```
+
+Anything can be overridden explicitly (`MEMORY_EXTRACTOR_BASE_URL`,
+`MEMORY_EXTRACTOR_MODEL`, `MEMORY_EXTRACTOR_TIMEOUT=30`,
+`MEMORY_EXTRACTOR_JSON_MODE=1`). Unknown provider names fail at startup with
+the list of valid names instead of silently degrading.
+
+A JSON file can hold the whole provider surface; environment variables win:
+
+```json
+{"extractor": {"provider": "dashscope", "model": "qwen-plus", "api_key": "sk-..."},
+ "embedding": {"provider": "dashscope", "model": "text-embedding-v3", "dimensions": 512}}
+```
+
+```bash
+MEMORY_PROVIDER_CONFIG=/etc/agent-memory/providers.json
+```
 
 All providers implement the same contract: `text -> list[{subject_id|subject_name,
 predicate, value, confidence}]`, validated by `fact_contract.py` before any
 write. Prompt-injection safety is shared: user text is always a JSON data
 island, never instructions.
+
+## Embedding provider (semantic channel)
+
+Embeddings are the second model touchpoint and are equally optional. Without a
+provider the vector channel only works when callers generate vectors
+themselves. With one configured, the server vectorises claims on write and
+queries on search:
+
+```bash
+MEMORY_EMBEDDING_PROVIDER=dashscope      # or openai | zhipu | vllm | ollama
+MEMORY_EMBEDDING_API_KEY=sk-...
+MEMORY_EMBEDDING_MODEL=text-embedding-v3
+MEMORY_EMBEDDING_DIMENSIONS=512          # store has vector(384)/vector(512) only
+MEMORY_AUTO_EMBED=1                      # 0 disables server-side vectorisation
+```
+
+Behaviour guarantees:
+
+- `POST /v1/memories` gains `"embedded": true|false` only when a provider is
+  configured; a provider outage never fails the canonical write.
+- `POST /v1/memories/process` reports failed claim ids in `embedding_failures`.
+- `POST /v1/search` without a caller `embedding` embeds the query itself;
+  provider failure degrades to SQL/FTS/graph channels instead of erroring.
+- Vectors that are non-finite, ragged, of the wrong width, or outside
+  `{384, 512}` are rejected before anything is stored.
+- `/v1/capabilities` reports `memory.embedding` with the active model so a
+  client can decide whether to send vectors or let the server do it.
+
+`MEMORY_AUTO_EMBED=0` keeps the provider configured (useful for evals or
+backfills) while turning server-side vectorisation off.
+
+## Choosing
+
+| Situation | Recommendation |
+| --- | --- |
+| No network, no GPU | `rule` |
+| Chinese quality matters, have a key | `deepseek` / `dashscope` extractor + `dashscope` embeddings at 512 dims |
+| Data must never leave the rack | `ollama` or `vllm` on the GPU box |
+| Cost-sensitive batch ingestion | `rule` + self-hosted `bge-m3` embeddings |
 
 ## rule provider (zero model)
 

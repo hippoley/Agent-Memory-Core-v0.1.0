@@ -149,13 +149,15 @@ def test_server_factory_dispatch_by_provider(monkeypatch):
     assert ex.model == "deepseek-chat" and ex.api_key == "sk-x"
 
     monkeypatch.setenv("MEMORY_EXTRACTOR_PROVIDER", "ollama")
+    monkeypatch.delenv("MEMORY_EXTRACTOR_BASE_URL", raising=False)
+    monkeypatch.delenv("MEMORY_EXTRACTOR_API_KEY", raising=False)
     monkeypatch.setenv("MEMORY_LOCAL_OLLAMA_MODEL", "qwen2.5:7b")
     ex = srv.memory_extractor_factory("t1")
     from agent_memory_core.local_extractor import OllamaFactExtractor
     assert isinstance(ex, OllamaFactExtractor)
 
     monkeypatch.setenv("MEMORY_EXTRACTOR_PROVIDER", "bogus")
-    with pytest.raises(RuntimeError, match="MEMORY_EXTRACTOR_PROVIDER"):
+    with pytest.raises(RuntimeError, match="Unknown provider"):
         srv.memory_extractor_factory("t1")
 
     monkeypatch.delenv("MEMORY_EXTRACTOR_PROVIDER")

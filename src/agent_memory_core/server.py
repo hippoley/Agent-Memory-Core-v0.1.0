@@ -84,13 +84,28 @@ async def temporal_client_factory():
 
 
 def extractor_provider():
-    """Resolve the configured extraction provider, or None when disabled."""
-    provider=os.getenv("MEMORY_EXTRACTOR_PROVIDER","").strip().lower()
-    if provider:
-        return provider
-    if os.getenv("MEMORY_LOCAL_OLLAMA_MODEL"):
-        return "ollama"
-    return None
+    """Active extraction provider name, or None when extraction is disabled."""
+    configured = (os.getenv("MEMORY_EXTRACTOR_PROVIDER") or "").strip().lower()
+    if configured == "rule":
+        return "rule"
+    from .providers import provider_settings
+    settings = provider_settings("extractor")
+    if settings is None:
+        return None
+    return "ollama" if settings["provider"] == "ollama-native" else settings["provider"]
+
+
+def embedding_provider():
+    """Active embedding provider name, or None when no embedding provider exists."""
+    from .providers import provider_settings
+    settings = provider_settings("embedding")
+    return settings["provider"] if settings else None
+
+
+_embedder = None
+if embedding_provider():
+    from .providers import build_embedder
+    _embedder = build_embedder()
 
 
 flags = {
@@ -99,6 +114,7 @@ flags = {
     "objects": True,
     "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
     "extraction": extractor_provider() or "",
+    "embedding": embedding_provider() or "",
 }
 
 
@@ -109,23 +125,11 @@ def memory_extractor_factory(tenant_id):
         kwargs={"default_subject":os.getenv("MEMORY_RULE_DEFAULT_SUBJECT","user")}
         patterns=os.getenv("MEMORY_RULE_PATTERNS")
         return RuleFactExtractor.from_file(patterns,**kwargs) if patterns else RuleFactExtractor(**kwargs)
-    if provider=="ollama":
-        from .local_extractor import OllamaFactExtractor
-        return OllamaFactExtractor(
-            model=os.environ["MEMORY_LOCAL_OLLAMA_MODEL"],
-            endpoint=os.getenv("MEMORY_LOCAL_OLLAMA_ENDPOINT",
-                               "http://127.0.0.1:11434/api/generate"),
-        )
-    if provider in ("openai-compat","openai_compat","openai"):
-        from .openai_compat import OpenAICompatFactExtractor
-        return OpenAICompatFactExtractor(
-            model=os.environ["MEMORY_EXTRACTOR_MODEL"],
-            base_url=os.environ["MEMORY_EXTRACTOR_BASE_URL"],
-            api_key=os.getenv("MEMORY_EXTRACTOR_API_KEY") or None,
-            timeout=float(os.getenv("MEMORY_EXTRACTOR_TIMEOUT","30")),
-            json_mode=os.getenv("MEMORY_EXTRACTOR_JSON_MODE","1")=="1",
-        )
-    raise RuntimeError("MEMORY_EXTRACTOR_PROVIDER must be 'rule', 'ollama' or 'openai-compat'")
+    from .providers import build_extractor
+    extractor=build_extractor(tenant_id)
+    if extractor is None:
+        raise RuntimeError("No memory extractor provider is configured")
+    return extractor
 
 
 app = create_app(store_factory=secure_store_factory if rls_mode() else None,
@@ -133,6 +137,8 @@ app = create_app(store_factory=secure_store_factory if rls_mode() else None,
                  object_store_factory=object_store_factory,
                  capability_flags=flags,
                  memory_extractor_factory=memory_extractor_factory if extractor_provider() else None,
+                 embedder=_embedder,
+                 auto_embed=os.getenv("MEMORY_AUTO_EMBED", "1") == "1",
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
                  temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"),
                  webhook_signing_key=os.getenv("MEMORY_WEBHOOK_SIGNING_KEY"),

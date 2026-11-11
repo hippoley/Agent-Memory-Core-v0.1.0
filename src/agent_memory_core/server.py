@@ -83,13 +83,6 @@ async def temporal_client_factory():
     )
 
 
-flags = {
-    "semantic": os.getenv("MEMORY_ENABLE_VECTOR", "0") == "1",
-    "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1" and not rls_mode(),
-    "objects": True,
-    "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
-}
-
 def extractor_provider():
     """Resolve the configured extraction provider, or None when disabled."""
     provider=os.getenv("MEMORY_EXTRACTOR_PROVIDER","").strip().lower()
@@ -100,8 +93,22 @@ def extractor_provider():
     return None
 
 
+flags = {
+    "semantic": os.getenv("MEMORY_ENABLE_VECTOR", "0") == "1",
+    "graph": os.getenv("MEMORY_ENABLE_AGE", "0") == "1" and not rls_mode(),
+    "objects": True,
+    "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
+    "extraction": extractor_provider() or "",
+}
+
+
 def memory_extractor_factory(tenant_id):
     provider=extractor_provider()
+    if provider=="rule":
+        from .rule_extractor import RuleFactExtractor
+        kwargs={"default_subject":os.getenv("MEMORY_RULE_DEFAULT_SUBJECT","user")}
+        patterns=os.getenv("MEMORY_RULE_PATTERNS")
+        return RuleFactExtractor.from_file(patterns,**kwargs) if patterns else RuleFactExtractor(**kwargs)
     if provider=="ollama":
         from .local_extractor import OllamaFactExtractor
         return OllamaFactExtractor(
@@ -118,7 +125,7 @@ def memory_extractor_factory(tenant_id):
             timeout=float(os.getenv("MEMORY_EXTRACTOR_TIMEOUT","30")),
             json_mode=os.getenv("MEMORY_EXTRACTOR_JSON_MODE","1")=="1",
         )
-    raise RuntimeError("MEMORY_EXTRACTOR_PROVIDER must be 'ollama' or 'openai-compat'")
+    raise RuntimeError("MEMORY_EXTRACTOR_PROVIDER must be 'rule', 'ollama' or 'openai-compat'")
 
 
 app = create_app(store_factory=secure_store_factory if rls_mode() else None,

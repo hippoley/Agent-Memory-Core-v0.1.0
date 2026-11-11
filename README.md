@@ -117,9 +117,18 @@ MEMORY_DSN="$MEMORY_DSN" python -m agent_memory_core.projection_worker
 
 FTS is available without a model. Vector tasks remain pending until a local
 embedding callable is configured via `MEMORY_EMBEDDER=module:function`.
-For model-based raw text processing, configure and run Ollama locally and set
-`MEMORY_LOCAL_OLLAMA_MODEL` before starting the REST service. The adapter accepts
-only a loopback Ollama endpoint; it never makes a hosted LLM call.
+Text extraction from raw utterances is an optional provider, selected with
+`MEMORY_EXTRACTOR_PROVIDER`:
+
+- `rule` — deterministic regex templates, no model, no network
+- `openai-compat` — any OpenAI-style `/chat/completions` endpoint, hosted API key
+  (DeepSeek/DashScope/Zhipu/OpenAI) or self-hosted vLLM/SGLang/LM Studio
+- `ollama` — loopback-only local model, no egress
+
+Leave it unset and every endpoint still works with caller-supplied structured
+candidates; only the `text` path of `/v1/memories/process` needs a provider.
+See [docs/EXTRACTOR-PROVIDERS.md](docs/EXTRACTOR-PROVIDERS.md) and
+`.env.example` for the full configuration surface.
 
 For a reproducible story, run the real-stack acceptance tests:
 

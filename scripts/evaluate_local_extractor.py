@@ -20,7 +20,7 @@ CORRECTION_CATEGORIES={"negation","correction","coreference","entity_ambiguity",
 
 def canonical(fact):
     return json.dumps({k:fact.get(k) for k in
-        ("subject_id","subject_name","predicate","value")},
+        ("subject_id","subject_name","predicate","value","polarity")},
         ensure_ascii=False,sort_keys=True,separators=(",",":"))
 
 def score(rows):

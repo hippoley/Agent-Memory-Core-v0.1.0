@@ -1,0 +1,12 @@
+{"id":"positive-preference","category":"durable_preference","text":"我希望卧室晚上安静一点。","expected_facts":[{"subject_name":"卧室","predicate":"noise_preference","value":{"level":"quiet"},"polarity":"positive"}]}
+{"id":"negative-preference","category":"negation","text":"我不喜欢安静的卧室。","expected_facts":[{"subject_name":"卧室","predicate":"noise_preference","value":{"level":"quiet"},"polarity":"negative"}]}
+{"id":"preference-correction","category":"correction","text":"我之前喜欢安静，现在更喜欢有一点背景声。","expected_facts":[{"subject_id":"self","predicate":"noise_preference","value":{"level":"background_noise"},"polarity":"positive"}]}
+{"id":"explicit-correction","category":"correction","text":"不是安静，我更喜欢白噪声。","expected_facts":[{"subject_id":"self","predicate":"noise_preference","value":{"level":"white_noise"},"polarity":"positive"}]}
+{"id":"automation-negation","category":"negation","text":"我不再希望系统自动打开卧室窗户。","expected_facts":[{"subject_name":"卧室窗户","predicate":"automatic_open_preference","value":{"enabled":true},"polarity":"negative"}]}
+{"id":"multi-fact","category":"durable_preference","text":"书房窗户不要自动打开；卧室希望二氧化碳低于800ppm。","expected_facts":[{"subject_name":"书房窗户","predicate":"automatic_open_preference","value":{"enabled":true},"polarity":"negative"},{"subject_name":"卧室","predicate":"co2_target","value":{"max_ppm":800},"polarity":"positive"}]}
+{"id":"ambiguous-pronoun","category":"coreference","text":"它不要打开。","expected_facts":[]}
+{"id":"grounded-pronoun","category":"coreference","text":"我刚才说的卧室窗户，不要自动打开。","expected_facts":[{"subject_name":"卧室窗户","predicate":"automatic_open_preference","value":{"enabled":true},"polarity":"negative"}]}
+{"id":"assistant-suggestion","category":"no_fact","text":"好。","expected_facts":[]}
+{"id":"temporary-state","category":"no_fact","text":"今天晚餐我想吃面条。","expected_facts":[]}
+{"id":"durable-routine","category":"durable_preference","text":"我通常晚上十一点睡觉。","expected_facts":[{"subject_id":"self","predicate":"sleep_schedule","value":{"usual_bedtime":"23:00"},"polarity":"positive"}]}
+{"id":"negation-change","category":"negation","text":"我不再使用自动开窗功能。","expected_facts":[{"subject_id":"self","predicate":"automatic_window_use","value":{"enabled":true},"polarity":"negative"}]}

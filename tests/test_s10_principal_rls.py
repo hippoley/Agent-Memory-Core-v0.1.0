@@ -58,6 +58,8 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             admin.conn.execute(
                 "INSERT INTO memory_objects(tenant_id,object_sha256,byte_size) VALUES (%s,%s,4),(%s,%s,4)",
                 (tenant_a,"a"*64,tenant_b,"b"*64))
+        admin.set_predicate_cardinality(tenant_id=tenant_a,predicate="HAS_WINDOW",cardinality="many")
+        admin.set_predicate_cardinality(tenant_id=tenant_b,predicate="HAS_WINDOW",cardinality="one")
         sub_b=WebhookStore(admin.conn).create(tenant_id=tenant_b,
             target_url="https://hooks.example.test/memory",
             event_types=["memory.claim.created"])
@@ -88,6 +90,13 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             "SELECT subscription_id::text FROM memory_webhook_subscriptions").fetchall()==[]
         assert db_b.conn.execute(
             "SELECT subscription_id::text FROM memory_webhook_subscriptions").fetchall()==[(sub_b,)]
+        assert db_a.conn.execute(
+            "SELECT predicate,cardinality FROM memory_predicate_policies").fetchall()==[("HAS_WINDOW","many")]
+        assert db_b.conn.execute(
+            "SELECT predicate,cardinality FROM memory_predicate_policies").fetchall()==[("HAS_WINDOW","one")]
+        with pytest.raises(psycopg.Error):
+            db_a.conn.execute(
+                "UPDATE memory_predicate_policies SET cardinality='one' WHERE predicate='HAS_WINDOW'")
 
         # A caller may mutate this custom GUC, but policy ignores it entirely.
         db_a.conn.execute("SELECT set_config('app.tenant_id',%s,false)",(tenant_b,))

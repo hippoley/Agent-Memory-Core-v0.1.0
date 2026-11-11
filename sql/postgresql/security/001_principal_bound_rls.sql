@@ -58,6 +58,10 @@ BEGIN
 END
 $policies$;
 
+-- Predicate cardinality is trusted tenant configuration. Tenant API roles
+-- may read their policy but cannot change it through direct SQL.
+REVOKE INSERT,UPDATE,DELETE ON public.memory_predicate_policies FROM memory_tenant;
+
 -- Derived tables without a tenant_id are guarded through canonical parent.
 ALTER TABLE public.memory_embeddings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS memory_authenticated_tenant_policy ON public.memory_embeddings;

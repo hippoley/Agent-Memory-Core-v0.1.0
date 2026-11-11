@@ -80,3 +80,12 @@ removes ephemeral roles and connections.
 Role grants and RLS need a real PostgreSQL server; mock database tests are
 not sufficient. Production RLS hardening remains gated on the AGE/worker
 security review and externally exercised tenant connections.
+
+
+## Trusted predicate policy
+
+Migration `004_predicate_cardinality.sql` creates
+`memory_predicate_policies`. The principal-bound RLS installer includes this
+table. Tenant roles have read-only access to their own policy rows; policy
+changes must be performed through a separate administrative database
+connection before facts for that tenant/predicate exist.

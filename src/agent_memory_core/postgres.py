@@ -57,6 +57,51 @@ class PostgresMemory:
                 or not row[7] or row[0]==row[8]):
             raise PermissionError("Database login is not the expected restricted tenant principal")
 
+    def _lock_predicate(self, tenant_id: str, predicate: str) -> None:
+        """Serialize policy changes with all writes to this tenant predicate."""
+        key="agent-memory-predicate:"+json.dumps(
+            [tenant_id,predicate],ensure_ascii=False,separators=(",",":"))
+        self.conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",(key,))
+
+    def _lock_fact(self, tenant_id: str, subject_id: str, predicate: str) -> None:
+        """Serialize competing decisions for one tenant/subject/predicate."""
+        key="agent-memory-claim:"+json.dumps(
+            [tenant_id,subject_id,predicate],ensure_ascii=False,separators=(",",":"))
+        self.conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,1))",(key,))
+
+    def predicate_cardinality(self, *, tenant_id: str, predicate: str) -> str:
+        """Return the trusted tenant policy; predicates default to single-valued."""
+        if not tenant_id or not predicate or not predicate.strip():
+            raise ValueError("Tenant and predicate required")
+        row=self.conn.execute(
+            "SELECT cardinality FROM memory_predicate_policies "
+            "WHERE tenant_id=%s AND predicate=%s",(tenant_id,predicate)
+        ).fetchone()
+        return row[0] if row else "one"
+
+    def set_predicate_cardinality(self, *, tenant_id: str, predicate: str,
+                                  cardinality: str) -> None:
+        """Set policy before facts exist; extractor/model output cannot change it."""
+        if (not tenant_id or not predicate or not predicate.strip()
+                or cardinality not in ("one","many")):
+            raise ValueError("Invalid tenant predicate policy")
+        with self.conn.transaction():
+            self._lock_predicate(tenant_id,predicate)
+            current=self.predicate_cardinality(tenant_id=tenant_id,predicate=predicate)
+            if current!=cardinality and self.conn.execute(
+                "SELECT 1 FROM memory_claims WHERE tenant_id=%s AND predicate=%s LIMIT 1",
+                (tenant_id,predicate)).fetchone():
+                raise ValueError(
+                    "Cannot change cardinality for an existing predicate without reconciliation")
+            self.conn.execute(
+                """INSERT INTO memory_predicate_policies
+                   (tenant_id,predicate,cardinality) VALUES (%s,%s,%s)
+                   ON CONFLICT (tenant_id,predicate) DO UPDATE SET
+                   cardinality=EXCLUDED.cardinality,updated_at=clock_timestamp()""",
+                (tenant_id,predicate,cardinality))
+
     def close(self) -> None:
         self.conn.close()
 
@@ -88,6 +133,27 @@ class PostgresMemory:
             raise ValueError("Invalid effective interval")
         mid = uuid4()
         with self.conn.transaction():
+            # Lock order is policy -> fact for every write path. This makes
+            # cardinality changes and overlapping writes mutually exclusive.
+            self._lock_predicate(tenant_id,predicate)
+            self._lock_fact(tenant_id,subject_id,predicate)
+            cardinality=self.predicate_cardinality(tenant_id=tenant_id,predicate=predicate)
+            if cardinality=="one":
+                collisions=self.conn.execute(
+                    """SELECT id::text FROM memory_claims
+                       WHERE tenant_id=%s AND subject_id=%s AND predicate=%s
+                         AND superseded_at IS NULL
+                         AND valid_from < coalesce(%s::timestamptz,'infinity'::timestamptz)
+                         AND (valid_to IS NULL OR valid_to > %s)
+                       FOR UPDATE""",
+                    (tenant_id,subject_id,predicate,valid_to,valid_from)).fetchall()
+                if replaces_id is not None:
+                    if len(collisions)!=1 or collisions[0][0]!=str(replaces_id):
+                        raise ValueError(
+                            "Single-valued correction must replace the only overlapping claim")
+                elif collisions:
+                    raise ValueError(
+                        "Single-valued predicate already has an overlapping active claim; use replaces_id")
             mutation_time = self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
             if object_sha256 is not None:
                 owned = self.conn.execute(
@@ -215,9 +281,9 @@ class PostgresMemory:
         canonical=json.dumps(value,ensure_ascii=False,sort_keys=True,
                              separators=(",",":"),allow_nan=False)
         with self.conn.transaction():
-            lock_key="agent-memory-claim:"+json.dumps([tenant_id,subject_id,predicate],ensure_ascii=False,separators=(",",":"))
-            self.conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",(lock_key,))
+            self._lock_predicate(tenant_id,predicate)
+            self._lock_fact(tenant_id,subject_id,predicate)
+            cardinality=self.predicate_cardinality(tenant_id=tenant_id,predicate=predicate)
             now=self.current_time()
             active=self.recall(tenant_id=tenant_id,subject_id=subject_id,
                 predicate=predicate,valid_at=now,known_at=now)
@@ -228,6 +294,13 @@ class PostgresMemory:
                 self.link_claim_source(tenant_id=tenant_id,memory_id=exact["id"],
                     source_id=source_id,confidence=float(confidence))
                 return exact["id"],None,True,RELATION_DUPLICATE
+            if cardinality=="many":
+                memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                    predicate=predicate,value=value,source_id=source_id,valid_from=now)
+                return memory_id,None,False,RELATION_CREATED
+            if len(active)>1:
+                raise ValueError(
+                    "Single-valued predicate has multiple active claims; reconcile before processing")
             if not active:
                 memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                     predicate=predicate,value=value,source_id=source_id,

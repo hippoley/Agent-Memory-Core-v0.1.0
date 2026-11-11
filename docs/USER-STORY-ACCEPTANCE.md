@@ -64,3 +64,17 @@ Webhook、中文本地模型质量、DB RLS、备份恢复或 100 Agent 负载�
 
 只有 S01–S10 全部真实通过，且故障、质量、性能、安全 Gate 有可审计原始指标时，
 才可以发布为“第三方可依赖的完整版本”。当前阶段仍是未达该门槛的候选实现。
+
+
+## Additional S04/S05 domain-policy acceptance
+
+- Predicate cardinality is tenant-scoped and defaults to `one`.
+- `many` predicates retain distinct simultaneous facts; exact duplicates
+  attach provenance without creating another canonical event.
+- The model cannot select or upgrade cardinality. A mismatch with trusted
+  database policy is rejected.
+- Single-valued overlapping writes fail closed unless they explicitly replace
+  the only overlapping active claim.
+- Real PostgreSQL checks live in `tests/test_predicate_cardinality.py`.
+- This domain-policy implementation does not replace the separate 200+ case
+  Chinese extraction or retrieval-quality gates.

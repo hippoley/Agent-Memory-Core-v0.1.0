@@ -95,6 +95,11 @@ release candidate as qualified.
 
 ## Third-party SDK, projections and acceptance
 
+- Python SDK reference: [`docs/PYTHON-SDK.md`](docs/PYTHON-SDK.md).
+- Trusted relation cardinality: tenant administrators configure `one` or `many` per predicate before facts are written; model output cannot change policy. See `docs/MEMORY-PROCESSING.md`.
+- Offline local embedding loader: `local_sentence_transformer()` requires an already-downloaded local model directory; install `.[embedding]` and set `local_files_only=True`.
+- Reproducible 100-Agent same-fact benchmark: `python scripts/benchmark_memory_concurrency.py` against a disposable database/tenant. See `benchmarks/README.md`.
+
 The Python SDK uses the public HTTP API, not direct database access:
 
 ```python

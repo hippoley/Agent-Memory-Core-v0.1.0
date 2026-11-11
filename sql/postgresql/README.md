@@ -1,25 +1,51 @@
-# PostgreSQL prototype
+# PostgreSQL schema and migration guide
 
-Prerequisites: a PostgreSQL build with pgvector installed and a separate
-AGE-compatible build. Use a locally configured instance, not a cloud API.
+Prerequisites: PostgreSQL with pgvector installed. Apache AGE is initialized
+separately because it is an optional derived graph projection.
 
-1. Create a database and role with minimal privileges.
-2. Apply `001_core.sql` using psql with `ON_ERROR_STOP=1`.
-3. Apply `003_outbox_recovery.sql` to add bounded retry/dead-letter state.
-4. Verify pgvector and SQL inserts and queries.
-5. **Only after installing AGE in the same server**, apply `002_age.sql`.
-5. Run cross-extension integration, tenant isolation and graph projection tests.
+## Ordered canonical migrations
 
-Example (credentials omitted):
+`PostgresMemory.migrate()` applies the packaged SQL resources in numeric order:
+
+1. `001_core.sql` — canonical claims, provenance, object metadata, events,
+   outbox, embeddings, entities, graph edges and search projections.
+2. `002_webhooks.sql` — durable Webhook subscriptions and deliveries.
+3. `003_outbox_recovery.sql` — bounded retry and dead-letter state.
+4. `004_predicate_cardinality.sql` — trusted tenant-scoped `one` / `many`
+   predicate policy.
+
+Source files under `sql/postgresql/` are byte-for-byte mirrored into
+`src/agent_memory_core/resources/`; package tests enforce this.
+
+Example for a disposable local database:
 
 ```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/postgresql/001_core.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/postgresql/003_outbox_recovery.sql\npsql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/postgresql/002_age.sql
+psql "$MEMORY_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/postgresql/001_core.sql
+psql "$MEMORY_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/postgresql/002_webhooks.sql
+psql "$MEMORY_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/postgresql/003_outbox_recovery.sql
+psql "$MEMORY_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/postgresql/004_predicate_cardinality.sql
 ```
 
-The AGE initialization is not idempotent where `create_graph` already exists;
-run only on fresh database or handle graph creation explicitly.
+AGE setup is separate and must be run only after installing AGE in the same
+PostgreSQL server. Review `002_age.sql` before applying it; graph creation is
+not a substitute for canonical SQL migrations.
 
-**Security:** DDL is setup-only. The current service still relies on application-side tenant filters; database-enforced RLS, key lifecycle, and adversarial multitenant verification remain release blockers. Do not expose directly to untrusted tenants.
+## Principal-bound RLS (opt-in operator installation)
 
-**Packaging:** `PostgresMemory.migrate()` applies ordered, packaged migrations from `agent_memory_core/resources/`; wheels include these SQL resources.
+`security/001_principal_bound_rls.sql` is deliberately **not** an automatic
+numbered migration. It requires administrator privileges and distinct
+PostgreSQL LOGIN principals per tenant. Its trusted principal mapping is based
+on authenticated `session_user`, not a mutable custom GUC.
+
+Follow `docs/S10-PRINCIPAL-RLS.md`. Run it only on a backed-up disposable
+environment first. Tenant API roles can read their own predicate-cardinality
+policy but cannot change it. Do not run schema migrations under tenant API
+credentials.
+
+## Operational boundary
+
+PostgreSQL is the canonical source of truth. Vector, FTS and AGE are derived
+projections. Delivery is at-least-once; consumers must be idempotent. Do not
+claim production readiness from unit tests alone: run the real PostgreSQL,
+AGE, pgvector, Temporal, RLS and failure-recovery acceptance on one immutable
+release candidate SHA.

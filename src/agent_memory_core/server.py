@@ -90,20 +90,42 @@ flags = {
     "temporal": bool(os.getenv("MEMORY_TEMPORAL_ADDRESS")),
 }
 
+def extractor_provider():
+    """Resolve the configured extraction provider, or None when disabled."""
+    provider=os.getenv("MEMORY_EXTRACTOR_PROVIDER","").strip().lower()
+    if provider:
+        return provider
+    if os.getenv("MEMORY_LOCAL_OLLAMA_MODEL"):
+        return "ollama"
+    return None
+
+
 def memory_extractor_factory(tenant_id):
-    from .local_extractor import OllamaFactExtractor
-    return OllamaFactExtractor(
-        model=os.environ["MEMORY_LOCAL_OLLAMA_MODEL"],
-        endpoint=os.getenv("MEMORY_LOCAL_OLLAMA_ENDPOINT",
-                           "http://127.0.0.1:11434/api/generate"),
-    )
+    provider=extractor_provider()
+    if provider=="ollama":
+        from .local_extractor import OllamaFactExtractor
+        return OllamaFactExtractor(
+            model=os.environ["MEMORY_LOCAL_OLLAMA_MODEL"],
+            endpoint=os.getenv("MEMORY_LOCAL_OLLAMA_ENDPOINT",
+                               "http://127.0.0.1:11434/api/generate"),
+        )
+    if provider in ("openai-compat","openai_compat","openai"):
+        from .openai_compat import OpenAICompatFactExtractor
+        return OpenAICompatFactExtractor(
+            model=os.environ["MEMORY_EXTRACTOR_MODEL"],
+            base_url=os.environ["MEMORY_EXTRACTOR_BASE_URL"],
+            api_key=os.getenv("MEMORY_EXTRACTOR_API_KEY") or None,
+            timeout=float(os.getenv("MEMORY_EXTRACTOR_TIMEOUT","30")),
+            json_mode=os.getenv("MEMORY_EXTRACTOR_JSON_MODE","1")=="1",
+        )
+    raise RuntimeError("MEMORY_EXTRACTOR_PROVIDER must be 'ollama' or 'openai-compat'")
 
 
 app = create_app(store_factory=secure_store_factory if rls_mode() else None,
                  search_factory=search_factory,
                  object_store_factory=object_store_factory,
                  capability_flags=flags,
-                 memory_extractor_factory=memory_extractor_factory if os.getenv('MEMORY_LOCAL_OLLAMA_MODEL') else None,
+                 memory_extractor_factory=memory_extractor_factory if extractor_provider() else None,
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
                  temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"),
                  webhook_signing_key=os.getenv("MEMORY_WEBHOOK_SIGNING_KEY"),

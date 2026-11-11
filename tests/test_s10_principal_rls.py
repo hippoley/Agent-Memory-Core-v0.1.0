@@ -35,19 +35,6 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
     db_a=db_b=None
     try:
         admin.migrate()
-        script=(Path(__file__).resolve().parents[1]/
-                "sql/postgresql/security/001_principal_bound_rls.sql")
-        admin.conn.execute(script.read_text(encoding="utf-8"))
-        for role,password,tenant in ((role_a,password_a,tenant_a),
-                                     (role_b,password_b,tenant_b)):
-            admin.conn.execute(sql.SQL("CREATE ROLE {} LOGIN INHERIT PASSWORD {}").format(
-                sql.Identifier(role),sql.Literal(password)))
-            created.append(role)
-            admin.conn.execute(sql.SQL("GRANT memory_tenant TO {}").format(
-                sql.Identifier(role)))
-            admin.conn.execute(
-                "INSERT INTO public.memory_rls_principals(role_name,tenant_id) VALUES (%s,%s)",
-                (role,tenant))
         admin_id_a=admin.remember(
             tenant_id=tenant_a,subject_id="bedroom",predicate="night_mode",
             value={"enabled":True},source_id="a",valid_from=datetime(2026,1,1,tzinfo=timezone.utc))
@@ -65,6 +52,22 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             event_types=["memory.claim.created"])
         admin.store_embedding(tenant_id=tenant_b,memory_id=admin_id_b,
             model_id="test384",vector=[1.0]+[0.0]*383)
+
+        # Seed canonical rows and trusted policy before enabling RLS. The
+        # restricted tenant role must never perform administrative setup.
+        script=(Path(__file__).resolve().parents[1]/
+                "sql/postgresql/security/001_principal_bound_rls.sql")
+        admin.conn.execute(script.read_text(encoding="utf-8"))
+        for role,password,tenant in ((role_a,password_a,tenant_a),
+                                     (role_b,password_b,tenant_b)):
+            admin.conn.execute(sql.SQL("CREATE ROLE {} LOGIN INHERIT PASSWORD {}").format(
+                sql.Identifier(role),sql.Literal(password)))
+            created.append(role)
+            admin.conn.execute(sql.SQL("GRANT memory_tenant TO {}").format(
+                sql.Identifier(role)))
+            admin.conn.execute(
+                "INSERT INTO public.memory_rls_principals(role_name,tenant_id) VALUES (%s,%s)",
+                (role,tenant))
 
         db_a=PostgresMemory(make_conninfo(dsn,user=role_a,password=password_a))
         db_b=PostgresMemory(make_conninfo(dsn,user=role_b,password=password_b))

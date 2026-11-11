@@ -65,11 +65,11 @@ def test_sdk_resumable_sse_parses_frames_and_cursors():
         assert request.url.params["after"]=="previous"
         received.append(request)
         return httpx.Response(200,content=(
-            b": keepalive\\n\\n"
-            b"id: event-2\\n"
-            b"event: memory.claim.created\\n"
-            b'data: {"event_id":"event-2","payload":{"subject_id":"bedroom"}}\\n\\n'
-        ).replace(b"\\\\n",b"\\n"),
+            b": keepalive\n\n"
+            b"id: event-2\n"
+            b"event: memory.claim.created\n"
+            b'data: {"event_id":"event-2","payload":{"subject_id":"bedroom"}}\n\n'
+        ),
         headers={"content-type":"text/event-stream"})
     with MemoryClient("http://localhost","secret",transport=httpx.MockTransport(server)) as sdk:
         events=list(sdk.stream_events(after="previous",max_seconds=1))

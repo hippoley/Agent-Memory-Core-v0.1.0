@@ -251,6 +251,54 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
+    @app.delete(
+        "/v1/memories/{memory_id}", tags=["Memory"],
+        summary="Soft-forget one memory claim",
+        description=(
+            "Withdraws belief in the claim: it immediately disappears from "
+            "active recall and search while the bitemporal audit history and "
+            "the claim row are retained. Emits a durable "
+            "memory.claim.forgotten event. This is not a hard delete; erasure "
+            "compliance workflows are a separate concern."
+        ),
+    )
+    def forget_memory(memory_id: str, t: str = Depends(auth)):
+        try:
+            str(UUID(memory_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="memory_id must be a valid UUID") from exc
+        db = store_factory()
+        try:
+            forgotten = db.forget(tenant_id=t, memory_id=memory_id)
+        finally:
+            db.close()
+        if not forgotten:
+            raise HTTPException(status_code=404, detail="Active claim not found")
+        return {"forgotten": [memory_id], "audit_retained": True}
+
+    @app.delete(
+        "/v1/memories", tags=["Memory"],
+        summary="Soft-forget active claims by subject/predicate filter",
+        description=(
+            "Bulk soft-forget of every active claim matching the optional "
+            "subject_id and predicate filters; at least one filter is required. "
+            "Each forgotten claim emits a durable memory.claim.forgotten event. "
+            "Audit history is retained."
+        ),
+    )
+    def forget_memories(subject_id: str | None = None, predicate: str | None = None,
+                        t: str = Depends(auth)):
+        if not subject_id and not predicate:
+            raise HTTPException(status_code=422,
+                                detail="Provide subject_id and/or predicate")
+        db = store_factory()
+        try:
+            forgotten = db.forget_many(tenant_id=t, subject_id=subject_id,
+                                       predicate=predicate)
+        finally:
+            db.close()
+        return {"forgotten": forgotten, "count": len(forgotten), "audit_retained": True}
+
     @app.put(
         "/v1/objects", tags=["Objects"], summary="Store an evidence object",
         responses={201: {"description": "Object stored; SHA-256 returned in X-Content-SHA256."},
@@ -630,7 +678,9 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         "/v1/memories/process", status_code=200, tags=["Memory"],
         summary="Process extracted facts into canonical memories",
         description=("Runs deterministic validation, confidence filtering, exact-fact deduplication, "
-                     "provenance linking, entity alias resolution and bitemporal fact replacement. "
+                     "relation classification (DUPLICATE / SUPERSEDES / CONTRADICTION / MERGED / CREATED), "
+                     "optional consolidation when a candidate sets merge=true, provenance linking, "
+                     "entity alias resolution and bitemporal fact replacement. "
                      "The caller supplies structured candidates from its own local model/rules extractor; "
                      "this endpoint does not pretend to extract facts from arbitrary text by itself."),
     )
@@ -665,6 +715,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 "duplicates": report.duplicates,
                 "rejected": report.rejected,
                 "replaced": report.replaced,
+                "relations": report.relations,
                 "embedding_failures": report.embedding_failures,
             }
         except ValueError as exc:

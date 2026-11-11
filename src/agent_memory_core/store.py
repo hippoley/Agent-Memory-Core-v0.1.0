@@ -146,6 +146,36 @@ class MemoryStore:
             "SELECT * FROM memories WHERE tenant_id=? AND subject_id=? ORDER BY recorded_at,id",
             (tenant_id, subject_id))]
 
+    def forget(self, *, tenant_id: str, memory_id: str) -> bool:
+        """Withdraw belief in one claim (soft forget; audit rows are retained).
+
+        Marks the claim superseded so active reads exclude it, while history
+        stays queryable through known_at. Emits a durable
+        memory.claim.forgotten event. Returns False when the claim is unknown
+        to the tenant or already forgotten.
+        """
+        if not tenant_id or not memory_id:
+            raise ValueError("tenant and memory_id required")
+        stamp = utcnow()
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.db.execute(
+                "SELECT id, superseded_at FROM memories WHERE id=? AND tenant_id=?",
+                (memory_id, tenant_id)).fetchone()
+            if row is None or row["superseded_at"] is not None:
+                self.db.execute("COMMIT")
+                return False
+            self.db.execute(
+                "UPDATE memories SET superseded_at=? WHERE id=?", (stamp, memory_id))
+            self.db.execute("COMMIT")
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
+        self.append_event(tenant_id=tenant_id, event_id=memory_id,
+                          event_type="memory.claim.forgotten",
+                          payload={"memory_id": memory_id, "reason": "explicit_forget"})
+        return True
+
     def append_event(self, *, tenant_id: str, event_id: str, event_type: str,
                      payload: dict, recorded_at: Optional[str] = None) -> bool:
         """Idempotent event insertion. Duplicate IDs with changed contents are rejected."""

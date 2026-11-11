@@ -157,6 +157,17 @@ class MemoryClient:
             "observed_at":observed_at,"property":property,"value":value,
             "unit":unit,"source_id":source_id})
 
+    def forget(self, memory_id: str):
+        """Soft-forget one claim; audit history is retained server-side."""
+        return self._request("DELETE",f"/v1/memories/{self._segment(memory_id)}")
+
+    def forget_subject(self, *, subject_id: str, predicate: str | None = None):
+        """Soft-forget every active claim of a subject (optionally one predicate)."""
+        params={"subject_id":subject_id}
+        if predicate is not None:
+            params["predicate"]=predicate
+        return self._request("DELETE","/v1/memories",params=params)
+
     def stream_events(self, *, after: str | None = None,
                       max_seconds: int = 30):
         """Yield SSE event dicts. Reconnect by passing last yielded id.

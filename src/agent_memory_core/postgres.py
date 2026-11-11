@@ -191,13 +191,25 @@ class PostgresMemory:
             return mid
 
     def apply_candidate(self, *, tenant_id: str, subject_id: str, predicate: str,
-                        value: dict, source_id: str, confidence: float = 1.0):
-        """Atomically deduplicate/version one candidate under a per-key advisory lock.
+                        value: dict, source_id: str, confidence: float = 1.0,
+                        merge: bool = False):
+        """Atomically classify, deduplicate, consolidate or version one candidate.
 
         Concurrent processors for the same tenant/subject/predicate serialize
         only their own key. Claim, provenance, outbox and projection fanout
         commit together; exact duplicates add provenance without another event.
+
+        Returns (memory_id, replaces_id, duplicate, relation) where relation is
+        one of CREATED / DUPLICATE / SUPERSEDES / CONTRADICTION / MERGED.
+        merge=True consolidates the candidate into the single active claim when
+        the values are mergeable (recursive dict merge, list union); scalar
+        conflicts are never silently merged — they classify as CONTRADICTION
+        and take the versioned-replacement path.
         """
+        from .processing import (deep_merge, classify_relation,
+                                 RELATION_CREATED, RELATION_DUPLICATE,
+                                 RELATION_CONTRADICTION, RELATION_MERGED,
+                                 RELATION_SUPERSEDES)
         if not tenant_id or not subject_id or not predicate or not source_id:
             raise ValueError("Missing candidate identity or provenance")
         canonical=json.dumps(value,ensure_ascii=False,sort_keys=True,
@@ -215,12 +227,35 @@ class PostgresMemory:
             if exact is not None:
                 self.link_claim_source(tenant_id=tenant_id,memory_id=exact["id"],
                     source_id=source_id,confidence=float(confidence))
-                return exact["id"],None,True
-            replaces_id=active[0]["id"] if active else None
+                return exact["id"],None,True,RELATION_DUPLICATE
+            if not active:
+                memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                    predicate=predicate,value=value,source_id=source_id,
+                    valid_from=now)
+                return memory_id,None,False,RELATION_CREATED
+            target=active[0]
+            relation=classify_relation(value,target["value"])
+            if merge and relation==RELATION_MERGED:
+                try:
+                    merged=deep_merge(target["value"],value)
+                except TypeError:
+                    merged=None
+                if merged is not None:
+                    memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                        predicate=predicate,value=merged,source_id=source_id,
+                        valid_from=now,replaces_id=target["id"])
+                    return memory_id,target["id"],False,RELATION_MERGED
+            if relation==RELATION_DUPLICATE:
+                # Subsumed candidate: the active claim already encodes it.
+                self.link_claim_source(tenant_id=tenant_id,memory_id=target["id"],
+                    source_id=source_id,confidence=float(confidence))
+                return target["id"],None,True,RELATION_DUPLICATE
             memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                 predicate=predicate,value=value,source_id=source_id,
-                valid_from=now,replaces_id=replaces_id)
-            return memory_id,replaces_id,False
+                valid_from=now,replaces_id=target["id"])
+            return memory_id,target["id"],False,(
+                RELATION_CONTRADICTION if relation==RELATION_CONTRADICTION
+                else RELATION_SUPERSEDES)
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:
@@ -239,6 +274,70 @@ class PostgresMemory:
         cols = ("id","subject_id","predicate","value","source_id","valid_from","valid_to",
                 "recorded_at","superseded_at","object_sha256")
         return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
+
+    def forget(self, *, tenant_id: str, memory_id: str) -> bool:
+        """Withdraw belief in one claim (soft forget; audit rows are retained).
+
+        The claim is marked superseded at the current mutation time, so it
+        disappears from all active reads while the bitemporal history stays
+        queryable via known_at. Emits a durable memory.claim.forgotten event
+        and outbox record in the same transaction. Returns False when the
+        claim does not exist for the tenant or is already forgotten.
+        """
+        if not tenant_id or not memory_id:
+            raise ValueError("Tenant and memory id are required")
+        with self.conn.transaction():
+            row=self.conn.execute(
+                """SELECT subject_id,predicate FROM memory_claims
+                   WHERE id=%s::uuid AND tenant_id=%s AND superseded_at IS NULL
+                   FOR UPDATE""",
+                (memory_id,tenant_id)).fetchone()
+            if row is None:
+                return False
+            subject_id,predicate=row
+            mutation_time=self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
+            self.conn.execute(
+                "UPDATE memory_claims SET superseded_at=%s WHERE id=%s",
+                (mutation_time,memory_id))
+            packed=json.dumps({"memory_id":str(memory_id),"subject_id":subject_id,
+                               "predicate":predicate,"reason":"explicit_forget"},
+                              ensure_ascii=False,sort_keys=True)
+            event_id=str(uuid4())
+            self.conn.execute(
+                """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
+                   VALUES (%s,%s,'memory.claim.forgotten',%s::jsonb)""",
+                (tenant_id,event_id,packed))
+            self.conn.execute(
+                """INSERT INTO memory_outbox
+                   (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                   VALUES (%s,%s,'claim',%s,'memory.claim.forgotten',%s::jsonb)""",
+                (event_id,tenant_id,str(memory_id),packed))
+            return True
+
+    def forget_many(self, *, tenant_id: str, subject_id: str | None = None,
+                    predicate: str | None = None) -> list[str]:
+        """Soft-forget every active claim matching the tenant-scoped filters.
+
+        At least one filter must be supplied. Each forgotten claim emits its
+        own durable forgotten event. Returns the forgotten claim ids.
+        """
+        if not tenant_id or (not subject_id and not predicate):
+            raise ValueError("Provide subject_id and/or predicate to forget")
+        with self.conn.transaction():
+            sql="""SELECT id::text FROM memory_claims
+                   WHERE tenant_id=%s AND superseded_at IS NULL"""
+            params=[tenant_id]
+            if subject_id:
+                sql+=" AND subject_id=%s"; params.append(subject_id)
+            if predicate:
+                sql+=" AND predicate=%s"; params.append(predicate)
+            sql+=" FOR UPDATE"
+            ids=[row[0] for row in self.conn.execute(sql,params)]
+        forgotten=[]
+        for mid in ids:
+            if self.forget(tenant_id=tenant_id,memory_id=mid):
+                forgotten.append(mid)
+        return forgotten
 
     @staticmethod
     def _embedding_table(dimension: int) -> str:

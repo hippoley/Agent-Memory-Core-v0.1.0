@@ -59,8 +59,11 @@ def test_outbox_failed_handler_is_retryable_not_acknowledged():
         def broken(conn,tenant,event_id,aggregate,payload):
             conn.execute("INSERT INTO memory_events(tenant_id,event_id,event_type,payload) VALUES (%s,%s,'temporary','{}'::jsonb)",(tenant,event_id))
             raise RuntimeError("deliberate fault")
+        # Tenant-scoped claim: leftover events from earlier runs of this test
+        # on a shared database must not consume this run's attempt budget.
         assert OutboxWorker(db.conn).consume(
-            event_type="memory.test.failure",handler=broken,limit=1)==0
+            event_type="memory.test.failure",handler=broken,limit=1,
+            tenant_id=tenant)==0
         state=db.conn.execute(
             "SELECT attempts,processed_at,last_error FROM memory_outbox WHERE event_id=%s",
             (e,)).fetchone()

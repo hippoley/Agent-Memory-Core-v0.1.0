@@ -31,7 +31,6 @@ RELATION_SUPERSEDES = "SUPERSEDES"
 RELATION_CONTRADICTION = "CONTRADICTION"
 RELATION_MERGED = "MERGED"
 
-
 def canonical_json(value: dict) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":"), allow_nan=False)
@@ -64,6 +63,24 @@ def deep_merge(existing, new):
     if existing == new:
         return existing
     return None
+
+
+def resolve_conflicts(existing, new):
+    """Consolidate with candidate winning on scalar conflicts.
+
+    Like deep_merge, but overlapping scalars take the candidate value instead
+    of failing. Used on the CONTRADICTION path so versioned replacement keeps
+    non-conflicting knowledge while resolving the disagreement.
+    """
+    if isinstance(existing, dict) and isinstance(new, dict):
+        out = dict(existing)
+        for key, item in new.items():
+            if key in out and isinstance(out[key], dict) and isinstance(item, dict):
+                out[key] = resolve_conflicts(out[key], item)
+            else:
+                out[key] = item
+        return out
+    return new
 
 
 def classify_relation(candidate_value: dict, existing_value: dict) -> str:
@@ -240,19 +257,23 @@ class MemoryProcessor:
         payload = value
         if replaces_id is not None and merge_requested:
             relation = classify_relation(value, active[0]["value"])
-            if relation in (RELATION_MERGED, RELATION_CONTRADICTION):
+            if relation == RELATION_MERGED:
                 try:
-                    payload = deep_merge(active[0]["value"], value)
+                    merged = deep_merge(active[0]["value"], value)
                 except TypeError:
-                    payload = None
-                if relation == RELATION_MERGED and payload is not None:
-                    pass
+                    merged = None
+                if merged is not None:
+                    payload = merged
                 else:
                     payload = value
-                    if relation == RELATION_MERGED:
-                        relation = RELATION_CONTRADICTION
-            else:
-                payload = value
+                    relation = RELATION_CONTRADICTION
+            elif relation == RELATION_CONTRADICTION:
+                # Resolve scalar conflicts in favor of the newer candidate
+                # while preserving non-conflicting knowledge.
+                try:
+                    payload = resolve_conflicts(active[0]["value"], value)
+                except TypeError:
+                    payload = value
         memory_id = self.store.remember(
             tenant_id=tenant_id, subject_id=subject, predicate=predicate,
             value=payload, source_id=source_id, valid_from=now,

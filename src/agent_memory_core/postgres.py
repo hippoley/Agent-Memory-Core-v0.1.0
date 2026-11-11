@@ -206,7 +206,7 @@ class PostgresMemory:
         conflicts are never silently merged — they classify as CONTRADICTION
         and take the versioned-replacement path.
         """
-        from .processing import (deep_merge, classify_relation,
+        from .processing import (deep_merge, resolve_conflicts, classify_relation,
                                  RELATION_CREATED, RELATION_DUPLICATE,
                                  RELATION_CONTRADICTION, RELATION_MERGED,
                                  RELATION_SUPERSEDES)
@@ -250,12 +250,21 @@ class PostgresMemory:
                 self.link_claim_source(tenant_id=tenant_id,memory_id=target["id"],
                     source_id=source_id,confidence=float(confidence))
                 return target["id"],None,True,RELATION_DUPLICATE
+            if relation==RELATION_CONTRADICTION:
+                # Resolve scalar conflicts in favor of the newer candidate
+                # while preserving non-conflicting knowledge.
+                try:
+                    resolved=resolve_conflicts(target["value"],value)
+                except TypeError:
+                    resolved=value
+                memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
+                    predicate=predicate,value=resolved,source_id=source_id,
+                    valid_from=now,replaces_id=target["id"])
+                return memory_id,target["id"],False,RELATION_CONTRADICTION
             memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                 predicate=predicate,value=value,source_id=source_id,
                 valid_from=now,replaces_id=target["id"])
-            return memory_id,target["id"],False,(
-                RELATION_CONTRADICTION if relation==RELATION_CONTRADICTION
-                else RELATION_SUPERSEDES)
+            return memory_id,target["id"],False,RELATION_SUPERSEDES
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,
                valid_at: datetime | None = None, known_at: datetime | None = None) -> list[dict]:

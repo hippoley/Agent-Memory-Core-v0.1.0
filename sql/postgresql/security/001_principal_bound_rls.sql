@@ -44,7 +44,7 @@ BEGIN
     'memory_claims','memory_events','memory_embedding_models',
     'memory_edges','memory_observations','memory_entities','memory_sources',
     'memory_claim_sources','memory_outbox','memory_idempotency','memory_objects',
-    'memory_claim_search','memory_webhook_subscriptions'
+    'memory_claim_search','memory_webhook_subscriptions','memory_predicate_policies'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',tab);
     EXECUTE format('DROP POLICY IF EXISTS memory_authenticated_tenant_policy ON public.%I',tab);

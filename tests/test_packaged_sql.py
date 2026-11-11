@@ -21,7 +21,8 @@ def test_migration_runner_discovers_ordered_sql_resources():
     migrations=sorted(x.name for x in root.iterdir()
         if x.name.endswith(".sql") and x.name[:3].isdigit())
     assert migrations==[
-        "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql"
+        "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql",
+        "004_predicate_cardinality.sql"
     ]
 
 def test_packaged_predicate_policy_migration_matches_repository_sql():

@@ -19,9 +19,29 @@
 | S05 投影 | FTS、向量、AGE 独立任务，成功状态不能互相冒充 | `test_concrete_projections.py`, `test_projection_deliveries.py` | 真实数据库路径，质量另测 |
 | S06 检索 | 正确当前记忆、证据、双时间，跨渠道排序可解释 | `test_user_story_e2e.py`, `test_hybrid.py`, `scripts/evaluate_retrieval.py` | SQL/FTS/vector/AGE 机制可测；200 条中文查询集上的 Recall@5、MRR@10 **未测** |
 | S07 纠正 | 当前仅新事实；known_at=纠正前仍返回旧事实 | `test_user_story_e2e.py` | 真实数据库测试 |
-| S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_webhooks_integration.py`, `test_webhook_api_integration.py`, `test_sdk_contract.py` | Webhook 订阅、签名、退避、死信、重放已实现；真实 PG 集成 CI 通过；外部真实接收端尚未实测 |
+| S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_webhooks_integration.py`, `test_webhook_api_integration.py`, `test_s08_real_tls_receiver.py`, `test_sdk_contract.py` | 订阅、签名、退避、死信、重放已实现；独立进程 HTTPS 接收端与篡改签名的 401 见 `docs/S08-REAL-TLS-ACCEPTANCE.md`；真实公网接收端、证书轮换与接收端幂等**未验收** |
 | S09 故障恢复 | DB/Worker 故障后任务可重试、DLQ 重放、无静默丢数据 | `test_projection_deliveries.py`, `test_outbox_runtime.py`, `test_outbox_api_integration.py` | 投影与事务 Outbox 有界重试、死信、事务回滚和租户级 API 重放已有真实 PG 测试；真实进程杀死、数据库重启、积压恢复与备份恢复**未完成** |
 | S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py` | API 层已测；DB RLS **未实现** |
+
+## Provider 通道实测记录（2026-11-12，A100 单机）
+
+模型通道从“只支持本地 Ollama”扩展为可配置 provider 后的实测证据，运行于真实
+PostgreSQL + pgvector + AGE 实例，抽取与向量化均通过 OpenAI-compatible 端点完成
+（端点为可控 mock，因此本节只证明**接线与契约正确**，不证明模型质量）。
+
+| 检查项 | 命令 | 实测结果 |
+|---|---|---|
+| 能力自描述 | `GET /v1/capabilities` | `memory.extraction` → `text extractor provider: openai-compat`；`memory.embedding` → `server-side embedding model: openai-compat` |
+| 免费文本抽取 | `POST /v1/memories/process`（仅 `text`，无 `candidates`） | `created=1`，`relations[0].relation=CREATED`，`embedding_failures=[]` |
+| 精确去重 | 同句重放 | `duplicates=1`，不为同一事实新建 canonical 事件 |
+| 矛盾替换 | 改成相反偏好后重放 | `relation=CONTRADICTION`，`replaced=[旧 memory_id]`；`/v1/search` 只返回新值 |
+| 服务端向量化写入 | `POST /v1/memories` | `{"embedded": true}` |
+| 查询自动向量化 | `POST /v1/search`（仅 `query`） | `channels_used=["vector"]`，命中带 `score` |
+| 无模型降级 | 未配置 provider 的实例 | 文本路径 503，其余端点正常，`memory.embedding=false` |
+
+仍未完成、不得标记 Done 的门槛：S02 的 200 条人工裁定中文语料上真实模型
+F1 ≥0.90、S06 的 Recall@5 ≥0.90 / MRR@10 ≥0.85（见 Release Gate），以及 S10
+DB RLS 之外的跨租户压测。provider 配置只解决“能不能接模型”，不替代“模型好不好”。
 
 ## Release Gate — 明确区分目标与实测
 

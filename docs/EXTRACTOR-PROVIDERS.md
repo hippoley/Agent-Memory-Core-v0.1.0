@@ -155,12 +155,19 @@ Loopback addresses only, by design. Setting `MEMORY_LOCAL_OLLAMA_MODEL` without
 
 ## Embeddings
 
-Embeddings are caller-generated in this design: `PUT /v1/memories/{id}/embedding`
-and `POST /v1/search` take `model_id` + vector. Any encoder works (hosted
-`text-embedding-*`, DashScope, or a local BGE/TEI deployment); the database
-tracks dimensions per `model_id`. Without embeddings the vector channel is
-absent and retrieval degrades to SQL substring + full-text + graph, which is
-reported in `degraded_channels`.
+Two modes, chosen by whether `MEMORY_EMBEDDING_PROVIDER` is set:
+
+- **Provider mode** — the server vectorises claims on `POST /v1/memories` and
+  `POST /v1/memories/process`, and vectorises the query text on
+  `POST /v1/search`. Write responses report `embedded: true|false`; a provider
+  failure marks `embedded: false` and never fails the canonical write. Search
+  falls back to the lexical channel and lists the gap in `degraded_channels`.
+- **Caller mode** — no provider: callers send `model_id` + vector to
+  `PUT /v1/memories/{id}/embedding` and `POST /v1/search`. The database tracks
+  dimensions per `model_id` and rejects ragged or out-of-profile vectors.
+
+Without embeddings of either kind the vector channel is absent and retrieval
+degrades to SQL substring + full-text + graph, reported in `degraded_channels`.
 
 ## Capability discovery
 

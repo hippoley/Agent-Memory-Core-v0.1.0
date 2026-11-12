@@ -39,6 +39,8 @@ Run the service and open the API manual:
 
 `/docs` is packaged with the wheel and renders `x-user-story` from the schema,
 so an air-gapped demo still has readable documentation with a Try-it panel.
+`scripts/seed_demo.py --clean --seed` prepares a clean, narratable demo tenant
+over the public HTTP API.
 
 Implemented route families include:
 

@@ -140,10 +140,17 @@ temperatures.
 
 ## 4c. Console
 
-`GET /dashboard/` serves a same-origin single-page console (ledger, search,
-live event feed, policy toggles). It is static HTML with no build step and no
-third-party scripts; the bearer key is entered once and kept in
-`localStorage`. `GET /` redirects there. The OpenAPI surface stays at `/docs`.
+`GET /dashboard/` serves a same-origin single-page console: ledger with
+bitemporal filters, a time-travel viewpoint (`valid_at` / `known_at`), hybrid
+search, live event feed, trusted-cardinality toggles and capability discovery.
+It is static HTML with no build step and no third-party scripts; the bearer key
+is entered once and kept in `localStorage`. Deep links: `#view=search&q=…`,
+`#claim=<uuid>`, and `#key=<bearer>` (scrubbed from the address bar on load).
+`GET /` redirects there. The API manual is at `/docs`.
+
+`scripts/seed_demo.py --clean --seed` prepares a demo tenant: it soft-forgets
+smoke/e2e claims (audit retained) and writes a seven-utterance story that
+exercises CREATED, DUPLICATE and CONTRADICTION plus a superseded temperature.
 
 ## 5. Core memory operations
 

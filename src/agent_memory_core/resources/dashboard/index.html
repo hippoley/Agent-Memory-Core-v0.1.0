@@ -654,7 +654,12 @@ const dateTime = (iso) => {
   const d = new Date(iso); if (isNaN(d)) return String(iso);
   return d.toLocaleString("zh-CN", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false });
 };
-const dayKey = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toISOString().slice(0,10); };
+const pad2 = (n) => String(n).padStart(2, "0");
+// Local calendar day, not UTC: a 23:30 write in +08:00 belongs to today's bar.
+const dayKey = (iso) => {
+  const d = new Date(iso);
+  return isNaN(d) ? "" : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
 const relTime = (iso) => {
   const d = new Date(iso); if (isNaN(d)) return "";
   const s = Math.round((Date.now() - d.getTime()) / 1000);
@@ -826,7 +831,8 @@ $("#capsMore").onclick = () => { state.capsOpen = !state.capsOpen; renderCaps();
 /* ---------------- sparkline ---------------- */
 function renderSpark(){
   const days = [...Array(14)].map((_, i) => {
-    const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - (13 - i)); return d.toISOString().slice(0,10);
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (13 - i));
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   });
   const counts = days.map(day => state.history.filter(m => dayKey(m.recorded_at) === day).length);
   const peak = Math.max(1, ...counts);
@@ -1091,16 +1097,33 @@ desk.addEventListener("drop", async e => {
 });
 
 /* ---------------- events ---------------- */
+const EV_LABELS = {
+  "memory.claim.created":"新增事实", "memory.claim.superseded":"替换旧值",
+  "memory.claim.forgotten":"软遗忘", "memory.claim.merged":"合并",
+  "memory.edge.created":"图谱关系", "memory.entity.created":"实体注册",
+  "memory.observation.recorded":"设备观测",
+};
+function eventPayload(ev){
+  // Events are for humans here, so summarise the common shapes instead of
+  // dumping a UUID-laden payload into a 260px column.
+  const p = ev.payload || {};
+  if (p.subject_id) return `${p.subject_id}${p.predicate ? " · " + p.predicate : ""}`;
+  if (p.from_entity) return `${p.from_entity} → ${p.predicate || "rel"} → ${p.to_entity || "?"}`;
+  if (p.edge_id) return "关系已写入";
+  if (p.memory_id) return "记忆 " + String(p.memory_id).slice(0, 8);
+  return JSON.stringify(p).slice(0, 48);
+}
 function renderFeed(){
   const el = $("#feed");
   if (!state.events.length) { el.innerHTML = `<div style="font-size:10.5px;color:var(--muted)">暂无事件</div>`; return; }
   const sorted = state.events.slice().sort((a, b) => new Date(b.recorded_at || 0) - new Date(a.recorded_at || 0)).slice(0, 14);
   el.innerHTML = sorted.map(ev => {
-    const kind = /forgotten/.test(ev.event_type) ? "forgotten" : /created/.test(ev.event_type) ? "created" : "replaced";
-    const raw = ev.event_type.replace("memory.claim.", "").replace("memory.", "");
-    const label = { created:"新增事实", superseded:"替换旧值", forgotten:"软遗忘", merged:"合并" }[raw] || raw;
-    const payload = ev.payload && ev.payload.subject_id
-      ? `${ev.payload.subject_id} · ${ev.payload.predicate}` : JSON.stringify(ev.payload || {}).slice(0, 60);
+    const kind = /forgotten/.test(ev.event_type) ? "forgotten"
+      : /claim\.created/.test(ev.event_type) ? "created"
+      : /claim\.superseded/.test(ev.event_type) ? "replaced" : "other";
+    const label = EV_LABELS[ev.event_type]
+      || ev.event_type.replace("memory.claim.", "").replace("memory.", "");
+    const payload = eventPayload(ev);
     return `<div class="ev" data-k="${kind}" title="${esc(ev.event_type)}"><b>${esc(label)}</b>
       <span>${dateTime(ev.recorded_at)} · ${relTime(ev.recorded_at)}</span>
       <p title="${esc(payload)}">${esc(payload)}</p></div>`;

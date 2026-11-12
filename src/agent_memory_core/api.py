@@ -1014,6 +1014,12 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 (docs_dir / "api.html").read_text(encoding="utf-8"),
                 media_type="text/html; charset=utf-8")
 
+        @app.get("/docs/quickstart", include_in_schema=False)
+        def api_quickstart():
+            return Response(
+                (docs_dir / "quickstart.html").read_text(encoding="utf-8"),
+                media_type="text/html; charset=utf-8")
+
         @app.get("/redoc", include_in_schema=False)
         def redoc_redirect():
             return RedirectResponse("/docs/manual")

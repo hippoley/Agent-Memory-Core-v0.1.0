@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>快速上手 · Agent Memory Core</title>
+<style>
+:root{
+  --rail:#0B1D18; --paper:#F3EEE4; --card:#FCFAF4;
+  --ink:#14110C; --ink2:#5F5949; --hair:#DCD3BE;
+  --gold:#A98B4F; --gold-lite:rgba(201,169,107,.28);
+  --green:#0F5F4A; --code-bg:#0E241D; --code-ink:#E9E3D3;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);
+  font-family:"Songti SC","STSong","SimSun",Georgia,serif;
+  font-size:15px;line-height:1.9}
+.mono{font-family:"SFMono-Regular",Consolas,"Courier New",monospace}
+.wrap{max-width:880px;margin:0 auto;padding:0 28px 90px}
+
+.bar{background:var(--rail);color:#E9E3D3;padding:13px 0;position:sticky;top:0;z-index:9}
+.bar .in{max-width:880px;margin:0 auto;padding:0 28px;display:flex;
+  justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+.bar .brand{font-size:14px;letter-spacing:2px;color:#C9A96B}
+.bar nav{display:flex;gap:22px;font-size:12.5px}
+.bar a{color:#E9E3D3;text-decoration:none;border-bottom:1px solid rgba(201,169,107,.4);padding-bottom:2px}
+.bar a:hover{border-color:#C9A96B}
+
+h1{font-size:34px;font-weight:600;letter-spacing:1px;margin:54px 0 6px}
+.sub{color:var(--ink2);font-size:15px;margin-bottom:8px}
+.lead{font-size:16.5px;margin:22px 0 8px;padding-bottom:26px;border-bottom:1px solid var(--ink)}
+.lead b{color:var(--green)}
+.lead .mark{background:var(--gold-lite);padding:0 4px}
+
+h2{font-size:21px;font-weight:600;margin:52px 0 4px;padding-left:13px;border-left:3px solid var(--gold)}
+h2 .en{font-size:12px;color:var(--ink2);font-weight:400;margin-left:10px;letter-spacing:1px}
+.sec-note{color:var(--ink2);font-size:13.5px;margin:4px 0 18px;padding-left:16px}
+
+/* 四个本事 */
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--hair);border:1px solid var(--hair);margin:18px 0}
+.grid4 .cell{background:var(--card);padding:18px 15px 15px}
+.cell .zi{font-size:20px;font-weight:600;letter-spacing:2px}
+.cell .zi i{font-style:normal;color:var(--gold);margin-right:6px;font-size:13px}
+.cell p{font-size:12.5px;color:var(--ink2);line-height:1.75;margin-top:7px}
+@media (max-width:760px){.grid4{grid-template-columns:repeat(2,1fr)}}
+
+/* 完成清单 */
+.done{margin:14px 0;border-top:1px solid var(--ink)}
+.done li{list-style:none;display:flex;gap:14px;padding:11px 4px;border-bottom:1px solid var(--hair);align-items:baseline}
+.done .tick{color:var(--green);font-family:Georgia,serif;flex:none}
+.done b{font-weight:600}
+.done span{color:var(--ink2);font-size:13.5px}
+
+/* 三步 */
+.step{margin:34px 0 8px;display:flex;align-items:baseline;gap:12px}
+.step .no{font-family:"Times New Roman",Georgia,serif;font-size:40px;color:var(--gold);line-height:1;font-weight:500}
+.step .t{font-size:19px;font-weight:600}
+.step .d{color:var(--ink2);font-size:13.5px;margin:0 0 12px 52px}
+.req,.resp{border:1px solid var(--hair);margin:0 0 8px 52px}
+@media (max-width:760px){.req,.resp,.step .d{margin-left:0}}
+.tag{display:inline-block;font-size:10.5px;letter-spacing:1px;padding:3px 10px;color:#fff}
+.tag.req-t{background:var(--green)}
+.tag.res-t{background:#7A7466}
+.tag.del-t{background:#993C1D}
+.req pre,.resp pre{background:var(--card);padding:13px 16px;font-size:12.5px;line-height:1.7;
+  overflow-x:auto;font-family:"SFMono-Regular",Consolas,monospace;color:var(--ink)}
+.resp pre{background:var(--code-bg);color:var(--code-ink)}
+.note{font-size:12.5px;color:var(--ink2);margin:0 0 6px 52px;padding-left:12px;border-left:2px solid var(--gold-lite)}
+@media (max-width:760px){.note{margin-left:0}}
+.note b{color:var(--green)}
+
+/* 去哪动手 */
+.links{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.links a{display:block;background:var(--card);border:1px solid var(--hair);padding:16px 16px 13px;
+  text-decoration:none;color:var(--ink)}
+.links a:hover{border-color:var(--gold)}
+.links .lt{font-size:15px;font-weight:600}
+.links .lu{font-size:11.5px;color:var(--green);margin:3px 0 5px;font-family:Consolas,monospace}
+.links p{font-size:12px;color:var(--ink2);line-height:1.7}
+@media (max-width:760px){.links{grid-template-columns:1fr}}
+.keybox{background:var(--card);border:1px solid var(--hair);padding:14px 18px;font-size:13px;margin:16px 0}
+.keybox code{background:#EDE6D4;padding:1px 7px;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="in">
+  <span class="brand">AGENT MEMORY CORE</span>
+  <nav>
+    <a href="/dashboard/">看板</a>
+    <a href="/docs">Swagger</a>
+    <a href="/docs/manual">接口手册</a>
+  </nav>
+</div></div>
+
+<div class="wrap">
+
+<h1>给 AI 助手一本靠得住的账</h1>
+<p class="sub">快速上手 · 五分钟看懂这是什么、怎么用</p>
+
+<p class="lead">你的 AI 助手（聊天机器人、智能家居管家、客服 Agent）有两个先天毛病：
+<b>记不住</b>，和<b>记住了也改不对</b>。这个项目就是替它管记忆的后端服务——
+把 Agent 听到的每件事记成<span class="mark">一笔一笔的账</span>：谁说的、什么时候说的、
+后来有没有改口。改口不覆盖，划掉旧的记上新的；要它忘，也只是划线，账本永不撕页。</p>
+
+<h2>它给 Agent 的四个本事<span class="en">WHAT IT GIVES YOU</span></h2>
+<div class="grid4">
+  <div class="cell"><div class="zi"><i>壹</i>记得住</div>
+    <p>一句话丢进来，自动抽出事实落账，附上出处和两个时间戳。</p></div>
+  <div class="cell"><div class="zi"><i>贰</i>改得对</div>
+    <p>用户改口时自动对账：判矛盾、关旧账、记新账，全程留痕。</p></div>
+  <div class="cell"><div class="zi"><i>叁</i>忘得掉</div>
+    <p>说"忘了吧"就软遗忘——划掉这一行，但随时可以审计当时删了什么。</p></div>
+  <div class="cell"><div class="zi"><i>肆</i>翻得回</div>
+    <p>"上周三我们以为温度是多少？"——按时间点回放当时的记忆状态。</p></div>
+</div>
+
+<h2>已经完成、可以当场面演示的<span class="en">WHAT IS DONE</span></h2>
+<ul class="done">
+  <li><span class="tick">✓</span><div><b>33 个 REST 接口</b> <span>—— 写入、浏览、回忆、软遗忘、策略、检索、图谱、事件、webhook，全部带 User Story 和在线调试（/docs）。</span></div></li>
+  <li><span class="tick">✓</span><div><b>网页看板</b> <span>—— 路演级台账界面：记忆总览、时间旅行、详情溯源、软遗忘操作（/dashboard/）。</span></div></li>
+  <li><span class="tick">✓</span><div><b>矛盾自动判定</b> <span>—— 新旧事实进来自动分五类：新建 / 重复 / 更替 / 矛盾 / 合并，不静默覆盖。</span></div></li>
+  <li><span class="tick">✓</span><div><b>双时态回放</b> <span>—— 每笔账带 valid_at（事情发生时间）和 known_at（系统知道时间），可回放任意时点。</span></div></li>
+  <li><span class="tick">✓</span><div><b>三路混合检索</b> <span>—— 关键词 + 语义向量 + 图谱邻域，单一通道故障自动降级。</span></div></li>
+  <li><span class="tick">✓</span><div><b>实时事件流</b> <span>—— SSE 推流 + 签名 webhook + 死信重放，下游系统秒级感知记忆变化。</span></div></li>
+  <li><span class="tick">✓</span><div><b>219 项自动化测试</b> <span>—— 本地与 A100 真库集成全绿；演示数据已就绪。</span></div></li>
+</ul>
+
+<h2>三步用起来<span class="en">HOW TO USE</span></h2>
+<p class="sec-note">下面每个请求都是刚在真实服务上跑通的，可以直接复制。所有请求都要带请求头
+<span class="mono">Authorization: Bearer &lt;你的key&gt;</span>。</p>
+
+<div class="step"><span class="no">1</span><span class="t">记 —— 把一句话丢给它</span></div>
+<p class="d">Agent 听到用户说话，把原文丢给 process，系统自己抽事实、对账、落库：</p>
+<div class="req"><span class="tag req-t">POST /v1/memories/process</span>
+<pre>{
+  "text": "阳台的温度是19度",
+  "source_id": "voice-msg-001"
+}</pre></div>
+<div class="resp"><span class="tag res-t">返回（节选）</span>
+<pre>{
+  "created": ["fccd730a-…"],
+  "relations": [
+    { "subject_id": "阳台", "predicate": "temperature_preference",
+      "relation": "CREATED" }
+  ]
+}</pre></div>
+<p class="note">用户<b>改口</b>再说"阳台的温度是20度"，返回的 relation 会变成
+<b>CONTRADICTION</b>、旧账 id 出现在 <b>replaced</b> 里——旧账自动关闭，新账生效，两笔都在。</p>
+
+<div class="step"><span class="no">2</span><span class="t">问 —— 三种问法</span></div>
+<p class="d"><b>问某个东西</b>（关于主卧都知道什么）：</p>
+<div class="req"><span class="tag req-t">GET /v1/memories?subject_id=主卧</span><pre></pre></div>
+<p class="d"><b>模糊地问</b>（关键词命中主体、谓词、内容）：</p>
+<div class="req"><span class="tag req-t">POST /v1/search</span>
+<pre>{ "query": "主卧", "limit": 5 }</pre></div>
+<p class="d"><b>回到过去问</b>（上周三当时以为的是什么）：</p>
+<div class="req"><span class="tag req-t">GET /v1/memories?subject_id=主卧&amp;known_at=2026-11-05T00:00:00Z</span><pre></pre></div>
+<p class="note">翻旧账时加 <b>include_superseded=true</b> 能连被划掉的历史一起看——这就是审计视图。</p>
+
+<div class="step"><span class="no">3</span><span class="t">忘 —— 划掉，但不撕页</span></div>
+<div class="req"><span class="tag del-t">DELETE /v1/memories?subject_id=阳台&amp;predicate=temperature_preference</span><pre></pre></div>
+<div class="resp"><span class="tag res-t">返回</span>
+<pre>{ "forgotten": ["4e1ac829-…"], "count": 1, "audit_retained": true }</pre></div>
+<p class="note">被遗忘的账不会消失：在 <b>/v1/events</b> 事件流里永远查得到"何时删了什么"，
+这正是和普通数据库 DELETE 的本质区别。</p>
+
+<h2>去哪里动手<span class="en">WHERE TO TRY</span></h2>
+<div class="links">
+  <a href="/dashboard/">
+    <div class="lt">网页看板</div>
+    <div class="lu">/dashboard/</div>
+    <p>不用写代码。看台账、点一行看详情、时间旅行、软遗忘，全鼠标操作。演示首选。</p>
+  </a>
+  <a href="/docs">
+    <div class="lt">Swagger 在线调试</div>
+    <div class="lu">/docs</div>
+    <p>标准 Swagger UI。右上角 Authorize 填 key 后，33 个接口全部可以在线 Try it out。</p>
+  </a>
+  <a href="/docs/manual">
+    <div class="lt">离线接口手册</div>
+    <div class="lu">/docs/manual</div>
+    <p>每个接口的 User Story：谁、在什么场景、为什么用它，附可复制的完整示例。无 CDN 依赖。</p>
+  </a>
+</div>
+
+<div class="keybox">
+<b>鉴权</b>：所有 <span class="mono">/v1/*</span> 接口都要求请求头
+<code>Authorization: Bearer &lt;key&gt;</code>（key 由服务运营方发放）。
+看板打开后在右下角租户区粘贴 key 即可，key 只存在你的浏览器里。
+接入新实例时，第一步先调 <code>GET /v1/capabilities</code> 看这个实例开了哪些能力。
+</div>
+
+</div>
+</body>
+</html>

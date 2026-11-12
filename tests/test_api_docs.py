@@ -94,6 +94,19 @@ def test_swagger_ui_is_kept_as_an_alias():
     assert "SwaggerUIBundle" in response.text
 
 
+def test_quickstart_is_served_without_a_cdn():
+    client = TestClient(_app())
+    response = client.get("/docs/quickstart")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert "快速上手" in body
+    assert "三步用起来" in body          # the what-it-is / how-to-use sections
+    assert "source_id" in body           # examples use verified, correct fields
+    assert "cdn.jsdelivr.net" not in body  # must work on an isolated network
+    assert "/dashboard/" in body and "/docs" in body
+
+
 def test_manual_asset_is_packaged():
     assert DOCS_HTML.is_file()
     packaged = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")

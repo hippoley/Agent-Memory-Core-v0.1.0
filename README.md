@@ -38,7 +38,7 @@ This is an illustrative bitemporal scenario, not an assertion that the system au
 
 | Mechanism | Why it matters | Where to verify |
 | :--- | :--- | :--- |
-| **Belief revision** | Corrections change current truth without rewriting historical knowledge | [Bitemporal design](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md#2-双时间的本质世界何时改变系统何时得知) |
+| **Belief revision** | Corrections change current truth without rewriting historical knowledge | [Bitemporal design](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) |
 | **Recall with receipts** | Each fact carries provenance; retrieval must respect tenant, validity and source constraints | [Memory processing](docs/MEMORY-PROCESSING.md) |
 | **One authority, multiple views** | PostgreSQL commits canonical facts; FTS, pgvector and Apache AGE are derived retrieval views | [Architecture decision](docs/ADR-0004-lightweight-memory-platform.md) |
 | **Failure-aware writes** | Transactional outbox, retries and idempotency separate committed facts from recoverable projections | [Acceptance contract](docs/USER-STORY-ACCEPTANCE.md) |
@@ -114,7 +114,7 @@ with MemoryClient("http://127.0.0.1:8765", "YOUR_LOCAL_API_KEY") as memory:
     print(memory.recall("bedroom"))
 ```
 
-Use the [real API reference](docs/API-REFERENCE.md) for correction, historical reads, evidence and event subscriptions. The [public static walkthrough](docs/demo/index.html) uses synthetic examples; it never requests credentials and is not a hosted live API.
+Run the [real HTTP belief-revision example](examples/belief_revision.py) with `MEMORY_API_KEY` to write a claim, replace it and inspect provenance. Use the [real API reference](docs/API-REFERENCE.md) for historical reads, evidence and event subscriptions. The [public static walkthrough](docs/demo/index.html) uses synthetic examples; it never requests credentials and is not a hosted live API.
 
 ## From idea to evidence
 
@@ -135,8 +135,9 @@ pytest -q -m integration
 
 The repository is an **executable research prototype**. A passing unit or integration test does not prove model accuracy, deployment security or an SLA. See the [full acceptance matrix](docs/USER-STORY-ACCEPTANCE.md) and [capability audit](docs/CAPABILITY-ACCEPTANCE-AUDIT.md).
 
-## Explore the project
+## Get involved
 
+The best issues here are concrete failures of memory **correctness**, not new feature wish lists: an outdated claim that still gets recalled, an impossible historical interval, a replay that duplicates a fact, an incorrect tenant boundary, or a resource measurement others can reproduce. See [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md).\n\n## Explore the project\n
 | Start here | Deep dive | Build / verify |
 | :--- | :--- | :--- |
 | [Interactive Memory Atlas](docs/demo/index.html) | [Architecture deep dive · 中文](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) | [Python SDK](docs/PYTHON-SDK.md) |

@@ -2,20 +2,68 @@
 
 这里有两类东西，用途完全不同，不要混着看。
 
-## 一、外部基准（英文，会话级，暂不能直接给本服务打分）
+## 一、LongMemEval（外部基准，已跑通）
 
-| 文件 | 来源 | 规模 | 许可 | 它测什么 |
-|---|---|---|---|---|
-| `longmemeval_oracle.json` | [LongMemEval](https://github.com/xiaowu0162/LongMemEval)（ICLR 2025） | 500 题，每题若干证据会话 + turn 级 `has_answer` 标注 | MIT | 五种长期记忆能力：信息抽取、跨会话推理、时序推理、知识更新、拒答 |
-| `locomo10.json` | [LoCoMo](https://github.com/snap-research/locomo)（ACL 2024） | 10 段超长对话，1986 道 QA，evidence 指向对话轮 | CC BY-NC 4.0（**仅限非商用**） | 单跳/时序/多跳/开放域/对抗问答 |
+`longmemeval_oracle.json` — [LongMemEval](https://github.com/xiaowu0162/LongMemEval)（ICLR 2025）oracle 版本，
+500 题，每题带证据会话与 `question_date`。它是"给一个用户的聊天史，问一个关于他的问题"，正好压这套服务的核心：
+记得住、改得对、算得清、答得出。
 
-**为什么现在跑不了分**：两者都是「整段英文对话 → 自然语言问答」，评测要靠 LLM 生成答案 + LLM judge。
-本服务存的是**中文原子事实**（subject / predicate / value JSON），当前部署用的是 `home-zh` 规则抽取器，
-不识别英文、也不做问答生成。硬灌进去只能得到 0 分，那是测法的问题，不是系统的水平。
+### 跑法
 
-**什么时候能用**：配置 `MEMORY_EXTRACTOR_PROVIDER=openai-compat` 接上真实抽取模型后，
-把每个 `has_answer: true` 的 turn 抽成 claims 入库，再用 `answer_session_ids` 算 Recall@k，
-用答案生成 + LLM judge 算准确率。这条路子要写一个 loader，属于下一步工作。
+```bash
+# 1) 服务器上：三个独立分片实例（各自租户 + 端口），共享同一个真实抽取器
+bash start_eval.sh 8767 lme-eval
+bash start_eval.sh 8768 lme-eval-2
+bash start_eval.sh 8769 lme-eval-3
+
+# 2) 跑分（--dsn 用于每题之间清空该分片租户，保证题目互不污染）
+python scripts/eval/run_longmemeval.py \
+  --base-url http://127.0.0.1:8767 \
+  --instances 'http://127.0.0.1:8768|lme-eval-2,http://127.0.0.1:8769|lme-eval-3' \
+  --key "$MEMORY_API_KEY" --dsn "$MEMORY_DSN" \
+  --llm-url http://127.0.0.1:8101/v1/chat/completions \
+  --limit 24 --workers 3 --out data/eval/longmemeval_24.json
+```
+
+四步全走产品自己的代码路径，没有为评测另写一套：
+
+| 阶段 | 用的东西 |
+|---|---|
+| 灌入 | `POST /v1/memories/process`，每轮用户发言一次，`observed_at` = 该会话日期（真实抽取器：Qwen2.5-7B） |
+| 回忆 | `POST /v1/search`，`known_at`/`valid_at` = `question_date`，取 30 条 |
+| 作答 | 同一模型，只给检索到的记忆，要求一句话给具体值 |
+| 判分 | 同一模型对照 gold answer 判 correct/incorrect（LongMemEval 官方也用 LLM judge） |
+
+### 为什么要三个实例
+
+租户是绑在进程上的（`MEMORY_TENANT_ID`），而每题之间要清库保证隔离。
+一个进程一个租户 → 并发 worker 会互相把对方的数据清掉（早期版本就踩了这个坑，recall 时有时无）。
+三个进程三个租户，worker 按题号取模分配，才能真并行。
+
+### 已知边界（读数字前先看）
+
+- **只灌用户发言**，不灌助手回复。因此 `single-session-assistant`（问"你上次说过的…"）本质答不了，
+  这类分数低是设计边界，不是检索坏了。
+- 抽取器是本地 7B，不是 GPT-4o 级模型：数值改口、隐含因果经常抽歪（例如把"我跑进了 25:50"抽成
+  "想跑到 25:50"）。答错多半错在这一步，报告里可逐题复核。
+- 判分用一个 7B 模型，粗于官方 rubric grader；偏好类（rubric 型 gold）会偏严。
+
+### 2026-11-12 基线（24 题分层抽样）
+
+```
+准确率 20.8% (5/24)   灌入 258 轮 → 477 claims   抽取失败 3 轮   882s
+  single-session-user      75%   知识更新 25%   时序推理 25%
+  multi-session             0%   助手侧回忆 0%   偏好跟随 0%
+```
+
+19 道错题的归因（明细见 `longmemeval_24.md`）：
+6 题检索空手而归（题面词与 claim 对不上，其中 3 题是"只灌用户侧"的设计边界）、
+6 题检索到了却仍拒答（7B 长上下文过度保守）、7 题答了但值不对（多会话计数与知识更新为主，
+根因是逐轮抽取丢上下文）。
+
+这份数字衡量的是**整条链路**：本地 7B 抽取 + 词法检索 + 7B 作答。它不是这套服务的能力上限，
+而是"小模型 + 纯词法 + 逐轮抽取"这套组合的上限；换抽取器、换检索通道（向量）、或按会话整体灌入，
+都会直接改变这个数——所以每次换都要重跑，不要拿这个数当产品结论。
 
 ## 二、中文黄金集（本服务自己能跑出数字的部分）
 

@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Memory Core · 记忆看板</title>
+<style>
+  :root{
+    --paper:#FAF7F0; --card:#FFFDF8; --ink:#1E1B16; --muted:#6E675C;
+    --hair:#E7DECB; --hair-soft:#F0E9DA;
+    --emerald:#0E6B54; --emerald-soft:#E7F2ED;
+    --sapphire:#24416F; --sapphire-soft:#E9EEF7;
+    --amethyst:#6A4B8A; --amethyst-soft:#F0EAF6;
+    --ruby:#8C2F45; --ruby-soft:#F8E9ED;
+    --gold:#A8813C; --gold-soft:#F7EFDC;
+    --shadow:0 1px 2px rgba(30,27,22,.05), 0 8px 24px -18px rgba(30,27,22,.35);
+    --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",Georgia,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 12% -10%, #FFFDF6 0%, transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, #F4F7F4 0%, transparent 55%),
+      var(--paper);
+    color:var(--ink); font-family:var(--sans); font-size:14px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--sapphire)}
+  ::selection{background:var(--gold-soft)}
+
+  /* ---------- shell ---------- */
+  .shell{display:grid; grid-template-columns:248px minmax(0,1fr) 316px; gap:0; min-height:100vh}
+  .rail{border-right:1px solid var(--hair); padding:26px 20px; display:flex; flex-direction:column; gap:22px; background:linear-gradient(180deg,rgba(255,253,248,.7),rgba(250,247,240,.2))}
+  .main{padding:26px 30px 60px; min-width:0}
+  .aside{border-left:1px solid var(--hair); padding:26px 20px; background:linear-gradient(180deg,rgba(255,253,248,.6),rgba(250,247,240,.15)); min-width:0}
+  @media (max-width:1180px){ .shell{grid-template-columns:224px minmax(0,1fr)} .aside{display:none} }
+  @media (max-width:820px){ .shell{grid-template-columns:1fr} .rail{border-right:0;border-bottom:1px solid var(--hair)} }
+
+  /* ---------- brand ---------- */
+  .brand{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .brand h1{font-family:var(--serif); font-size:22px; white-space:nowrap; font-weight:600; margin:0; letter-spacing:.02em}
+  .brand .dot{width:6px;height:6px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px var(--emerald-soft)}
+  .brand small{display:block;width:100%;color:var(--muted);font-size:10.5px;letter-spacing:.12em;margin-top:2px}
+
+  .section-label{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+
+  /* ---------- key ---------- */
+  .keybox{display:flex;flex-direction:column;gap:8px}
+  .keybox input{
+    width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:9px;background:var(--card);
+    font-family:var(--mono);font-size:11.5px;color:var(--ink)
+  }
+  .keybox input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+
+  /* ---------- stats ---------- */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:10px 11px}
+  .stat b{display:block;font-family:var(--serif);font-size:21px;font-weight:600;line-height:1.15}
+  .stat span{font-size:10.5px;color:var(--muted);letter-spacing:.06em}
+
+  /* ---------- policy ---------- */
+  .policy-list{display:flex;flex-direction:column;gap:6px;max-height:168px;overflow:auto}
+  .policy{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:9px;background:var(--card);border:1px solid var(--hair-soft)}
+  .policy code{font-family:var(--mono);font-size:11px;color:var(--sapphire);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toggle{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;flex:0 0 auto}
+  .toggle button{border:0;background:transparent;font-size:10px;padding:3px 7px;color:var(--muted);cursor:pointer;font-family:var(--sans)}
+  .toggle button[aria-pressed="true"]{background:var(--emerald-soft);color:var(--emerald);font-weight:600}
+  .toggle button:last-child[aria-pressed="true"]{background:var(--amethyst-soft);color:var(--amethyst)}
+
+  /* ---------- header ---------- */
+  .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+  .topbar h2{font-family:var(--serif);font-size:26px;font-weight:600;margin:0;letter-spacing:.01em}
+  .topbar p{margin:4px 0 0;color:var(--muted);font-size:12.5px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;border:1px solid var(--hair);background:var(--card);font-size:11px;color:var(--muted);white-space:nowrap}
+  .chip i{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block}
+  .chip.ok{color:var(--emerald);border-color:#CFE3D9;background:var(--emerald-soft)} .chip.ok i{background:var(--emerald)}
+  .chip.warn{color:var(--gold);border-color:#EBDCBE;background:var(--gold-soft)} .chip.warn i{background:var(--gold)}
+  .chip.off{color:var(--ruby);border-color:#EED3D9;background:var(--ruby-soft)} .chip.off i{background:var(--ruby)}
+
+  /* ---------- composer ---------- */
+  .composer{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:14px;box-shadow:var(--shadow);margin-bottom:14px}
+  .composer.drag{border-color:var(--gold);box-shadow:0 0 0 4px var(--gold-soft)}
+  .composer textarea{
+    width:100%;min-height:74px;resize:vertical;border:0;outline:none;background:transparent;
+    font-family:var(--sans);font-size:14.5px;line-height:1.65;color:var(--ink)
+  }
+  .composer textarea::placeholder{color:#B4AC9C}
+  .composer-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--hair-soft);padding-top:10px;margin-top:6px}
+  .hint{font-size:11.5px;color:var(--muted)}
+  .btn{border:1px solid transparent;border-radius:10px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:var(--sans);transition:.16s ease}
+  .btn.primary{background:linear-gradient(180deg,#12795F,#0E6B54);color:#F7FBF9;box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 6px 14px -10px rgba(14,107,84,.9)}
+  .btn.primary:hover{filter:brightness(1.05)}
+  .btn.ghost{background:var(--card);border-color:var(--hair);color:var(--ink)}
+  .btn.ghost:hover{border-color:#D8CDB6;background:#FFFCF4}
+  .btn:disabled{opacity:.55;cursor:progress}
+
+  /* ---------- result strip ---------- */
+  .result{margin:0 0 16px;display:none}
+  .result.show{display:block;animation:rise .28s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .result-card{border:1px solid var(--hair);border-radius:14px;background:var(--card);padding:12px 14px;box-shadow:var(--shadow)}
+  .result-head{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
+  .relation{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.05em;padding:3px 8px;border-radius:6px}
+  .rel-CREATED{background:var(--emerald-soft);color:var(--emerald)}
+  .rel-DUPLICATE{background:var(--sapphire-soft);color:var(--sapphire)}
+  .rel-CONTRADICTION,.rel-SUPERSEDES{background:var(--ruby-soft);color:var(--ruby)}
+  .rel-MERGED{background:var(--amethyst-soft);color:var(--amethyst)}
+
+  /* ---------- tabs / toolbar ---------- */
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 12px;flex-wrap:wrap}
+  .tabs{display:inline-flex;background:#F3EDE0;border-radius:10px;padding:3px;gap:2px}
+  .tabs button{border:0;background:transparent;padding:6px 12px;border-radius:8px;font-size:12.5px;color:var(--muted);cursor:pointer;font-family:var(--sans)}
+  .tabs button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(30,27,22,.08);font-weight:600}
+  .search{display:flex;gap:8px;align-items:center}
+  .search input{width:230px;padding:7px 11px;border:1px solid var(--hair);border-radius:10px;background:var(--card);font-size:12.5px;font-family:var(--sans)}
+  .search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+
+  /* ---------- ledger ---------- */
+  .ledger{display:flex;flex-direction:column;gap:9px}
+  .claim{position:relative;background:var(--card);border:1px solid var(--hair);border-radius:13px;padding:12px 14px 11px 16px;box-shadow:var(--shadow);cursor:pointer;transition:.16s ease}
+  .claim:before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--emerald)}
+  .claim[data-status="superseded"]:before{background:var(--gold)}
+  .claim[data-status="forgotten"]:before{background:var(--ruby)}
+  .claim:hover{transform:translateY(-1px);border-color:#DCD1BB}
+  .claim.selected{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft),var(--shadow)}
+  .claim-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .subject{font-family:var(--mono);font-size:12px;color:var(--emerald);background:var(--emerald-soft);padding:2px 7px;border-radius:6px}
+  .predicate{font-family:var(--mono);font-size:12px;color:var(--sapphire)}
+  .pill{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:999px;padding:2px 8px}
+  .pill.active{color:var(--emerald);border-color:#CFE3D9;background:var(--emerald-soft)}
+  .pill.superseded{color:var(--gold);border-color:#EBDCBE;background:var(--gold-soft)}
+  .pill.forgotten{color:var(--ruby);border-color:#EED3D9;background:var(--ruby-soft)}
+  .value{font-family:var(--mono);font-size:12.5px;color:#3A352C;margin-top:7px;word-break:break-all;white-space:pre-wrap}
+  .meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px;font-size:11px;color:var(--muted)}
+  .meta code{font-family:var(--mono);font-size:10.5px;color:#8A8175}
+
+  /* ---------- aside ---------- */
+  .feed{display:flex;flex-direction:column;gap:0;position:relative}
+  .feed:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;border-left:1px dashed var(--hair)}
+  .event{position:relative;padding:0 0 14px 20px}
+  .event:before{content:"";position:absolute;left:1px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--card);border:1.5px solid var(--sapphire)}
+  .event[data-kind="forgotten"]:before{border-color:var(--ruby)}
+  .event[data-kind="created"]:before{border-color:var(--emerald)}
+  .event[data-kind="replaced"]:before{border-color:var(--gold)}
+  .event b{display:block;font-size:11.5px;font-weight:600;letter-spacing:.01em}
+  .event span{display:block;font-size:10.5px;color:var(--muted);font-family:var(--mono)}
+  .event p{margin:3px 0 0;font-size:11px;color:#5C564B;word-break:break-all}
+
+  /* ---------- drawer ---------- */
+  .drawer{position:fixed;top:0;right:0;height:100%;width:400px;max-width:92vw;background:var(--card);border-left:1px solid var(--hair);box-shadow:-24px 0 60px -40px rgba(30,27,22,.7);transform:translateX(102%);transition:transform .26s ease;z-index:40;display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  .drawer header{padding:20px 20px 12px;border-bottom:1px solid var(--hair-soft);display:flex;align-items:center;justify-content:space-between}
+  .drawer header h3{margin:0;font-family:var(--serif);font-size:17px;font-weight:600}
+  .drawer .body{padding:16px 20px 40px;overflow:auto}
+  .kv{display:grid;grid-template-columns:88px 1fr;gap:6px 10px;font-size:12px;margin-bottom:14px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--mono);font-size:11.5px;word-break:break-all}
+  .timeline{border-left:1px solid var(--hair);margin-left:4px;padding-left:14px}
+  .timeline div{position:relative;padding-bottom:10px;font-size:11.5px;color:#4F4A40}
+  .timeline div:before{content:"";position:absolute;left:-19px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--gold)}
+  .timeline small{display:block;color:var(--muted);font-family:var(--mono);font-size:10px}
+
+  .empty{text-align:center;padding:34px 10px;color:#A9A08E;font-family:var(--serif);font-size:14px}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,12px);background:#1E1B16;color:#F7F4EC;padding:9px 16px;border-radius:10px;font-size:12.5px;opacity:0;pointer-events:none;transition:.22s ease;z-index:60}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.err{background:var(--ruby)}
+
+  /* key gate */
+  .gate{position:fixed;inset:0;background:rgba(250,247,240,.92);backdrop-filter:blur(6px);display:grid;place-items:center;z-index:80}
+  .gate .card{background:var(--card);border:1px solid var(--hair);border-radius:18px;padding:28px;width:min(420px,92vw);box-shadow:var(--shadow)}
+  .gate h2{font-family:var(--serif);font-size:21px;margin:0 0 6px}
+  .gate p{margin:0 0 16px;color:var(--muted);font-size:12.5px}
+  .gate input{width:100%;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;font-family:var(--mono);font-size:12.5px}
+  .gate input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+  .gate .row{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <h1>Memory Core<span class="dot"></span></h1>
+      <small>Agent 记忆看板 · demo-home</small>
+    </div>
+
+    <div>
+      <p class="section-label">凭证</p>
+      <div class="keybox">
+        <input id="keyInput" type="password" placeholder="MEMORY_API_KEY" autocomplete="off" />
+        <button class="btn ghost" id="keySave" style="font-size:12px">保存并连接</button>
+      </div>
+    </div>
+
+    <div>
+      <p class="section-label">库内概况</p>
+      <div class="stats">
+        <div class="stat"><b id="statActive">–</b><span>有效事实</span></div>
+        <div class="stat"><b id="statHistory">–</b><span>历史版本</span></div>
+        <div class="stat"><b id="statSubjects">–</b><span>主体数</span></div>
+        <div class="stat"><b id="statPolicy">–</b><span>多值谓词</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="section-label">谓词基数策略（数据库可信配置）</p>
+      <div class="policy-list" id="policyList"></div>
+      <div class="hint" style="margin-top:8px">未列出的谓词默认 <code style="font-family:var(--mono)">one</code>，模型不能自行升级</div>
+    </div>
+
+    <div style="margin-top:auto">
+      <p class="section-label">接口文档</p>
+      <a class="btn ghost" href="/docs" target="_blank" style="display:block;text-align:center;text-decoration:none">Swagger /docs</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h2>记忆台账</h2>
+        <p>写一句中文，看它如何被抽取、判重、替换；每条事实都可回溯到来源与时间。</p>
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div class="composer" id="composer">
+      <textarea id="utterance" placeholder="例如：卧室里我喜欢安静一点的房间，最好别靠马路。&#10;（也可以把 .txt / .md 文件拖进来）"></textarea>
+      <div class="composer-foot">
+        <span class="hint" id="composerHint">抽取 → 判重/判矛盾 → 双时态写入</span>
+        <button class="btn primary" id="submitBtn">记为记忆</button>
+      </div>
+    </div>
+
+    <div class="result" id="result"></div>
+
+    <div class="toolbar">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-filter="active">当前有效</button>
+        <button role="tab" aria-selected="false" data-filter="history">含历史</button>
+        <button role="tab" aria-selected="false" data-filter="forgotten">已遗忘</button>
+      </div>
+      <div class="search">
+        <input id="searchInput" placeholder="语义 + 词法混合检索…" />
+        <button class="btn ghost" id="searchBtn">检索</button>
+        <button class="btn ghost" id="refreshBtn" title="刷新">↺</button>
+      </div>
+    </div>
+
+    <div class="ledger" id="ledger"></div>
+  </main>
+
+  <aside class="aside">
+    <p class="section-label">实时事件流</p>
+    <div class="feed" id="feed"></div>
+  </aside>
+</div>
+
+<div class="drawer" id="drawer" aria-hidden="true">
+  <header><h3 id="drawerTitle">事实详情</h3><button class="btn ghost" id="drawerClose" style="padding:4px 10px">关闭</button></header>
+  <div class="body" id="drawerBody"></div>
+</div>
+
+<div class="gate" id="gate">
+  <div class="card">
+    <h2>连接你的记忆库</h2>
+    <p>输入该实例的 <code style="font-family:var(--mono);font-size:11px">MEMORY_API_KEY</code>。凭证只存在本机 localStorage，不会写进页面源码。</p>
+    <input id="gateKey" type="password" placeholder="Bearer key" autocomplete="off" />
+    <div class="row">
+      <span class="hint" id="gateMsg"></span>
+      <button class="btn primary" id="gateGo">连接</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const state = { key:"", items:[], all:[], events:[], policies:[], selected:null, filter:"active", query:"" };
+
+const $ = (sel) => document.querySelector(sel);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (iso) => { if(!iso) return "—"; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString("zh-CN",{hour12:false}); };
+const shortId = (id) => id ? id.slice(0,8) : "—";
+
+function toast(msg, err){
+  const el = $("#toast"); el.textContent = msg; el.className = "toast show" + (err ? " err" : "");
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "toast", 2600);
+}
+
+async function api(path, options = {}){
+  const res = await fetch(path, {
+    ...options,
+    headers: { "Authorization": "Bearer " + state.key, "Content-Type": "application/json", ...(options.headers||{}) },
+  });
+  if (res.status === 401 || res.status === 403) throw new Error("凭证无效或已过期");
+  const text = await res.text();
+  let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!res.ok) {
+    const detail = body && body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.status;
+    const err = new Error(detail); err.status = res.status; throw err;
+  }
+  return body;
+}
+
+/* ---------------- boot ---------------- */
+function boot(){
+  // Optional #key=... handoff for demo links: the fragment never reaches the
+  // server, and it is scrubbed from the address bar once stored locally.
+  const hash = location.hash || "";
+  if (hash.startsWith("#key=")) {
+    const fromHash = decodeURIComponent(hash.slice(5)).trim();
+    if (fromHash) { localStorage.setItem("amc.key", fromHash); history.replaceState(null, "", location.pathname); }
+  }
+  state.key = localStorage.getItem("amc.key") || "";
+  $("#keyInput").value = state.key;
+  if (!state.key) { $("#gate").style.display = "grid"; return; }
+  connect();
+}
+async function connect(){
+  try {
+    await refreshAll();
+    $("#gate").style.display = "none";
+  } catch (e) {
+    $("#gate").style.display = "grid";
+    $("#gateMsg").textContent = e.message;
+    $("#gateMsg").style.color = "var(--ruby)";
+  }
+}
+$("#gateGo").onclick = async () => {
+  const v = $("#gateKey").value.trim();
+  if (!v) return;
+  state.key = v; $("#keyInput").value = v; localStorage.setItem("amc.key", v);
+  $("#gateMsg").textContent = "连接中…"; $("#gateMsg").style.color = "var(--muted)";
+  await connect();
+};
+$("#gateKey").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#gateGo").click(); });
+$("#keySave").onclick = () => {
+  const v = $("#keyInput").value.trim(); if (!v) return;
+  state.key = v; localStorage.setItem("amc.key", v); connect().then(() => toast("已连接"));
+};
+
+async function refreshAll(){
+  const [caps, policies] = await Promise.all([api("/v1/capabilities"), api("/v1/predicate-policies")]);
+  renderChips(caps);
+  state.policies = policies.items || [];
+  renderPolicies();
+  await Promise.all([loadMemories(), loadEvents()]);
+}
+
+/* ---------------- header chips ---------------- */
+function renderChips(caps){
+  const map = Object.fromEntries((caps.capabilities||[]).map(c => [c.name, c]));
+  const ex = map["memory.extraction"], emb = map["memory.embedding"];
+  const providerName = (reason, fallback) => {
+    const m = /(?:provider|model):\s*([^\s;]+)/.exec(reason || "");
+    return m ? m[1] : fallback;
+  };
+  const chip = (label, ok, tone, note) =>
+    `<span class="chip ${ok ? tone : "off"}" title="${esc(note||"")}"><i></i>${esc(label)}</span>`;
+  $("#chips").innerHTML = [
+    chip("PostgreSQL · 就绪", true, "ok", "canonical store"),
+    chip("抽取 " + (ex && ex.available ? providerName(ex.reason, "provider") : "未配置"), !!(ex && ex.available), "ok", ex && ex.reason),
+    chip("向量 " + (emb && emb.available ? providerName(emb.reason, "provider") : "调用方提供"), true, emb && emb.available ? "ok" : "warn", emb && emb.reason),
+    chip("图谱 AGE", true, "ok", "graph projection"),
+  ].join("");
+}
+
+/* ---------------- policies ---------------- */
+function renderPolicies(){
+  const el = $("#policyList");
+  $("#statPolicy").textContent = state.policies.filter(p => p.cardinality === "many").length;
+  if (!state.policies.length){
+    el.innerHTML = `<div class="hint">还没有显式策略，全部谓词按单值处理。</div>`;
+    return;
+  }
+  el.innerHTML = state.policies.map(p => `
+    <div class="policy">
+      <code title="${esc(p.predicate)}">${esc(p.predicate)}</code>
+      <div class="toggle" data-predicate="${esc(p.predicate)}">
+        <button data-card="one" aria-pressed="${p.cardinality === "one"}">one</button>
+        <button data-card="many" aria-pressed="${p.cardinality === "many"}">many</button>
+      </div>
+    </div>`).join("");
+  el.querySelectorAll(".toggle button").forEach(btn => {
+    btn.onclick = async () => {
+      const predicate = btn.parentElement.dataset.predicate;
+      try {
+        await api("/v1/predicate-policies/" + encodeURIComponent(predicate), { method:"PUT", body: JSON.stringify({ cardinality: btn.dataset.card }) });
+        toast(`${predicate} → ${btn.dataset.card}`);
+        state.policies = (await api("/v1/predicate-policies")).items || [];
+        renderPolicies();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
+/* ---------------- memories ---------------- */
+async function loadMemories(){
+  const params = new URLSearchParams({ limit: "120" });
+  if (state.filter !== "active") params.set("include_superseded", "true");
+  // Stats always come from the full picture, never from the filtered tab.
+  const [body, everything] = await Promise.all([
+    api("/v1/memories?" + params.toString()),
+    api("/v1/memories?limit=200&include_superseded=true"),
+  ]);
+  state.items = body.items || [];
+  state.all = state.items;
+  state.everything = everything.items || [];
+  renderLedger();
+  renderStats();
+}
+
+function statusOf(item){
+  if (item.superseded_at) return /forget/i.test(item.source_id || "") ? "forgotten" : "superseded";
+  return "active";
+}
+function renderStats(){
+  const rows = state.everything || [];
+  const active = rows.filter(i => !i.superseded_at);
+  $("#statActive").textContent = active.length;
+  $("#statHistory").textContent = rows.length - active.length;
+  $("#statSubjects").textContent = new Set(active.map(i => i.subject_id)).size;
+}
+
+function renderLedger(){
+  const el = $("#ledger");
+  let rows = state.all.slice();
+  if (state.filter === "active") rows = rows.filter(i => !i.superseded_at);
+  if (state.filter === "forgotten") rows = rows.filter(i => statusOf(i) === "forgotten");
+  if (state.query) rows = rows.filter(i => JSON.stringify(i).toLowerCase().includes(state.query.toLowerCase()));
+  if (!rows.length){ el.innerHTML = `<div class="empty">这里还是空的 —— 在上面写一句话试试。</div>`; return; }
+  el.innerHTML = rows.map(item => {
+    const status = statusOf(item);
+    const label = status === "active" ? "有效" : status === "forgotten" ? "已遗忘" : "已替换";
+    return `<article class="claim" data-id="${esc(item.id)}" data-status="${status}">
+      <div class="claim-top">
+        <span class="subject">${esc(item.subject_id)}</span>
+        <span class="predicate">${esc(item.predicate)}</span>
+        <span class="pill ${status}">${label}</span>
+      </div>
+      <div class="value">${esc(JSON.stringify(item.value))}</div>
+      <div class="meta">
+        <span>valid_from <code>${fmt(item.valid_from)}</code></span>
+        <span>source <code>${esc(item.source_id)}</code></span>
+        <span>id <code>${esc(shortId(item.id))}</code></span>
+      </div>
+    </article>`;
+  }).join("");
+  el.querySelectorAll(".claim").forEach(card => {
+    card.onclick = () => openDetail(card.dataset.id);
+  });
+}
+
+/* ---------------- detail ---------------- */
+async function openDetail(id){
+  state.selected = state.all.find(i => i.id === id);
+  if (!state.selected) return;
+  const item = state.selected;
+  document.querySelectorAll(".claim").forEach(c => c.classList.toggle("selected", c.dataset.id === id));
+  $("#drawer").classList.add("open");
+  $("#drawer").setAttribute("aria-hidden", "false");
+  $("#drawerTitle").textContent = `${item.subject_id} · ${item.predicate}`;
+  $("#drawerBody").innerHTML = `
+    <dl class="kv">
+      <dt>memory_id</dt><dd>${esc(item.id)}</dd>
+      <dt>value</dt><dd>${esc(JSON.stringify(item.value, null, 2))}</dd>
+      <dt>valid_from</dt><dd>${fmt(item.valid_from)}</dd>
+      <dt>valid_to</dt><dd>${fmt(item.valid_to)}</dd>
+      <dt>recorded_at</dt><dd>${fmt(item.recorded_at)}</dd>
+      <dt>superseded</dt><dd>${item.superseded_at ? fmt(item.superseded_at) : "—"}</dd>
+      <dt>source_id</dt><dd>${esc(item.source_id)}</dd>
+      <dt>evidence</dt><dd>${esc(item.object_sha256 || "—")}</dd>
+    </dl>
+    <p class="section-label">来源链</p>
+    <div id="sourcesBox" class="hint">读取中…</div>
+    <p class="section-label" style="margin-top:16px">双时态</p>
+    <div class="timeline">
+      <div>写入（recorded_at）<small>${fmt(item.recorded_at)}</small></div>
+      <div>生效（valid_from）<small>${fmt(item.valid_from)}</small></div>
+      ${item.valid_to ? `<div>失效（valid_to）<small>${fmt(item.valid_to)}</small></div>` : ""}
+      ${item.superseded_at ? `<div>被替换（superseded_at）<small>${fmt(item.superseded_at)}</small></div>` : ""}
+    </div>`;
+  try {
+    const body = await api(`/v1/memories/${item.id}/sources`);
+    const rows = body.sources || [];
+    $("#sourcesBox").innerHTML = rows.length
+      ? rows.map(s => `<div style="font-family:var(--mono);font-size:11px;padding:4px 0;border-bottom:1px solid var(--hair-soft)">
+          ${esc(s.source_id)} <span style="color:var(--muted)">· ${esc(s.trust_level || "")} ${s.confidence != null ? "· conf " + esc(s.confidence) : ""}</span>
+        </div>`).join("")
+      : "无额外来源";
+  } catch (e) { $("#sourcesBox").textContent = e.message; }
+}
+$("#drawerClose").onclick = () => { $("#drawer").classList.remove("open"); $("#drawer").setAttribute("aria-hidden","true"); };
+
+/* ---------------- write ---------------- */
+async function submitUtterance(){
+  const text = $("#utterance").value.trim();
+  if (!text) return toast("先写一句话", true);
+  const btn = $("#submitBtn"); btn.disabled = true; btn.textContent = "抽取中…";
+  try {
+    const report = await api("/v1/memories/process", {
+      method: "POST",
+      body: JSON.stringify({ text, source_id: "dashboard:" + Date.now() }),
+    });
+    renderResult(report);
+    $("#utterance").value = "";
+    await Promise.all([loadMemories(), loadEvents()]);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "记为记忆";
+  }
+}
+function renderResult(report){
+  const rel = (report.relations || []);
+  const badge = (r) => `<span class="relation rel-${esc(r.relation)}">${esc(r.relation)}</span>`;
+  const lines = rel.length
+    ? rel.map(r => `<div style="display:flex;gap:8px;align-items:center;padding:3px 0">
+        ${badge(r)} <code style="font-family:var(--mono);font-size:11.5px;color:var(--sapphire)">${esc(r.subject_id)}/${esc(r.predicate)}</code>
+        ${r.merged ? `<span class="hint">已合并</span>` : ""}
+      </div>`).join("")
+    : `<div class="hint">没有抽出可入库的事实（可能这句话不含稳定偏好，或抽取器未配置）。</div>`;
+  const counts = [
+    ["新建", report.created?.length || 0], ["重复", report.duplicates || 0],
+    ["替换", report.replaced?.length || 0], ["拒收", report.rejected || 0],
+  ].map(([k,v]) => `<span class="chip">${k} ${v}</span>`).join("");
+  $("#result").innerHTML = `<div class="result-card">
+      <div class="result-head">${counts}</div>${lines}
+      ${report.embedding_failures?.length ? `<div class="hint" style="color:var(--ruby)">向量化失败 ${report.embedding_failures.length} 条（不影响事实写入）</div>` : ""}
+    </div>`;
+  $("#result").classList.add("show");
+}
+$("#submitBtn").onclick = submitUtterance;
+$("#utterance").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitUtterance();
+});
+
+/* drag & drop text file */
+const composer = $("#composer");
+["dragenter","dragover"].forEach(ev => composer.addEventListener(ev, (e) => { e.preventDefault(); composer.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev => composer.addEventListener(ev, (e) => { e.preventDefault(); composer.classList.remove("drag"); }));
+composer.addEventListener("drop", async (e) => {
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  const text = await file.text();
+  $("#utterance").value = text.slice(0, 4000);
+  $("#composerHint").textContent = `已载入 ${file.name}（${text.length} 字），确认后提交`;
+});
+
+/* ---------------- events ---------------- */
+async function loadEvents(){
+  const body = await api("/v1/events?limit=20");
+  // Order defensively: the feed is a live view, so newest must sit on top
+  // regardless of whether the API returns ascending or descending pages.
+  state.events = (body.items || []).slice().sort((a, b) =>
+    new Date(b.recorded_at || b.created_at || 0) - new Date(a.recorded_at || a.created_at || 0)
+  ).slice(0, 14);
+  renderFeed();
+}
+function renderFeed(){
+  const el = $("#feed");
+  if (!state.events.length){ el.innerHTML = `<div class="hint">暂无事件</div>`; return; }
+  el.innerHTML = state.events.map(ev => {
+    const kind = /forgotten/.test(ev.event_type) ? "forgotten" : /created/.test(ev.event_type) ? "created" : "replaced";
+    const label = ev.event_type.replace("memory.claim.", "").replace("memory.", "");
+    const payload = ev.payload && (ev.payload.subject_id ? `${ev.payload.subject_id} · ${ev.payload.predicate}` : JSON.stringify(ev.payload).slice(0, 80));
+    return `<div class="event" data-kind="${kind}">
+      <b>${esc(label)}</b>
+      <span>${fmt(ev.recorded_at || ev.created_at)}</span>
+      <p>${esc(payload)}</p>
+    </div>`;
+  }).join("");
+}
+
+/* ---------------- tabs / search / refresh ---------------- */
+document.querySelectorAll(".tabs button").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
+    state.filter = btn.dataset.filter;
+    state.query = ""; $("#searchInput").value = "";
+    loadMemories().catch(e => toast(e.message, true));
+  };
+});
+$("#searchBtn").onclick = async () => {
+  const q = $("#searchInput").value.trim();
+  if (!q) { state.query = ""; return renderLedger(); }
+  try {
+    const body = await api("/v1/search", { method: "POST", body: JSON.stringify({ query: q, limit: 30 }) });
+    const hits = (body.items || []);
+    state.all = hits.map(h => ({
+      id: h.memory_id, subject_id: h.subject_id, predicate: h.predicate, value: h.value,
+      source_id: h.source_id, valid_from: null, superseded_at: null,
+      _score: h.score, _channels: h.channels,
+    }));
+    state.query = "";
+    renderLedger();
+    if (body.degraded_channels && Object.keys(body.degraded_channels).length)
+      toast("部分通道降级：" + Object.keys(body.degraded_channels).join(", "));
+    else toast(`命中 ${hits.length} 条 · 通道 ${(body.channels_used||[]).join("+") || "词法"}`);
+  } catch (e) { toast(e.message, true); }
+};
+$("#searchInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#searchBtn").click(); });
+$("#refreshBtn").onclick = () => refreshAll().then(() => toast("已刷新")).catch(e => toast(e.message, true));
+
+/* live polling */
+setInterval(() => { if (state.key) loadEvents().catch(() => {}); }, 6000);
+boot();
+</script>
+</body>
+</html>

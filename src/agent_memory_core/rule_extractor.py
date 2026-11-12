@@ -70,7 +70,10 @@ BUILTIN_RULES = [
     },
     {
         "name": "likes",
-        "regex": r"(?:我)?(?:喜欢|偏爱|爱吃|爱喝|更爱)(?P<item>[^，。！？、\s]{1,16})",
+        # Negative lookbehind: "我不喜欢太吵" is a dislike, not a like. The
+        # zero-model path must not invert polarity, or the ledger records the
+        # opposite of what the user said.
+        "regex": r"(?:我)?(?<!不)(?:喜欢|偏爱|爱吃|爱喝|更爱)(?P<item>[^，。！？、\s]{1,16})",
         "predicate": "likes",
         "value": {"item": "{item}"},
         "confidence": 0.65,

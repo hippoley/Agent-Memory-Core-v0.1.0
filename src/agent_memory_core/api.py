@@ -6,11 +6,13 @@ import os
 import asyncio
 import json
 import re
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from .contracts import CONTRACT_VERSION, aware_iso, capabilities
@@ -975,5 +977,16 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     close()
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    dashboard_dir = Path(__file__).resolve().parent / "resources" / "dashboard"
+    if dashboard_dir.is_dir():
+        # Same-origin static assets: the console talks to /v1/* without CORS,
+        # and the bearer key never leaves the browser except in that header.
+        app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True),
+                  name="dashboard")
+
+        @app.get("/", include_in_schema=False)
+        def dashboard_redirect():
+            return RedirectResponse("/dashboard/")
 
     return app

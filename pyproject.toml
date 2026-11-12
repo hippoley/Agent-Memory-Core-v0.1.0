@@ -24,7 +24,7 @@ embedding = ["sentence-transformers>=3.0"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_memory_core = ["resources/*.sql"]
+agent_memory_core = ["resources/*.sql", "resources/dashboard/index.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

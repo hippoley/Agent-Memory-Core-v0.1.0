@@ -98,3 +98,13 @@ def test_server_rule_provider_dispatch(monkeypatch):
     assert isinstance(extractor, RuleFactExtractor)
     assert extractor.default_subject == "home"
     assert srv.extractor_provider() == "rule"
+
+
+def test_negated_like_is_not_extracted_as_like():
+    """零模型路径不能把「不喜欢」翻成「喜欢」，否则台账记的是反话。"""
+    from agent_memory_core.rule_extractor import RuleFactExtractor
+
+    facts = RuleFactExtractor()("书房里我不喜欢太吵，需要专心工作")
+    predicates = {(f.get("predicate"), f.get("subject_id") or f.get("subject_name")) for f in facts}
+    assert ("likes", "书房") not in predicates
+    assert ("dislikes", "书房") in predicates

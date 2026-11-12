@@ -61,6 +61,16 @@ def test_vector_and_graph_failures_degrade_to_canonical_sql():
     assert "graph" in report.degraded_channels
 
 
+def test_lexical_channel_matches_subject_and_predicate_too():
+    # The SQL lexical channel must match the query against subject_id,
+    # predicate and value — searching "主卧" must recall a claim whose value
+    # never contains that wording.
+    source=(Path(__file__).resolve().parents[1]/"src/agent_memory_core/hybrid.py").read_text()
+    assert "position(lower(%s) in lower(subject_id))" in source
+    assert "position(lower(%s) in lower(predicate))" in source
+    assert "position(lower(%s) in lower(value::text))" in source
+
+
 def test_canonical_sql_failure_is_not_hidden():
     import pytest
     class Conn:

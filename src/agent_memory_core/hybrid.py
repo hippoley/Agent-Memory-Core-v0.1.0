@@ -87,15 +87,21 @@ class HybridMemorySearch:
 
         if query and query.strip():
             # POSITION treats the user query literally; no LIKE wildcard or
-            # ESCAPE dialect ambiguity across PostgreSQL versions.
+            # ESCAPE dialect ambiguity across PostgreSQL versions. The query is
+            # matched against subject, predicate and value so that "主卧" or
+            # "temperature" recalls claims whose value alone would never
+            # contain the wording.
             rows = self.store.conn.execute(
                 """SELECT id::text FROM memory_claims
                    WHERE tenant_id=%s
-                     AND position(lower(%s) in lower(value::text)) > 0
+                     AND (position(lower(%s) in lower(subject_id)) > 0
+                          OR position(lower(%s) in lower(predicate)) > 0
+                          OR position(lower(%s) in lower(value::text)) > 0)
                      AND recorded_at<=%s AND (superseded_at IS NULL OR superseded_at>%s)
                      AND valid_from<=%s AND (valid_to IS NULL OR valid_to>%s)
                    ORDER BY recorded_at DESC,id LIMIT %s""",
-                (tenant_id,query,known_at,known_at,valid_at,valid_at,min(limit*10,100)),
+                (tenant_id,query,query,query,
+                 known_at,known_at,valid_at,valid_at,min(limit*10,100)),
             )
             for rank,(mid,) in enumerate(rows,1):
                 ranked.setdefault(mid,[]).append(("sql",rank))

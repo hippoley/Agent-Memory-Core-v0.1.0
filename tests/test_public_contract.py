@@ -89,11 +89,14 @@ def test_swagger_and_openapi_are_published_with_bearer_security():
         tenant_id="home",
     )
     client=TestClient(app)
-    # /docs is the packaged, CDN-free manual; the stock Swagger UI lives at
-    # /docs/swagger so an air-gapped instance still has readable API docs.
+    # /docs is the stock Swagger UI entry; the CDN-free manual lives at
+    # /docs/manual so an air-gapped instance still has readable API docs.
     docs=client.get("/docs")
     assert docs.status_code==200
-    assert "接口手册" in docs.text
+    assert "swagger-ui" in docs.text.lower()
+    manual=client.get("/docs/manual")
+    assert manual.status_code==200
+    assert "接口手册" in manual.text
     swagger=client.get("/docs/swagger")
     assert swagger.status_code==200
     assert "swagger-ui" in swagger.text.lower()

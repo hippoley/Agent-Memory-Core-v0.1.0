@@ -34,7 +34,7 @@ _SWAGGER_PAGE = """<!DOCTYPE html>
 <div id="swagger-ui"></div>
 <div id="fallback"><h2>Swagger UI 需要访问 CDN</h2>
 <p>当前网络无法加载 <code>swagger-ui-dist</code>。这不影响接口本身：</p>
-<p>· 使用内置离线手册 <a href="/docs">/docs</a>（含每个接口的 User Story 与 Try it）<br />
+<p>· 使用内置离线手册 <a href="/docs/manual">/docs/manual</a>（含每个接口的 User Story 与 Try it）<br />
 · 或直接读取机器可读的 <a href="/openapi.json">/openapi.json</a></p></div>
 <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
 <script>
@@ -997,19 +997,26 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         # Self-contained manual: no CDN, works on an air-gapped demo network.
         # Every operation renders its user story from the x-user-story field
         # that install_api_docs() injects into /openapi.json.
+        # /docs is the stock Swagger UI (the entry people expect);
+        # the CDN-free manual lives at /docs/manual and /redoc points there,
+        # so an air-gapped instance still has readable API docs.
         @app.get("/docs", include_in_schema=False)
+        def swagger_ui():
+            return Response(_SWAGGER_PAGE, media_type="text/html; charset=utf-8")
+
+        @app.get("/docs/swagger", include_in_schema=False)
+        def swagger_ui_alias():
+            return Response(_SWAGGER_PAGE, media_type="text/html; charset=utf-8")
+
+        @app.get("/docs/manual", include_in_schema=False)
         def api_manual():
             return Response(
                 (docs_dir / "api.html").read_text(encoding="utf-8"),
                 media_type="text/html; charset=utf-8")
 
-        @app.get("/docs/swagger", include_in_schema=False)
-        def swagger_ui():
-            return Response(_SWAGGER_PAGE, media_type="text/html; charset=utf-8")
-
         @app.get("/redoc", include_in_schema=False)
         def redoc_redirect():
-            return RedirectResponse("/docs")
+            return RedirectResponse("/docs/manual")
 
     install_api_docs(app)
 

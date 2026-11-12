@@ -70,9 +70,16 @@ def test_service_description_explains_auth_and_error_contract():
         assert phrase in SERVICE_DESCRIPTION
 
 
+def test_docs_entry_is_the_stock_swagger_ui():
+    response = TestClient(_app()).get("/docs")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "SwaggerUIBundle" in response.text
+
+
 def test_manual_is_served_without_a_cdn():
     client = TestClient(_app())
-    response = client.get("/docs")
+    response = client.get("/docs/manual")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     body = response.text

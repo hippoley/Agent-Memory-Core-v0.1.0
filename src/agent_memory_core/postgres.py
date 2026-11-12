@@ -357,6 +357,50 @@ class PostgresMemory:
                 "recorded_at","superseded_at","object_sha256")
         return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
 
+    def list_claims(self, *, tenant_id: str, subject_id: str | None = None,
+                    predicate: str | None = None, include_superseded: bool = False,
+                    valid_at: datetime | None = None, known_at: datetime | None = None,
+                    limit: int = 100, offset: int = 0) -> list[dict]:
+        """Browse canonical claims for one tenant, newest first.
+
+        This is the read path behind consoles: it never invents facts, it only
+        exposes rows the store already holds. ``known_at`` gives the "what did
+        we believe then" view; ``include_superseded`` keeps replaced or
+        forgotten claims visible so the audit trail is browsable.
+        """
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        if offset < 0:
+            raise ValueError("offset must be zero or positive")
+        known_at = aware(known_at) if known_at is not None else None
+        valid_at = aware(valid_at) if valid_at is not None else None
+        sql = """SELECT id::text,subject_id,predicate,value,source_id,valid_from,valid_to,
+                 recorded_at,superseded_at,object_sha256 FROM memory_claims
+                 WHERE tenant_id=%s"""
+        params: list = [tenant_id]
+        if subject_id is not None:
+            sql += " AND subject_id=%s"
+            params.append(subject_id)
+        if predicate is not None:
+            sql += " AND predicate=%s"
+            params.append(predicate)
+        if known_at is not None:
+            sql += " AND recorded_at<=%s"
+            params.append(known_at)
+        if not include_superseded:
+            sql += " AND superseded_at IS NULL"
+            if known_at is not None:
+                sql += " AND superseded_at>%s"
+                params.append(known_at)
+        if valid_at is not None:
+            sql += " AND valid_from<=%s AND (valid_to IS NULL OR valid_to>%s)"
+            params.extend([valid_at, valid_at])
+        sql += " ORDER BY recorded_at DESC,id DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        cols = ("id","subject_id","predicate","value","source_id","valid_from","valid_to",
+                "recorded_at","superseded_at","object_sha256")
+        return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
+
     def forget(self, *, tenant_id: str, memory_id: str) -> bool:
         """Withdraw belief in one claim (soft forget; audit rows are retained).
 

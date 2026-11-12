@@ -59,6 +59,10 @@ class MemoryItem(BaseModel):
 class MemoryReadResponse(BaseModel):
     contract_version: str
     items: list[MemoryItem]
+    # Present only on the browse endpoint (GET /v1/memories).
+    count: int | None = None
+    limit: int | None = None
+    offset: int | None = None
 
 
 class SearchHit(BaseModel):

@@ -9,7 +9,7 @@ EXPECTED={
     "/v1/health":{"get"},
     "/v1/ready":{"get"},
     "/v1/capabilities":{"get"},
-    "/v1/memories":{"post","delete"},
+    "/v1/memories":{"get","post","delete"},
     "/v1/memories/{subject_id}":{"get"},
     "/v1/memories/{memory_id}":{"delete"},
     "/v1/memories/process":{"post"},
@@ -64,7 +64,7 @@ def test_response_and_request_models_are_described():
     document=spec()
     for path,method,success in [
         ("/v1/health","get","200"),("/v1/ready","get","200"),
-        ("/v1/capabilities","get","200"),("/v1/memories","post","201"),
+        ("/v1/capabilities","get","200"),("/v1/memories","post","201"),("/v1/memories","get","200"),
         ("/v1/memories/{subject_id}","get","200"),("/v1/search","post","200")
     ]:
         response=document["paths"][path][method]["responses"][success]

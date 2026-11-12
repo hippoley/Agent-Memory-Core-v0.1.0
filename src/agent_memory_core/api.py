@@ -258,6 +258,38 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=422,detail=str(exc))
 
     @app.get(
+        "/v1/memories", tags=["Memory"], summary="Browse tenant claims",
+        response_model=MemoryReadResponse,
+        response_model_exclude_none=True,
+        description=(
+            "Newest-first browse of canonical claims for the authenticated tenant. "
+            "include_superseded=true keeps replaced and forgotten claims so the audit "
+            "trail is visible; known_at answers 'what did we believe then'. "
+            "Read-only: this endpoint never mutates state."
+        ),
+    )
+    def list_memories(subject_id: str | None = None, predicate: str | None = None,
+                      include_superseded: bool = False,
+                      valid_at: str | None = None, known_at: str | None = None,
+                      limit: int = 100, offset: int = 0,
+                      t: str = Depends(auth)):
+        try:
+            db = store_factory()
+            try:
+                items = db.list_claims(
+                    tenant_id=t, subject_id=subject_id, predicate=predicate,
+                    include_superseded=include_superseded,
+                    valid_at=aware_iso(valid_at), known_at=aware_iso(known_at),
+                    limit=limit, offset=offset,
+                )
+            finally:
+                db.close()
+            return {"contract_version": CONTRACT_VERSION, "items": items,
+                    "count": len(items), "limit": limit, "offset": offset}
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get(
         "/v1/memories/{subject_id}", tags=["Memory"], summary="Recall claims for a subject",
         response_model=MemoryReadResponse,
         response_model_exclude_none=True,

@@ -4,6 +4,7 @@ Vector search uses caller-supplied embeddings. AGE projection is opt-in with
 MEMORY_ENABLE_AGE=1. This module does not start Temporal or an embedding model.
 """
 import os
+import json
 
 from .api import create_app
 from .objects import ObjectStore, S3ObjectStore
@@ -30,6 +31,16 @@ def search_factory():
     from .hybrid import HybridMemorySearch
 
     db = secure_store_factory() if rls_mode() else PostgresMemory(os.environ["MEMORY_DSN"])
+    weights = None
+    raw_weights = os.getenv("MEMORY_CHANNEL_WEIGHTS")
+    if raw_weights:
+        try:
+            parsed = json.loads(raw_weights)
+            if not isinstance(parsed, dict):
+                raise ValueError("weights must be a JSON object")
+            weights = {str(k): float(v) for k, v in parsed.items()}
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(f"MEMORY_CHANNEL_WEIGHTS must be a JSON object of numbers: {exc}")
     graph = None
     if os.getenv("MEMORY_ENABLE_AGE", "0") == "1" and not rls_mode():
         from .age_graph import AgeProjection
@@ -43,7 +54,7 @@ def search_factory():
                 def neighbors(self, **kwargs):
                     raise RuntimeError("Apache AGE graph adapter is unavailable")
             graph = UnavailableGraph()
-    return HybridMemorySearch(db, graph=graph)
+    return HybridMemorySearch(db, graph=graph, channel_weights=weights)
 
 
 def object_store_factory():

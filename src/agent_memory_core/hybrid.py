@@ -77,10 +77,22 @@ class SearchReport:
     channels_used: tuple[str, ...]
     degraded_channels: dict[str, str]
 
+_DEFAULT_CHANNEL_WEIGHTS = {"vector": 1.0, "sql": 0.8, "fts": 0.4, "graph": 0.6}
+
+
 class HybridMemorySearch:
-    def __init__(self, store, graph=None):
+    def __init__(self, store, graph=None, *, channel_weights: dict | None = None):
         self.store = store
         self.graph = graph
+        # Channels are not equally trustworthy. Exact-match lexical hits are
+        # precise; dense vectors find paraphrases but rank noisy neighbours
+        # high; the simple-dictionary FTS is the weakest signal. Equal-weight
+        # RRF let the noisiest channel crowd out correct hits, so every channel
+        # contributes weight/(k+rank) instead.
+        self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)
+        if channel_weights:
+            self.channel_weights.update(
+                {str(k): float(v) for k, v in channel_weights.items()})
 
     def close(self) -> None:
         close = getattr(self.store, "close", None)
@@ -184,7 +196,8 @@ class HybridMemorySearch:
             valid_from = row[5] if len(row) > 5 else None
             recorded_at = row[6] if len(row) > 6 else None
             channels=ranked[mid]
-            score=sum(1/(k+rank) for _,rank in channels)
+            score=sum(self.channel_weights.get(channel, 0.5) / (k + rank)
+                      for channel, rank in channels)
             results.append(MemoryHit(mid,subject,pred,value,source,score,
                                      tuple(sorted({channel for channel,_ in channels})),
                                      valid_from,recorded_at))

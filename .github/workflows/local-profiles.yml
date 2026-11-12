@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [lite, standard]
+        profile: [lite, standard, full]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

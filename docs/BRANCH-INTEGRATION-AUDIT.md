@@ -4,6 +4,8 @@ Audit scope: repository `hippoley/Agent-Memory-Core-v0.1.0` only.
 Baseline at the time of consolidation: `main` at `10cc9ba6b575a3a7e76299c31d7abe82e7badad7`.
 Re-verified on 2026-11-12 against `main` at `3d5415cf62300e36e21890b8ead0b25b9caf1b36`;
 that re-verification is reproducible, see "Re-verification" below.
+Last synced with the remote on 2026-11-12 against `main` at
+`ff13dc4` — local and `origin/main` point at the same commit.
 The goal is a complete, coherent main branch, not a zero-branch count. Original
 branches and PRs are retained for provenance; no force-push or branch deletion
 is part of this consolidation.
@@ -32,6 +34,8 @@ Git trees and code, not by merging branch names blindly.
 | `feat/complete-memory-api-v1` | Not merged. Its object registry uses the old `sha256/size_bytes` schema and non-autocommit connection behavior; current main has the later `object_sha256/byte_size` schema, autocommit transaction discipline and richer APIs. |
 | PR #1 / `feat/reliable-projection-engine` | Not merged wholesale. Its `client.py`, `fts.py`, `projection_jobs.py` and `vector_projection.py` use an older client/projection schema. Current main uses `sdk.py`, `projections.py`, `memory_claim_search` and channel-specific projection deliveries. Useful SDK documentation and a smoke corpus are rewritten for current interfaces; stale duplicate modules are not copied. |
 | PR #2 / `fix/memory-association-cardinality-20261110` | Not merged wholesale. Its cardinality model is ported into current relation-aware processing and PostgreSQL transaction code. Its old `embedding_projection.py` worker handler is superseded by `PostgresProjectionHandlers.vector`; the useful offline local model loader and 100-Agent benchmark are ported. |
+| `integrate/main-unique-features-and-cardinality` | Superseded. Its five commits are an earlier consolidation attempt; every path it added already exists on `main`, and current `main` carries the later predicate-policy endpoints and extractor-neutrality work that the branch predates. |
+| `docs/correct-branch-inventory-audit` | Superseded. It only edited this document, with counts that the dashboard/browse work and the subsequent cleanup made stale; this file is the newer version. |
 
 ## Ported into the current architecture
 
@@ -80,9 +84,9 @@ paths the branch *added*, and reports those absent at the same path on `main`
 (`DRIFT`). `DRIFT` is a question, not a verdict — the capability may live on
 `main` under another name — so each one is resolved below by reading code.
 
-Result at `main @ 3d5415c` (18 refs including `main`; 15 branches audited):
+Result at `main @ ff13dc4` (18 refs including `main`; 17 branches audited):
 
-- **12 branches `COVERED`** — every path they added exists on `main`.
+- **14 branches `COVERED`** — every path they added exists on `main`.
 - **3 branches `DRIFT`**, 15 paths total (below). No drift path is a missing
   capability; each is a stale duplicate superseded by a current implementation.
 
@@ -100,7 +104,7 @@ Two corrections to earlier reporting, recorded so the numbers are not repeated:
 
 - The latest `main` is **not** `ecae810`; that was the tip before the dashboard,
   browse/policy endpoints and extractor-neutrality work landed. Current tip is
-  `3d5415c`.
+  `ff13dc4`.
 - The smoke corpus is **12 cases**, not 14 (`benchmarks/README.md` was already
   right; item 8 above was wrong and is fixed).
 

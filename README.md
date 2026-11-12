@@ -45,35 +45,31 @@ This is an illustrative bitemporal scenario, not an assertion that the system au
 | **Small operational footprint by design** | Local object storage, optional model integration and Temporal; no required Redis/Kafka/Neo4j fleet | [Lightweight architecture](docs/ADR-0004-lightweight-memory-platform.md) |
 | **Bring your own agent** | Authenticated REST, Python SDK, OpenAPI and event subscriptions, independent of a single agent framework | [API reference](docs/API-REFERENCE.md) |
 
-## Architecture, without the service sprawl
+## Architecture: one authority, clear boundaries
 
-![Agent Memory Core reference architecture](docs/assets/architecture.svg)
+The design makes one deliberate choice: **the database decides what is recorded; indexes only help find it**. Keeping this distinction visible is more important than decorating the diagram with technology logos.
 
-```text
-                    Agent / SDK / Browser
-                            │
-                  FastAPI / OpenAPI
-                            │
-            Structured processing + policies
-                            │
-           ┌────────────────┴───────────────┐
-           │ PostgreSQL — canonical record  │
-           │ claims · versions · evidence   │
-           │ observed time · outbox events  │
-           └────────────────┬───────────────┘
-                            │ derived / optional
-                ┌───────────┼───────────────┐
-               FTS       pgvector       Apache AGE
-           lexical       semantic        relations
-                └───────────┼───────────────┘
-                         trust gate
-                            │
-               Evidence-bearing retrieval
-```
+### 01 / Runtime topology — what actually runs where
 
-There is **one authoritative record**, not three competing databases. Similarity scores and graph edges discover candidates; canonical tenant/time/provenance checks decide which ones are eligible to be returned.
+![Architecture with API, processing, canonical PostgreSQL, in-database FTS/pgvector/AGE and optional adapters](docs/assets/architecture.svg)
 
-Evidence bytes live in a local SHA-256-addressed store by default, with optional S3 adapter. Temporal remains a separate opt-in workflow integration, not a required part of every memory operation.
+The Console and third-party Agents are both clients of the FastAPI boundary. Processing, revision and provenance are logical application responsibilities; they do **not** require separate microservices. **PostgreSQL + pgvector + Apache AGE are one compatible database installation**, not three independent data servers.
+
+Outside that database: evidence bytes use a local SHA-256 object store by default; extraction/embedding providers, projection workers and Temporal workflows are optional adapters. A configured provider or feature flag does not prove that every channel is available on a particular deployment.
+
+### 02 / Data lifecycle — why the boundaries exist
+
+![Fact write, correction, asynchronous projections and canonical-filtered recall](docs/assets/memory-lifecycle.svg)
+
+1. **Propose:** an Agent supplies structured candidate facts or calls an explicitly configured model/rules extractor.
+2. **Decide:** the deterministic pipeline validates candidates, resolves trusted predicate cardinality, deduplicates or creates a versioned correction.
+3. **Commit:** PostgreSQL persists canonical claims, source links, record times and transactional outbox. **This is the persistence boundary.**
+4. **Project:** optional workers index FTS, vectors and graph edges; these views may lag or degrade independently.
+5. **Recall:** SQL/FTS/vector/graph generate candidates, then the hybrid path reapplies **tenant, effective-time, recorded-time and supersession filters** before returning eligible results. `source_id` is returned; `/v1/memories/{memory_id}/sources` exposes supporting provenance.
+
+**What this does not yet guarantee:** universal per-claim authorization, independent verification that sources are truthful, automatic correct natural-language contradiction handling or a completed production security audit. In RLS mode, the current server deliberately disables the AGE graph adapter rather than assuming graph queries are secure by default.
+
+For the design invariants, precise code mapping and unresolved risks, see the [architecture review](docs/ARCHITECTURE-REVIEW.md) and [architecture deep dive](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md).
 
 ## Try it on your machine
 
@@ -143,7 +139,7 @@ The best issues here are concrete failures of memory **correctness**, not new fe
 | [Interactive Memory Atlas](docs/demo/index.html) | [Architecture deep dive · 中文](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) | [Python SDK](docs/PYTHON-SDK.md) |
 | [中文快速导览](docs/START-HERE.zh-CN.md) | [Memory processing semantics](docs/MEMORY-PROCESSING.md) | [API reference](docs/API-REFERENCE.md) |
 | [What is actually implemented?](docs/CAPABILITY-ACCEPTANCE-AUDIT.md) | [Lightweight architecture ADR](docs/ADR-0004-lightweight-memory-platform.md) | [Release acceptance gates](docs/USER-STORY-ACCEPTANCE.md) |
-| [Public demo deployment](docs/PUBLIC-DEMO-DEPLOYMENT.md) | [Design decisions](docs/ADR-0002-postgres-triple-store.md) | [Full engineering reference](docs/REFERENCE-README.md) |
+| [Public demo deployment](docs/PUBLIC-DEMO-DEPLOYMENT.md) | [Architecture review / correctness risks](docs/ARCHITECTURE-REVIEW.md) | [Full engineering reference](docs/REFERENCE-README.md) |
 
 ---
 

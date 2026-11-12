@@ -9,15 +9,19 @@ observation streams and workflow execution.
 > facade have real integration-test paths. This is not yet a hardened public
 > multi-tenant SaaS service.
 
-## Interactive demo and product tour
+## Explore the memory system
+
+**An interactive, engineering-led tour — not a fake live database demo.**
 
 ![Agent Memory Core system architecture](docs/assets/architecture.svg)
 
-**New: [Memory Atlas — interactive synthetic-data demo](docs/demo/index.html).** Open `docs/demo/index.html` in a browser to explore a presentation-ready memory relationship view, inspect provenance/version metadata, and add temporary browser-only facts. This demo is intentionally not connected to real user records.
+The [Memory Atlas interactive walkthrough](docs/demo/index.html) explains the complete memory lifecycle: source envelope → structured extraction → canonical transaction → bitemporal correction → asynchronous projections → evidence-filtered recall. Click each stage to inspect example payloads, system responsibilities, and failure boundaries. The retrieval section compares SQL, full-text, pgvector and Apache AGE.
 
-For a public browser URL, enable **GitHub Pages** from `main /docs` after merging this change. The *expected*, not-yet-verified URL will be [Memory Atlas](https://hippoley.github.io/Agent-Memory-Core-v0.1.0/demo/). See [public demo and secure console deployment](docs/PUBLIC-DEMO-DEPLOYMENT.md) before enabling public access.
+**Start with the principles:** [Architecture Deep Dive (中文)](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) contains write/retrieval sequence diagrams, correctness boundaries, bitemporal semantics, outbox/webhook reliability and acceptance gates. See also [User Story Acceptance](docs/USER-STORY-ACCEPTANCE.md) for what has *not* yet been independently qualified.
 
-The real API-backed console is already served at `/dashboard/`; Swagger UI is at `/docs/swagger`, offline API manual at `/docs`, and machine-readable OpenAPI at `/openapi.json`. These are **relative to a running API server**, not currently verified public links. The browser console does not change the single-tenant security boundary.
+The actual API-backed console remains at `/dashboard/`; Swagger UI is `/docs/swagger`, local API manual `/docs`, and OpenAPI `/openapi.json` **on a running server**. The public static walkthrough uses simulated payloads only and never collects credentials.
+
+Publishing the interactive walkthrough to GitHub Pages requires merging the changes and explicitly enabling Pages from `main /docs`. The expected URL `https://hippoley.github.io/Agent-Memory-Core-v0.1.0/demo/` is not a confirmed live endpoint. [Deployment and security guide](docs/PUBLIC-DEMO-DEPLOYMENT.md).
 
 ## Architecture
 

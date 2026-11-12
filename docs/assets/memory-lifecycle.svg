@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="700" viewBox="0 0 1320 700" role="img" aria-labelledby="t d">
+<title id="t">Agent Memory Core memory lifecycle — write, revision, projection and recall</title><desc id="d">Three horizontal lanes show synchronous source/candidate canonical transaction, optional asynchronous derived projections, and search with canonical revalidation. A correction marks the prior version superseded while retaining time and evidence metadata.</desc>
+<defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#0e1b2d"/><stop offset="1" stop-color="#101e24"/></linearGradient><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1L7 4L1 7" stroke="#91e7c6" stroke-width="1.5" fill="none"/></marker><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1L7 4L1 7" stroke="#8bb3d2" stroke-width="1.5" fill="none"/></marker></defs>
+<rect width="1320" height="700" rx="22" fill="url(#g)"/>
+<g font-family="Arial,Helvetica,sans-serif">
+<text x="47" y="52" fill="#f3f7fb" font-weight="700" font-size="26">02  /  THE LIFECYCLE OF A BELIEF</text>
+<text x="47" y="79" fill="#94a9bc" font-size="14">A fact may change. Its receipt and historical state remain queryable.</text>
+<text x="47" y="133" fill="#96e8cd" font-size="12" letter-spacing="2">A / SYNCHRONOUS WRITE &amp; REVISION</text>
+<g fill="#172a3c" stroke="#4d6b85"><rect x="48" y="151" width="223" height="116" rx="12"/><rect x="319" y="151" width="223" height="116" rx="12"/><rect x="590" y="151" width="223" height="116" rx="12"/></g>
+<rect x="861" y="151" width="412" height="116" rx="12" fill="#183b37" stroke="#7cdfb8" stroke-width="1.8"/>
+<g fill="#ebf4f9" font-size="18"><text x="69" y="191">Source envelope</text><text x="339" y="191">Structured candidate</text><text x="610" y="191">Policy &amp; decision</text><text x="882" y="191" font-weight="700">Canonical DB commit</text></g>
+<g fill="#a7c0d1" font-size="12"><text x="69" y="220">Identity + provenance</text><text x="69" y="240">Idempotency context</text><text x="339" y="220">Model / rules / supplied</text><text x="339" y="240">Schema + confidence</text><text x="610" y="220">One vs many · dedup</text><text x="610" y="240">Correct / reject / merge</text><text x="882" y="220">Claim + sources + recorded time</text><text x="882" y="240">Supersession + durable outbox</text></g>
+<path d="M271 209H313M542 209H584M813 209H855" stroke="#91e7c6" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<text x="47" y="318" fill="#96e8cd" font-size="12" letter-spacing="2">B / ASYNCHRONOUS OR OPTIONAL PROJECTIONS</text>
+<rect x="48" y="336" width="1225" height="121" rx="12" fill="#121f30" stroke="#395775"/>
+<rect x="74" y="359" width="256" height="76" rx="9" fill="#23354b" stroke="#5b7da1"/>
+<text x="94" y="387" font-size="16" fill="#ecf5fa">Transactional outbox</text><text x="94" y="412" font-size="12" fill="#b1c3d4">durable delivery / retry</text>
+<path d="M331 398H388" stroke="#8bb3d2" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#b)"/>
+<rect x="399" y="359" width="255" height="76" rx="9" fill="#203249" stroke="#537da5"/><text x="419" y="389" fill="#eff6fc" font-size="17">FTS / SQL search</text><text x="419" y="412" fill="#a5bed0" font-size="12">derived lexical candidates</text>
+<rect x="681" y="359" width="255" height="76" rx="9" fill="#272b46" stroke="#7574ad"/><text x="701" y="389" fill="#eff6fc" font-size="17">pgvector</text><text x="701" y="412" fill="#bbc2dc" font-size="12">needs compatible embeddings</text>
+<rect x="963" y="359" width="281" height="76" rx="9" fill="#282a44" stroke="#7e79b6"/><text x="983" y="389" fill="#eff6fc" font-size="17">Apache AGE</text><text x="983" y="412" fill="#bbc2dc" font-size="12">graph projection / bounded hops</text>
+<path d="M1078 269V315H201V331" fill="none" stroke="#8bb3d2" stroke-dasharray="6 6" stroke-width="1.8" marker-end="url(#b)"/>
+<text x="47" y="510" fill="#96e8cd" font-size="12" letter-spacing="2">C / RETRIEVAL &amp; HISTORICAL READS</text>
+<rect x="48" y="532" width="251" height="94" rx="11" fill="#192d40" stroke="#50708f"/><text x="69" y="568" fill="#f1f6fb" font-size="17">Query + time</text><text x="69" y="593" fill="#a5bcd0" font-size="12">valid_at / known_at</text>
+<rect x="346" y="532" width="251" height="94" rx="11" fill="#192d40" stroke="#50708f"/><text x="367" y="568" fill="#f1f6fb" font-size="17">Merge candidates</text><text x="367" y="593" fill="#a5bcd0" font-size="12">SQL / FTS / vector / graph</text>
+<rect x="644" y="532" width="282" height="94" rx="11" fill="#1a3b38" stroke="#76d9b3"/><text x="665" y="568" fill="#f1fdf6" font-size="17">Canonical recheck</text><text x="665" y="593" fill="#b4dccf" font-size="12">tenant · time · supersession</text>
+<rect x="973" y="532" width="300" height="94" rx="11" fill="#1c3242" stroke="#527a92"/><text x="995" y="568" fill="#f1f6fb" font-size="17">Eligible recall results</text><text x="995" y="593" fill="#a5c0d0" font-size="12">source_id; inspect sources API</text>
+<path d="M299 581H340M597 581H638M926 581H967" stroke="#91e7c6" stroke-width="2" marker-end="url(#a)"/>
+<text x="47" y="666" fill="#88a1b3" font-size="12">Solid arrows = request / canonical decision. Dashed arrows = event-driven projection; successful commit does not wait for embedding or graph availability.</text>
+</g></svg>

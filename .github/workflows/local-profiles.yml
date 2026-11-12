@@ -1,0 +1,85 @@
+name: local-profile-acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'compose.app.yaml'
+      - 'compose.worker.yaml'
+      - 'docker/Dockerfile.api'
+      - 'scripts/launch_local.py'
+      - 'scripts/benchmark_resources.py'
+      - 'src/agent_memory_core/local_entrypoint.py'
+      - 'tests/test_local_profiles.py'
+      - '.github/workflows/local-profiles.yml'
+  push:
+    paths:
+      - 'compose.app.yaml'
+      - 'compose.worker.yaml'
+      - 'docker/Dockerfile.api'
+      - 'scripts/launch_local.py'
+      - 'scripts/benchmark_resources.py'
+      - 'src/agent_memory_core/local_entrypoint.py'
+      - '.github/workflows/local-profiles.yml'
+jobs:
+  local-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [lite, standard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Start local stack
+        run: python scripts/launch_local.py up --profile ${{ matrix.profile }}
+      - name: Exercise authenticated memory cycle and Swagger
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          from datetime import datetime,timezone
+          from uuid import uuid4
+          env=dict(line.split('=',1) for line in Path('.env.local').read_text().splitlines() if '=' in line and not line.startswith('#'))
+          base='http://127.0.0.1:8765'
+          for path in ['/v1/health','/openapi.json','/dashboard/','/docs','/docs/swagger']:
+              with urlopen(base+path,timeout=10) as response:
+                  assert response.status==200,path
+          try:
+              urlopen(base+'/v1/memories',timeout=10)
+              raise AssertionError('Unauthorized read succeeded')
+          except HTTPError as e:
+              assert e.code in (401,403), e.code
+          subject='profile-smoke-'+uuid4().hex
+          payload=json.dumps({'subject_id':subject,'predicate':'smoke','value':{'ok':True},
+                              'source_id':'ci:profile','valid_from':datetime.now(timezone.utc).isoformat()}).encode()
+          headers={'Authorization':'Bearer '+env['MEMORY_API_KEY']}
+          req=Request(base+'/v1/memories',data=payload,headers={**headers,'Content-Type':'application/json'},method='POST')
+          with urlopen(req,timeout=15) as response:
+              created=json.load(response)
+          req=Request(base+'/v1/memories/'+subject,headers=headers)
+          with urlopen(req,timeout=15) as response:
+              recalled=json.load(response)
+          assert any(x.get('id')==created.get('id') for x in recalled['items']),recalled
+          print('smoke success: fact committed and recalled')
+          PY
+      - name: Capture real local resource metrics
+        run: python scripts/benchmark_resources.py --requests 25 --concurrency 2 --output benchmark-results/${{ matrix.profile }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-profile-${{ matrix.profile }}-resources
+          path: benchmark-results/*.json
+          if-no-files-found: ignore
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml ps
+          docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml logs --tail 80
+      - name: Shutdown
+        if: always()
+        run: python scripts/launch_local.py down

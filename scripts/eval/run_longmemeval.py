@@ -50,14 +50,23 @@ DATA = ROOT / "data" / "eval" / "longmemeval_oracle.json"
 ANSWER_INSTRUCTION = (
     "You answer questions about a user from the facts they told you earlier. "
     "Each fact is one remembered record: subject | predicate = value, with the "
-    "date it was learned. Records come newest first; when two records disagree "
-    "about the same thing, the newest one is what the user currently holds. "
-    "Answer in one short sentence with the concrete value, no preamble. When the "
-    "question asks how many, silently list every matching record first, then "
-    "answer with the total or the summed quantity (sum durations and counts; do "
-    "not just count records when each record carries a number). Only if no "
-    "record mentions anything relevant, reply exactly: "
-    "Not in memory.")
+    "date it was learned in brackets. Records come newest first; when two "
+    "records disagree about the same thing, the newest one is what the user "
+    "currently holds. "
+    "Read every record carefully before answering: the answer is often stored "
+    "under a predicate worded differently from the question. Reply 'Not in "
+    "memory' ONLY if no record is even loosely relevant; if anything is related, "
+    "use it. "
+    "Answer in one short sentence with the concrete value, no preamble. "
+    "When the question asks how many: several records may describe the same "
+    "real-world item in different wording, so first silently list the DISTINCT "
+    "items, then answer with the total of distinct items or the summed quantity "
+    "(sum durations and counts; do not just count records). "
+    "When the question asks which came first: the bracketed date is when the "
+    "record was learned; a date or timeframe inside the value is when the event "
+    "actually happened — compare the event dates, not the learning dates. "
+    "If two answers still seem equally possible, prefer the one whose record "
+    "most directly matches the question's wording.")
 
 JUDGE_INSTRUCTION = (
     "You grade an answer against a reference answer. "
@@ -258,7 +267,9 @@ def answer(llm: Llm, item: dict, claims: list[dict]) -> str:
     prompt = (f"Memory records:\n{render_claims(claims)}\n\n"
               f"Question: {item['question']}\n"
               f"Answer:")
-    return llm.chat(ANSWER_INSTRUCTION, prompt, max_tokens=200)
+    # Listing distinct items before answering needs room; 200 tokens truncated
+    # counting questions mid-list and produced bare guesses.
+    return llm.chat(ANSWER_INSTRUCTION, prompt, max_tokens=500)
 
 
 def judge(llm: Llm, item: dict, model_answer: str) -> dict:

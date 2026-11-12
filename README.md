@@ -59,6 +59,26 @@ See [API Reference](docs/API-REFERENCE.md) for complete request/response
 examples and deployment settings. See [Capability Acceptance Audit](docs/CAPABILITY-ACCEPTANCE-AUDIT.md)
 for implementation, test and production-readiness boundaries.
 
+## Lightweight one-command local runtime
+
+Start an **isolated local development** environment (PostgreSQL + auto-migrated API + Console + Swagger) with Python 3.10+ and Docker Compose v2:
+
+```bash
+python scripts/launch_local.py up --profile lite
+```
+
+Then open [Console](http://127.0.0.1:8765/dashboard/) or [Swagger](http://127.0.0.1:8765/docs/swagger). The launcher stores a random bearer key in ignored `.env.local` (never put it in a public URL or screenshot).
+
+Choose `--profile standard` to enable pgvector / AGE channels, or `--profile full` for the additional projection worker. These modes do **not** include a model server or Temporal server; Lite still uses the combined PostgreSQL image with pgvector binaries installed. All published ports bind to loopback.
+
+To collect **real measurements**, not estimates:
+
+```bash
+python scripts/benchmark_resources.py --requests 200 --concurrency 4
+```
+
+The report includes Docker CPU/memory snapshots, DB/object volume usage and authenticated memory-browse P50/P95/P99. For detailed capability matrix, security caveats and acceptance gates, see [Lightweight Runtime](docs/LIGHTWEIGHT-RUNTIME.md). Performance on target hardware remains **unverified** until the actual measurement run.
+
 ## Quick start
 
 Requirements: Docker Compose and Python 3.10+.

@@ -810,11 +810,17 @@ function toast(msg, err){
 }
 
 async function api(path, options = {}){
+  if (!state.key) throw Object.assign(new Error("尚未填写凭据"), { status: 401 });
   const res = await fetch(path, {
     ...options,
     headers: { "Authorization": "Bearer " + state.key, "Content-Type": "application/json", ...(options.headers || {}) },
   });
-  if (res.status === 401 || res.status === 403) throw Object.assign(new Error("凭据无效"), { status: res.status });
+  if (res.status === 401 || res.status === 403) {
+    // A pasted key can carry zero-width marks, NBSP or a newline from chat
+    // and terminals; surface the length so the mismatch is obvious.
+    const n = state.key.length;
+    throw Object.assign(new Error("凭据无效（收到了 " + n + " 位字符，正常的 key 是 64 位）"), { status: res.status });
+  }
   const text = await res.text();
   let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!res.ok) {
@@ -826,17 +832,26 @@ async function api(path, options = {}){
 }
 
 /* ---------------- boot / auth ---------------- */
+// Keys are printable ASCII. Anything else (zero-width space, NBSP, smart
+// quotes, a wrapped line) is a copy artefact and is stripped instead of
+// letting the request fail with an opaque 401.
+function normalizeKey(raw){
+  return String(raw || "")
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "")
+    .replace(/[^\x21-\x7E]/g, "")
+    .trim();
+}
 function boot(){
   // Deep links: #key=<bearer> hands a demo link a credential without a query
   // string; #view=search&q=… and #claim=<uuid> open a view or a single fact.
   const params = new URLSearchParams((location.hash || "").replace(/^#/, ""));
-  const fromHash = (params.get("key") || "").trim();
+  const fromHash = normalizeKey(params.get("key"));
   if (fromHash) {
     localStorage.setItem("amc.key", fromHash);
     history.replaceState(null, "", location.pathname);
   }
   state.deepLink = { view: params.get("view"), q: params.get("q"), claim: params.get("claim") };
-  state.key = localStorage.getItem("amc.key") || "";
+  state.key = normalizeKey(localStorage.getItem("amc.key") || "");
   $("#today").textContent = new Date().toLocaleDateString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit" });
   if (!state.key) { $("#gate").classList.add("show"); return; }
   connect();
@@ -856,7 +871,7 @@ async function connect(){
   }
 }
 $("#gateGo").onclick = async () => {
-  const v = $("#gateKey").value.trim(); if (!v) return;
+  const v = normalizeKey($("#gateKey").value); if (!v) return;
   state.key = v; localStorage.setItem("amc.key", v);
   $("#gateMsg").textContent = "连接中…"; $("#gateMsg").className = "";
   await connect();

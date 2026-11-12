@@ -79,3 +79,26 @@ The Lite profile in PR #17 switches retrieval capabilities off while keeping the
 **Reasonable for a focused research / on-device product:** yes, provided the project remains about *revisioned, provenance-bearing facts*, not a generic automated epistemic reasoning engine. The biggest risk is not PostgreSQL: it is the gap between the ambitious product words “trust” and “belief” and what can actually be measured and enforced at API, model and tenant boundaries.
 
 The next differentiated result should therefore be a **paired vector-only versus canonical-revision evaluation** under real corrections, supplemented by the small-host profile measurements. A polished diagram without these receipts would be marketing, not proof.
+
+
+## Component necessity — do we really need each one?
+
+| Component | Keep / defer / conditional | Why this is the right boundary now | When to reconsider |
+|---|---|---|---|
+| PostgreSQL canonical facts | **Keep; mandatory** | ACID revision, SQL predicates, history and outbox all share one transaction boundary | Only after independent evidence that a different store improves correctness/operations |
+| PostgreSQL FTS | **Keep, but qualify** | Cheap literal candidate path inside the same database | Chinese retrieval quality must be benchmarked; 'simple' configuration is not segmentation |
+| pgvector | **Conditional, usually standard** | Semantics can complement exact SQL when an embedding profile exists | If model latency/cost or corpus size makes exact search sufficient, Lite can disable this channel |
+| Apache AGE | **Conditional, never a truth source** | Relationship traversal may help room-device-context use cases | Require graph-vs-SQL adjacency ablation, rebuild tests and RLS-compatible security before claiming it is essential |
+| Separate graph database | **Do not add now** | Would duplicate state/operations and introduce distributed consistency work | Only after measured graph workload dominates and AGE/SQL are inadequate |
+| PostgreSQL Outbox | **Keep** | Aligns event durability with the canonical transaction | Consider an external broker only when fan-out, throughput or multi-node delivery is demonstrated to require it |
+| Temporal | **Optional, narrow use cases** | Needed for durable waiting, retries and long-lived execution; not ordinary memory queries | Add only when a real product workflow needs those semantics |
+| S3 / MinIO | **Optional** | Local content-addressed object storage serves a single-node profile | Multi-host access, replicated durability, lifecycle and disaster recovery justify it |
+| Mandatory LLM process | **Do not add** | Structured writes and deterministic processing must work without a model | Offer optional local/remote inference adapters for text extraction and embeddings |
+
+### A tempting but incorrect optimization
+
+Removing AGE and pgvector from **runtime calls** does not automatically remove their installed extensions or schema footprint. True resource-minimum profiling may require distinct migration schemes and a separately tested PostgreSQL image. Until those exist, the precise claim is **reduced service count / optional query channels**.
+
+### A tempting but incorrect feature promise
+
+Calling our output a *belief* is a deliberate product metaphor. It must **not** imply probabilistic Bayesian belief updates, world-state verification, autonomous cross-source truth adjudication, or safe automatic execution of physical actions. At present it is a **versioned structured claim with provenance and explicit validity semantics**. Anything more requires a separately specified algorithm and evaluation.

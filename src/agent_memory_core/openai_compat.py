@@ -14,11 +14,24 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
 from .fact_contract import EXTRACTOR_INSTRUCTION, untrusted_user_payload, validate_fact_candidates
+
+
+def _load_facts(content: str):
+    """Read the facts array, tolerating a code fence or a sentence of preamble."""
+    try:
+        return json.loads(content)["facts"]
+    except (ValueError, TypeError, KeyError):
+        pass
+    match = re.search(r"\{.*\}", content, re.S)
+    if not match:
+        raise ValueError("no JSON object in extractor reply")
+    return json.loads(match.group(0))["facts"]
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -50,12 +63,47 @@ class OpenAICompatFactExtractor:
     def __call__(self, text: str) -> list[dict]:
         if not isinstance(text, str) or not text.strip() or len(text) > 100000:
             raise ValueError("Nonempty text up to 100000 characters required")
+        messages = [
+            {"role": "system", "content": EXTRACTOR_INSTRUCTION},
+            {"role": "user", "content": untrusted_user_payload(text)},
+        ]
+        # One corrective retry. Small models drift two ways: prose or a code
+        # fence around the JSON, and a bare string where an object is required.
+        # Re-asking with the exact violation costs one extra call only on
+        # malformed output; validation itself is never loosened.
+        failure = "invalid JSON contract"
+        for attempt in range(2):
+            content = self._post(messages)
+            try:
+                facts = _load_facts(content)
+            except (ValueError, TypeError, KeyError, IndexError):
+                failure = "invalid JSON contract"
+                problem = "the reply was not a JSON object with a 'facts' array"
+            else:
+                try:
+                    return validate_fact_candidates(facts)
+                except RuntimeError as exc:
+                    failure = "schema"
+                    problem = str(exc)
+            if attempt:
+                break
+            messages = messages + [
+                {"role": "assistant", "content": content[:4000]},
+                {"role": "user", "content":
+                    f"That reply was rejected ({problem}). "
+                    "Return JSON only, with no prose and no code fence, exactly "
+                    "{\"facts\": [...]}. Every fact needs subject_name or "
+                    "subject_id, a lowercase snake_case predicate, and value as "
+                    "a JSON object, not a string."},
+            ]
+        if failure == "schema":
+            raise RuntimeError("Extractor returned candidate outside the memory fact schema")
+        raise RuntimeError("Extractor returned invalid JSON contract")
+
+    def _post(self, messages: list[dict]) -> str:
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": EXTRACTOR_INSTRUCTION},
-                {"role": "user", "content": untrusted_user_payload(text)},
-            ],
+            "messages": messages,
             "temperature": 0,
         }
         if self.json_mode:
@@ -75,11 +123,9 @@ class OpenAICompatFactExtractor:
             raise RuntimeError("Extractor response exceeds 1 MiB")
         try:
             outer = json.loads(raw)
-            content = outer["choices"][0]["message"]["content"]
-            facts = json.loads(content)["facts"]
+            return outer["choices"][0]["message"]["content"]
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             raise RuntimeError("Extractor returned invalid JSON contract") from exc
-        return validate_fact_candidates(facts)
 
 
 class OpenAICompatEmbedder:

@@ -103,3 +103,52 @@ def test_processor_rejects_boolean_and_nonfinite_confidence():
         ])
     assert report.created==[]
     assert report.rejected==3
+
+
+def test_observed_at_backdates_the_claim_interval():
+    """Replaying a historical utterance files the claim under that instant."""
+    store = FakeStore()
+    seen = {}
+    original = store.remember
+
+    def spy(**kwargs):
+        seen.update(kwargs)
+        return original(**kwargs)
+
+    store.remember = spy
+    processor = MemoryProcessor(store)
+    observed = datetime(2023, 3, 15, 9, 30, tzinfo=timezone.utc)
+    processor.process(
+        tenant_id="tenant-1", text="I serviced my car on March 15.",
+        source_id="session:2023-03-15",
+        extractor=lambda _text: [{"subject_id": "user-1", "predicate": "car_service",
+                                  "value": {"date": "2023-03-15"}}],
+        observed_at=observed)
+    assert seen["valid_from"] == observed
+
+
+def test_subject_names_are_registered_once_and_reused():
+    """A text extractor emits names; the first sight must not be dropped."""
+    from agent_memory_core.api import _subject_resolver
+
+    class Core:
+        def __init__(self):
+            self.rows = {}
+            self.upserts = []
+
+        def resolve_entity(self, *, tenant_id, name):
+            return self.rows.get((tenant_id, name.casefold()))
+
+        def upsert_entity(self, **kwargs):
+            self.upserts.append(kwargs)
+            self.rows[(kwargs["tenant_id"], kwargs["canonical_name"].casefold())] = {
+                "entity_id": kwargs["entity_id"]}
+
+    core = Core()
+    resolve = _subject_resolver(core)
+    first = resolve("t1", "my car")
+    assert first["entity_id"].startswith("auto-")
+    assert core.upserts[0]["entity_type"] == "concept"
+    again = resolve("t1", "my car")
+    assert again["entity_id"] == first["entity_id"]
+    assert len(core.upserts) == 1

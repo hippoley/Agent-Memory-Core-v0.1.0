@@ -132,15 +132,18 @@ class MemoryProcessor:
         if callable(atomic):
             params = inspect.signature(atomic).parameters
             self._atomic_supports_merge = "merge" in params
+            self._atomic_supports_observed = "observed_at" in params
         else:
             self._atomic_supports_merge = False
+            self._atomic_supports_observed = False
 
     @staticmethod
     def _canonical(value: dict) -> str:
         return canonical_json(value)
 
     def process(self, *, tenant_id: str, text: str, source_id: str,
-                extractor: Callable[[str], object]) -> ProcessingReport:
+                extractor: Callable[[str], object],
+                observed_at=None) -> ProcessingReport:
         if not tenant_id or not text.strip() or not source_id:
             raise ValueError("tenant_id, non-empty text and source_id are required")
         report = ProcessingReport()
@@ -195,15 +198,13 @@ class MemoryProcessor:
                 canonical = self._canonical(value)
                 atomic_apply = getattr(self.store, "apply_candidate", None)
                 if callable(atomic_apply):
-                    if self._atomic_supports_merge:
-                        result = atomic_apply(
-                            tenant_id=tenant_id, subject_id=subject, predicate=predicate,
-                            value=value, source_id=source_id, confidence=float(confidence),
-                            merge=merge_requested)
-                    else:
-                        result = atomic_apply(
-                            tenant_id=tenant_id, subject_id=subject, predicate=predicate,
-                            value=value, source_id=source_id, confidence=float(confidence))
+                    extra = {"merge": merge_requested} if self._atomic_supports_merge else {}
+                    if self._atomic_supports_observed and observed_at is not None:
+                        extra["observed_at"] = observed_at
+                    result = atomic_apply(
+                        tenant_id=tenant_id, subject_id=subject, predicate=predicate,
+                        value=value, source_id=source_id, confidence=float(confidence),
+                        **extra)
                     memory_id, replaces_id, duplicate, relation = self._normalize_atomic(result)
                     if duplicate:
                         report.duplicates += 1
@@ -216,7 +217,8 @@ class MemoryProcessor:
                     memory_id, replaces_id, relation = self._apply_fallback(
                         tenant_id=tenant_id, subject=subject, predicate=predicate,
                         value=value, canonical=canonical, source_id=source_id,
-                        confidence=float(confidence), merge_requested=merge_requested)
+                        confidence=float(confidence), merge_requested=merge_requested,
+                        observed_at=observed_at)
                     if relation == RELATION_DUPLICATE:
                         report.duplicates += 1
                         report.relations.append({
@@ -256,10 +258,10 @@ class MemoryProcessor:
 
     def _apply_fallback(self, *, tenant_id: str, subject: str, predicate: str,
                         value: dict, canonical: str, source_id: str,
-                        confidence: float, merge_requested: bool):
+                        confidence: float, merge_requested: bool, observed_at=None):
         """Non-atomic stores (SQLite reference backend, test doubles)."""
         clock = getattr(self.store, "current_time", None)
-        now = clock() if callable(clock) else datetime.now(timezone.utc)
+        now = observed_at or (clock() if callable(clock) else datetime.now(timezone.utc))
         active = self.store.recall(
             tenant_id=tenant_id, subject_id=subject,
             predicate=predicate, valid_at=now, known_at=now)

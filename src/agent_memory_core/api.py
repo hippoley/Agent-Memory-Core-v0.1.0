@@ -1,11 +1,14 @@
 """Local-first REST gateway. Bind to loopback unless deployed behind a hardened gateway."""
 from __future__ import annotations
 
+import hashlib
+import hashlib
 import hmac
 import os
 import asyncio
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -19,6 +22,66 @@ from .contracts import CONTRACT_VERSION, aware_iso, capabilities
 from .api_models import (HealthResponse, ReadinessResponse, CapabilitiesResponse, MemoryWriteResponse,
                          MemoryReadResponse, SearchResponse)
 from .api_docs import SERVICE_DESCRIPTION, TAG_METADATA, install as install_api_docs
+
+
+def _subject_resolver(db):
+    """Resolve a literal subject name, registering it on first sight.
+
+    A text extractor emits a name ("my car", "the charity run"), not an entity
+    id. Silently dropping every fact about a subject nobody pre-registered made
+    free-text ingestion useless — the caller had to know the ontology before it
+    could remember anything. Names are therefore registered as generic
+    ``concept`` entities with a deterministic id, so concurrent writers collide
+    on the same row instead of creating duplicates. Explicit entities and
+    aliases still win: resolution runs first and is never overridden.
+    """
+    upsert = getattr(db, "upsert_entity", None)
+
+    def resolve(tenant_id: str, name: str):
+        found = db.resolve_entity(tenant_id=tenant_id, name=name)
+        if found is not None or not callable(upsert):
+            return found
+        cleaned = " ".join(str(name).split())[:200]
+        if not cleaned:
+            return None
+        digest = hashlib.sha256(cleaned.casefold().encode("utf-8")).hexdigest()[:8]
+        slug = re.sub(r"[^a-z0-9]+", "-", cleaned.casefold()).strip("-")[:40]
+        entity_id = f"auto-{slug}-{digest}" if slug else f"auto-{digest}"
+        upsert(tenant_id=tenant_id, entity_id=entity_id, entity_type="concept",
+               canonical_name=cleaned, aliases=[], attributes={"auto_registered": True})
+        return db.resolve_entity(tenant_id=tenant_id, name=cleaned)
+
+    return resolve
+
+
+def _subject_resolver(db):
+    """Resolve a literal subject name, registering it on first sight.
+
+    A text extractor emits a name ("my car", "the charity run"), not an entity
+    id. Silently dropping every fact about a subject nobody pre-registered made
+    free-text ingestion useless — the caller had to know the ontology before it
+    could remember anything. Names are therefore registered as generic
+    ``concept`` entities with a deterministic id, so concurrent writers collide
+    on the same row instead of creating duplicates. Explicit entities and
+    aliases still win: resolution runs first and is never overridden.
+    """
+    upsert = getattr(db, "upsert_entity", None)
+
+    def resolve(tenant_id: str, name: str):
+        found = db.resolve_entity(tenant_id=tenant_id, name=name)
+        if found is not None or not callable(upsert):
+            return found
+        cleaned = " ".join(str(name).split())[:200]
+        if not cleaned:
+            return None
+        digest = hashlib.sha256(cleaned.casefold().encode("utf-8")).hexdigest()[:8]
+        slug = re.sub(r"[^a-z0-9]+", "-", cleaned.casefold()).strip("-")[:40]
+        entity_id = f"auto-{slug}-{digest}" if slug else f"auto-{digest}"
+        upsert(tenant_id=tenant_id, entity_id=entity_id, entity_type="concept",
+               canonical_name=cleaned, aliases=[], attributes={"auto_registered": True})
+        return db.resolve_entity(tenant_id=tenant_id, name=cleaned)
+
+    return resolve
 
 
 _SWAGGER_PAGE = """<!DOCTYPE html>
@@ -130,6 +193,13 @@ class ProcessRequest(BaseModel):
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
     candidates: list[dict] | None = Field(default=None, max_length=500, description="Optional structured facts. If omitted, a server-configured local extractor must be available.")
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+    observed_at: str | None = Field(
+        default=None,
+        description=("Optional timezone-aware ISO-8601 instant at which this text was originally "
+                     "observed, for replaying historical conversations. It becomes both the "
+                     "knowledge time (recorded_at) and the effective-from time of the claims, so "
+                     "later time-travel queries see the same order the user experienced. Omit it "
+                     "for live ingestion; future instants are rejected."))
 
 
 class MemoryVerificationRequest(BaseModel):
@@ -321,9 +391,11 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         summary="List trusted predicate cardinality policies",
         description=(
             "Cardinality is tenant-scoped trusted configuration stored in "
-            "memory_predicate_policies. Unlisted predicates default to 'one', so a "
-            "room cannot hold two current temperatures unless an operator explicitly "
-            "declares that predicate multi-valued. Models and callers cannot change it."
+            "memory_predicate_policies. Unlisted predicates fall back to the "
+            "instance default (MEMORY_DEFAULT_CARDINALITY, 'one' unless the operator "
+            "chose 'many'), so a room cannot hold two current temperatures unless an "
+            "operator explicitly declares that predicate multi-valued. Models and "
+            "callers cannot change it."
         ),
     )
     def list_predicate_policies(t: str = Depends(auth)):
@@ -332,7 +404,9 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             items = db.list_predicate_policies(tenant_id=t)
         finally:
             db.close()
-        return {"tenant_id": t, "default": "one", "items": items}
+        return {"tenant_id": t,
+                "default": getattr(db, "default_cardinality", "one"),
+                "items": items}
 
     @app.put(
         "/v1/predicate-policies/{predicate}", tags=["Memory"],
@@ -843,13 +917,29 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             processor = MemoryProcessor(
                 db,
                 confidence_threshold=item.confidence_threshold,
-                entity_resolver=lambda tenant_id, name: db.resolve_entity(
-                    tenant_id=tenant_id, name=name),
+                entity_resolver=_subject_resolver(db),
                 embedder=embedder if (embedder is not None and auto_embed) else None,
             )
+            observed_at = None
+            if item.observed_at is not None:
+                try:
+                    observed_at = datetime.fromisoformat(
+                        item.observed_at.replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="observed_at must be a timezone-aware ISO-8601 timestamp") from exc
+                if observed_at.tzinfo is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="observed_at must carry a timezone offset")
+                if observed_at > datetime.now(timezone.utc):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="observed_at cannot be in the future")
             report = processor.process(
                 tenant_id=t, text=item.text, source_id=item.source_id,
-                extractor=extractor,
+                extractor=extractor, observed_at=observed_at,
             )
             return {
                 "tenant_id": t,
@@ -979,6 +1069,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                             "predicate": h.predicate, "value": h.value,
                             "source_id": h.source_id, "score": h.score,
                             "channels": list(h.channels),
+                            "valid_from": (getattr(h, "valid_from", None).isoformat()
+                                           if getattr(h, "valid_from", None) else None),
+                            "recorded_at": (getattr(h, "recorded_at", None).isoformat()
+                                            if getattr(h, "recorded_at", None) else None),
                         }
                         for h in report.hits
                     ],

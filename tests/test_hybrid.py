@@ -42,7 +42,9 @@ def test_vector_and_graph_failures_degrade_to_canonical_sql():
                 return Cursor([("claim-1",)])
             if "SELECT id::text, subject_id" in query:
                 return Cursor([("claim-1","room-1","preference",
-                                {"text":"quiet nights"},"source-1")])
+                                {"text":"quiet nights"},"source-1",
+                                "2026-01-01T00:00:00+00:00",
+                                "2026-01-01T00:00:00+00:00")])
             raise AssertionError("Unexpected SQL")
     class Store:
         conn=Conn()
@@ -62,13 +64,23 @@ def test_vector_and_graph_failures_degrade_to_canonical_sql():
 
 
 def test_lexical_channel_matches_subject_and_predicate_too():
-    # The SQL lexical channel must match the query against subject_id,
+    # The SQL lexical channel must match every term against subject_id,
     # predicate and value — searching "主卧" must recall a claim whose value
-    # never contains that wording.
+    # never contains that wording, and an English question must still recall
+    # the claim that carries its nouns.
     source=(Path(__file__).resolve().parents[1]/"src/agent_memory_core/hybrid.py").read_text()
-    assert "position(lower(%s) in lower(subject_id))" in source
-    assert "position(lower(%s) in lower(predicate))" in source
-    assert "position(lower(%s) in lower(value::text))" in source
+    assert "subject_id||' '||predicate" in source
+    assert "position(lower(%s) in lower(" in source
+    assert "CASE WHEN" in source  # multi-term scoring, not whole-string containment
+
+
+def test_terms_split_cjk_into_bigrams_and_drop_english_stopwords():
+    from agent_memory_core.hybrid import query_terms
+    assert query_terms("主卧温度")[:3] == ["主卧", "卧温", "温度"]
+    terms = query_terms("What was the first issue I had with my new car?")
+    assert "issue" in terms and "car" in terms
+    assert "what" not in terms and "the" not in terms
+    assert len(query_terms("a " * 60)) == 0
 
 
 def test_canonical_sql_failure_is_not_hidden():

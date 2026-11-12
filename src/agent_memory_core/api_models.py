@@ -73,6 +73,8 @@ class SearchHit(BaseModel):
     source_id: str
     score: float
     channels: list[str]
+    valid_from: str | None = None
+    recorded_at: str | None = None
 
 
 class SearchResponse(BaseModel):

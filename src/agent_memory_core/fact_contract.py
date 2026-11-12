@@ -17,6 +17,9 @@ EXTRACTOR_INSTRUCTION = (
     "Return JSON only, exactly an object with a 'facts' array. "
     "Each fact: subject_id (stable ID if explicitly known) OR subject_name (literal name), predicate "
     "(short snake_case), value (JSON object), confidence (0..1). "
+    "Record what the user states about themselves and their world: attributes, "
+    "possessions, counts, dates, plans, completed actions, preferences and "
+    "corrections. Keep explicit numbers, names and dates inside the value. "
     "Extract durable user preferences and factual corrections; "
     "do not invent subjects, identities, or dates. "
     "If the subject is ambiguous or nothing durable is known, return an empty facts array. "
@@ -42,6 +45,15 @@ def validate_fact_candidates(facts) -> list[dict]:
         subject_name = item.get("subject_name")
         predicate = item.get("predicate")
         value = item.get("value")
+        # A scalar or a list is a legitimate fact ("returned_to": "Zara"); the
+        # store compares and merges objects, so normalise the shape instead of
+        # dropping the fact. Nothing is invented and the shape is deterministic.
+        if isinstance(value, list) and value:
+            value = {"values": value}
+            item["value"] = value
+        elif value is not None and not isinstance(value, (dict, list)):
+            value = {"value": value}
+            item["value"] = value
         confidence = item.get("confidence", 1.0)
         if (not ((isinstance(subject, str) and subject.strip())
                  or (isinstance(subject_name, str) and subject_name.strip()))

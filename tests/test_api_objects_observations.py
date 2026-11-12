@@ -360,3 +360,18 @@ def test_memory_claim_cannot_reference_another_tenants_object(tmp_path):
     })
     assert claim.status_code==422
     assert shared_db.memories==[]
+
+
+def test_process_rejects_unusable_observed_at(tmp_path):
+    client, headers = make_client(tmp_path)
+    body = {"text": "hello", "source_id": "s-1",
+            "candidates": [{"subject_id": "room-1", "predicate": "p", "value": {"x": 1}}]}
+    naive = client.post("/v1/memories/process", headers=headers,
+                        json={**body, "observed_at": "2023-03-15T09:30:00"})
+    assert naive.status_code == 422
+    future = client.post("/v1/memories/process", headers=headers,
+                         json={**body, "observed_at": "2999-01-01T00:00:00Z"})
+    assert future.status_code == 422
+    garbage = client.post("/v1/memories/process", headers=headers,
+                          json={**body, "observed_at": "yesterday"})
+    assert garbage.status_code == 422

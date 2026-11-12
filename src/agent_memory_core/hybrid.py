@@ -5,9 +5,53 @@ their failures are surfaced in diagnostics while healthy channels continue.
 No index result bypasses canonical tenant/time revalidation.
 """
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from contextlib import nullcontext
+
+
+_STOPWORDS = frozenset("""
+a an the is are was were be been being do does did doing i me my mine you your
+yours it its of to in on at for with and or but what which who whom whose when
+where why how many much this that these those have has had if not no as from by
+about there here they them he she his her we our us can could would should will
+""".split())
+
+_CJK_RUN = re.compile(r"[\u4e00-\u9fff]+")
+_LATIN_WORD = re.compile(r"[a-z0-9_]{2,}")
+
+
+def query_terms(query: str, limit: int = 10) -> list[str]:
+    """Split a natural-language query into matchable terms.
+
+    The lexical channel used to compare the whole query as one literal
+    substring, so "主卧温度" never matched a claim about "主卧" and an English
+    question never matched anything at all. Chinese has no spaces, so CJK runs
+    are cut into overlapping bigrams — enough to recall a two-character subject
+    without shipping a segmenter. Ranking still favours claims that match more
+    terms, and the literal whole-query match remains the highest-scoring case.
+    """
+    if not isinstance(query, str):
+        return []
+    terms: list[str] = []
+    for run in _CJK_RUN.findall(query):
+        if len(run) <= 2:
+            terms.append(run)
+        else:
+            terms.extend(run[i:i + 2] for i in range(len(run) - 1))
+    terms.extend(word for word in _LATIN_WORD.findall(query.lower())
+                 if word not in _STOPWORDS)
+    seen: set[str] = set()
+    picked: list[str] = []
+    for term in terms:
+        if term in seen:
+            continue
+        seen.add(term)
+        picked.append(term)
+        if len(picked) >= limit:
+            break
+    return picked
 
 
 def _channel_transaction(store):
@@ -24,6 +68,8 @@ class MemoryHit:
     source_id: str
     score: float
     channels: tuple[str, ...]
+    valid_from: datetime | None = None
+    recorded_at: datetime | None = None
 
 @dataclass(frozen=True)
 class SearchReport:
@@ -86,25 +132,27 @@ class HybridMemorySearch:
                 degraded["fts"]=f"{type(exc).__name__}: {str(exc)[:240]}"
 
         if query and query.strip():
-            # POSITION treats the user query literally; no LIKE wildcard or
-            # ESCAPE dialect ambiguity across PostgreSQL versions. The query is
-            # matched against subject, predicate and value so that "主卧" or
-            # "temperature" recalls claims whose value alone would never
-            # contain the wording.
-            rows = self.store.conn.execute(
-                """SELECT id::text FROM memory_claims
-                   WHERE tenant_id=%s
-                     AND (position(lower(%s) in lower(subject_id)) > 0
-                          OR position(lower(%s) in lower(predicate)) > 0
-                          OR position(lower(%s) in lower(value::text)) > 0)
-                     AND recorded_at<=%s AND (superseded_at IS NULL OR superseded_at>%s)
-                     AND valid_from<=%s AND (valid_to IS NULL OR valid_to>%s)
-                   ORDER BY recorded_at DESC,id LIMIT %s""",
-                (tenant_id,query,query,query,
-                 known_at,known_at,valid_at,valid_at,min(limit*10,100)),
-            )
-            for rank,(mid,) in enumerate(rows,1):
-                ranked.setdefault(mid,[]).append(("sql",rank))
+            # POSITION treats every term literally; no LIKE wildcard or ESCAPE
+            # dialect ambiguity across PostgreSQL versions. Each term is matched
+            # against subject, predicate and value, and claims matching more
+            # terms rank first, so a full question still recalls the claim that
+            # carries its key nouns instead of nothing.
+            terms = query_terms(query)
+            if terms:
+                match = ("(position(lower(%s) in lower(subject_id||' '||predicate||' '"
+                         "||coalesce(value::text,''))) > 0)")
+                score = " + ".join(f"(CASE WHEN {match} THEN 1 ELSE 0 END)" for _ in terms)
+                sql = (
+                    "SELECT id::text FROM memory_claims\n"
+                    f"   WHERE tenant_id=%s AND ({score}) > 0\n"
+                    "     AND recorded_at<=%s AND (superseded_at IS NULL OR superseded_at>%s)\n"
+                    "     AND valid_from<=%s AND (valid_to IS NULL OR valid_to>%s)\n"
+                    f"   ORDER BY ({score}) DESC, recorded_at DESC, id LIMIT %s")
+                params = ([tenant_id] + terms + [known_at, known_at, valid_at, valid_at]
+                          + terms + [min(limit * 10, 100)])
+                rows = self.store.conn.execute(sql, params)
+                for rank, (mid,) in enumerate(rows, 1):
+                    ranked.setdefault(mid, []).append(("sql", rank))
 
         if self.graph and anchor_entity:
             try:
@@ -125,17 +173,21 @@ class HybridMemorySearch:
             return SearchReport((),(),degraded)
         mids=sorted(ranked)
         rows=self.store.conn.execute(
-            """SELECT id::text, subject_id,predicate,value,source_id
+            """SELECT id::text, subject_id,predicate,value,source_id,valid_from,recorded_at
                FROM memory_claims WHERE id=ANY(%s::uuid[]) AND tenant_id=%s
                  AND recorded_at<=%s AND (superseded_at IS NULL OR superseded_at>%s)
                  AND valid_from<=%s AND (valid_to IS NULL OR valid_to>%s)""",
             (mids,tenant_id,known_at,known_at,valid_at,valid_at))
         results=[]
-        for mid,subject,pred,value,source in rows:
+        for row in rows:
+            mid,subject,pred,value,source = row[:5]
+            valid_from = row[5] if len(row) > 5 else None
+            recorded_at = row[6] if len(row) > 6 else None
             channels=ranked[mid]
             score=sum(1/(k+rank) for _,rank in channels)
             results.append(MemoryHit(mid,subject,pred,value,source,score,
-                                     tuple(sorted({channel for channel,_ in channels}))))
+                                     tuple(sorted({channel for channel,_ in channels})),
+                                     valid_from,recorded_at))
         hits=tuple(sorted(results,key=lambda x:(-x.score,x.memory_id))[:limit])
         used=tuple(sorted({channel for hit in hits for channel in hit.channels}))
         return SearchReport(hits,used,degraded)

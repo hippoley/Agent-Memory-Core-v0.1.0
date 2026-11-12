@@ -163,3 +163,12 @@ def test_server_factory_dispatch_by_provider(monkeypatch):
     monkeypatch.delenv("MEMORY_EXTRACTOR_PROVIDER")
     monkeypatch.delenv("MEMORY_LOCAL_OLLAMA_MODEL")
     assert srv.extractor_provider() is None
+
+
+def test_scalar_values_are_normalised_not_dropped(monkeypatch):
+    from agent_memory_core.fact_contract import validate_fact_candidates
+    facts = validate_fact_candidates([
+        {"subject_name": "boots", "predicate": "returned_to", "value": "Zara"},
+        {"subject_name": "boots", "predicate": "sizes", "value": ["41", "42"]}])
+    assert facts[0]["value"] == {"value": "Zara"}
+    assert facts[1]["value"] == {"values": ["41", "42"]}

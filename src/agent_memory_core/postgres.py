@@ -21,11 +21,19 @@ class IdempotencyConflict(ValueError):
 
 
 class PostgresMemory:
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str, default_cardinality: str | None = None):
         try:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("Install the 'postgres' extra: pip install -e '.[postgres]'") from exc
+        # Domain default for predicates without an explicit policy. Home
+        # automation (one temperature per room) wants "one"; a personal memory
+        # log (many purchases, many issues) wants "many". Operators choose.
+        import os
+        configured = default_cardinality or os.getenv("MEMORY_DEFAULT_CARDINALITY") or "one"
+        if configured not in ("one", "many"):
+            raise ValueError("MEMORY_DEFAULT_CARDINALITY must be 'one' or 'many'")
+        self.default_cardinality = configured
         # Every canonical mutation explicitly uses conn.transaction().
         # Avoid implicit read transactions that could roll back nested writes.
         self.conn = psycopg.connect(dsn, autocommit=True)
@@ -79,7 +87,7 @@ class PostgresMemory:
             "SELECT cardinality FROM memory_predicate_policies "
             "WHERE tenant_id=%s AND predicate=%s",(tenant_id,predicate)
         ).fetchone()
-        return row[0] if row else "one"
+        return row[0] if row else self.default_cardinality
 
     def list_predicate_policies(self, *, tenant_id: str) -> list[dict]:
         """Trusted policy rows for one tenant; unlisted predicates default to one."""
@@ -134,7 +142,8 @@ class PostgresMemory:
 
     def remember(self, *, tenant_id: str, subject_id: str, predicate: str, value: dict,
                  source_id: str, valid_from: datetime, valid_to: datetime | None = None,
-                 replaces_id: str | None = None, object_sha256: str | None = None) -> str:
+                 replaces_id: str | None = None, object_sha256: str | None = None,
+                 recorded_at: datetime | None = None) -> str:
         if not all((tenant_id, subject_id, predicate, source_id)):
             raise ValueError("Missing required identity/source")
         valid_from = aware(valid_from)
@@ -165,6 +174,12 @@ class PostgresMemory:
                     raise ValueError(
                         "Single-valued predicate already has an overlapping active claim; use replaces_id")
             mutation_time = self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
+            # knowledge-time may be backdated when an operator replays a
+            # historical conversation; the wall clock stays authoritative for
+            # audit columns that are not exposed as knowledge time.
+            knowledge_time = aware(recorded_at) if recorded_at is not None else mutation_time
+            if knowledge_time > mutation_time:
+                raise ValueError("recorded_at cannot be in the future")
             if object_sha256 is not None:
                 owned = self.conn.execute(
                     "SELECT 1 FROM memory_objects WHERE tenant_id=%s AND object_sha256=%s",
@@ -182,7 +197,7 @@ class PostgresMemory:
                     raise ValueError("Missing, mismatched, or already superseded claim")
                 self.conn.execute(
                     "UPDATE memory_claims SET superseded_at=%s WHERE id=%s",
-                    (mutation_time,replaces_id,))
+                    (knowledge_time,replaces_id,))
             self.conn.execute(
                 """INSERT INTO memory_sources(tenant_id,source_id,source_type,trust_level)
                    VALUES (%s,%s,'external','unverified')
@@ -193,7 +208,7 @@ class PostgresMemory:
                    valid_from,valid_to,replaces_id,object_sha256,recorded_at)
                    VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
                 (mid,tenant_id,subject_id,predicate,json.dumps(value,ensure_ascii=False),
-                 source_id,valid_from,valid_to,replaces_id,object_sha256,mutation_time))
+                 source_id,valid_from,valid_to,replaces_id,object_sha256,knowledge_time))
             self.conn.execute(
                 """INSERT INTO memory_claim_sources(tenant_id,claim_id,source_id,confidence)
                    VALUES (%s,%s,%s,1.0) ON CONFLICT DO NOTHING""",
@@ -268,7 +283,7 @@ class PostgresMemory:
 
     def apply_candidate(self, *, tenant_id: str, subject_id: str, predicate: str,
                         value: dict, source_id: str, confidence: float = 1.0,
-                        merge: bool = False):
+                        merge: bool = False, observed_at: datetime | None = None):
         """Atomically classify, deduplicate, consolidate or version one candidate.
 
         Concurrent processors for the same tenant/subject/predicate serialize
@@ -294,7 +309,10 @@ class PostgresMemory:
             self._lock_predicate(tenant_id,predicate)
             self._lock_fact(tenant_id,subject_id,predicate)
             cardinality=self.predicate_cardinality(tenant_id=tenant_id,predicate=predicate)
-            now=self.current_time()
+            # observed_at replays a historical utterance: the claim is filed
+            # under the knowledge time it was actually said, so time-travel
+            # queries and later corrections keep their real order.
+            now=aware(observed_at) if observed_at is not None else self.current_time()
             active=self.recall(tenant_id=tenant_id,subject_id=subject_id,
                 predicate=predicate,valid_at=now,known_at=now)
             exact=next((row for row in active
@@ -306,7 +324,7 @@ class PostgresMemory:
                 return exact["id"],None,True,RELATION_DUPLICATE
             if cardinality=="many":
                 memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
-                    predicate=predicate,value=value,source_id=source_id,valid_from=now)
+                    predicate=predicate,value=value,source_id=source_id,valid_from=now,recorded_at=now)
                 return memory_id,None,False,RELATION_CREATED
             if len(active)>1:
                 raise ValueError(
@@ -314,7 +332,7 @@ class PostgresMemory:
             if not active:
                 memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                     predicate=predicate,value=value,source_id=source_id,
-                    valid_from=now)
+                    valid_from=now,recorded_at=now)
                 return memory_id,None,False,RELATION_CREATED
             target=active[0]
             relation=classify_relation(value,target["value"])
@@ -326,7 +344,7 @@ class PostgresMemory:
                 if merged is not None:
                     memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                         predicate=predicate,value=merged,source_id=source_id,
-                        valid_from=now,replaces_id=target["id"])
+                        valid_from=now,recorded_at=now,replaces_id=target["id"])
                     return memory_id,target["id"],False,RELATION_MERGED
             if relation==RELATION_DUPLICATE:
                 # Subsumed candidate: the active claim already encodes it.
@@ -342,11 +360,11 @@ class PostgresMemory:
                     resolved=value
                 memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                     predicate=predicate,value=resolved,source_id=source_id,
-                    valid_from=now,replaces_id=target["id"])
+                    valid_from=now,recorded_at=now,replaces_id=target["id"])
                 return memory_id,target["id"],False,RELATION_CONTRADICTION
             memory_id=self.remember(tenant_id=tenant_id,subject_id=subject_id,
                 predicate=predicate,value=value,source_id=source_id,
-                valid_from=now,replaces_id=target["id"])
+                valid_from=now,recorded_at=now,replaces_id=target["id"])
             return memory_id,target["id"],False,RELATION_SUPERSEDES
 
     def recall(self, *, tenant_id: str, subject_id: str, predicate: str | None = None,

@@ -1,0 +1,200 @@
+{"id": "g001", "kind": "A", "text": "主卧空调调到23度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 23}}], "note": "subject=主卧"}
+{"id": "g002", "kind": "A", "text": "客厅温度设成26度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 26}}], "note": "subject=客厅"}
+{"id": "g003", "kind": "A", "text": "书房暖气开到22度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 22}}], "note": "subject=书房"}
+{"id": "g004", "kind": "A", "text": "次卧空调制冷25度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 25}}], "note": "subject=次卧"}
+{"id": "g005", "kind": "A", "text": "厨房温度太高了，调到24度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 24}}], "note": "subject=厨房"}
+{"id": "g006", "kind": "A", "text": "把阳台的温度定在18度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 18}}], "note": "subject=阳台"}
+{"id": "g007", "kind": "A", "text": "儿童房空调调到27度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 27}}], "note": "subject=儿童房"}
+{"id": "g008", "kind": "A", "text": "卧室暖气22度就行", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 22}}], "note": "subject=卧室"}
+{"id": "g009", "kind": "A", "text": "玄关空调设21度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 21}}], "note": "subject=玄关"}
+{"id": "g010", "kind": "A", "text": "卫生间暖气开25度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 25}}], "note": "subject=卫生间"}
+{"id": "g011", "kind": "A", "text": "主卧温度改成20度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 20}}], "note": "subject=主卧"}
+{"id": "g012", "kind": "A", "text": "客厅空调26度比较舒服", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 26}}], "note": "subject=客厅"}
+{"id": "g013", "kind": "A", "text": "书房温度调到23度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 23}}], "note": "subject=书房"}
+{"id": "g014", "kind": "A", "text": "阳台空调设成28度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 28}}], "note": "subject=阳台"}
+{"id": "g015", "kind": "A", "text": "次卧暖气调到19度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 19}}], "note": "subject=次卧"}
+{"id": "g016", "kind": "A", "text": "儿童房温度设24度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 24}}], "note": "subject=儿童房"}
+{"id": "g017", "kind": "A", "text": "厨房空调开22度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 22}}], "note": "subject=厨房"}
+{"id": "g018", "kind": "A", "text": "卧室温度调到21度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 21}}], "note": "subject=卧室"}
+{"id": "g019", "kind": "A", "text": "玄关暖气26度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 26}}], "note": "subject=玄关"}
+{"id": "g020", "kind": "A", "text": "卫生间空调调到23度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 23}}], "note": "subject=卫生间"}
+{"id": "g021", "kind": "A", "text": "主卧空调开到24度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 24}}], "note": "subject=主卧"}
+{"id": "g022", "kind": "A", "text": "客厅暖气调到21度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 21}}], "note": "subject=客厅"}
+{"id": "g023", "kind": "A", "text": "书房温度26度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 26}}], "note": "subject=书房"}
+{"id": "g024", "kind": "A", "text": "次卧空调27度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 27}}], "note": "subject=次卧"}
+{"id": "g025", "kind": "A", "text": "厨房温度调到20度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 20}}], "note": "subject=厨房"}
+{"id": "g026", "kind": "A", "text": "阳台暖气23度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 23}}], "note": "subject=阳台"}
+{"id": "g027", "kind": "A", "text": "儿童房空调调到25度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 25}}], "note": "subject=儿童房"}
+{"id": "g028", "kind": "A", "text": "卧室暖气调到24度", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 24}}], "note": "subject=卧室"}
+{"id": "g029", "kind": "A", "text": "主卧保持安静", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g030", "kind": "A", "text": "客厅安静一点", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g031", "kind": "A", "text": "书房静音模式", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g032", "kind": "A", "text": "次卧小声些", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g033", "kind": "A", "text": "卧室别太吵", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g034", "kind": "A", "text": "儿童房安静些", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g035", "kind": "A", "text": "厨房不要吵", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g036", "kind": "A", "text": "阳台静音", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g037", "kind": "A", "text": "玄关安静一点", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g038", "kind": "A", "text": "卫生间小声", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g039", "kind": "A", "text": "书房声音太大了，安静些", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g040", "kind": "A", "text": "主卧有点吵，静音", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g041", "kind": "A", "text": "客厅太吵了", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g042", "kind": "A", "text": "次卧保持安静模式", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g043", "kind": "A", "text": "儿童房别吵", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g044", "kind": "A", "text": "卧室安静一点谢谢", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g045", "kind": "A", "text": "书房静音", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g046", "kind": "A", "text": "厨房小声一点", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g047", "kind": "A", "text": "阳台别太吵", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g048", "kind": "A", "text": "玄关静音模式", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": ""}
+{"id": "g049", "kind": "A", "text": "主卧灯光调暗", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g050", "kind": "A", "text": "客厅灯光暗一点", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g051", "kind": "A", "text": "书房光线柔和些", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g052", "kind": "A", "text": "次卧照明不要太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g053", "kind": "A", "text": "卧室灯太刺眼", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g054", "kind": "A", "text": "儿童房灯光调暗些", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g055", "kind": "A", "text": "厨房灯光别太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g056", "kind": "A", "text": "阳台照明暗一点", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g057", "kind": "A", "text": "玄关灯太强了", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g058", "kind": "A", "text": "卫生间光线柔和", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g059", "kind": "A", "text": "主卧灯太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g060", "kind": "A", "text": "客厅照明调暗", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g061", "kind": "A", "text": "书房灯光暗些", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g062", "kind": "A", "text": "次卧灯别太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g063", "kind": "A", "text": "儿童房光线要柔和", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g064", "kind": "A", "text": "主卧灯调暗一点", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g065", "kind": "A", "text": "客厅灯别刺眼", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g066", "kind": "A", "text": "玄关灯光柔和些", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g067", "kind": "A", "text": "阳台灯调暗", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g068", "kind": "A", "text": "厨房照明暗一些", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g069", "kind": "A", "text": "卫生间灯别太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g070", "kind": "A", "text": "次卧光线太强了", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": ""}
+{"id": "g071", "kind": "A", "text": "主卧灯光调亮", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g072", "kind": "A", "text": "客厅灯亮一点", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g073", "kind": "A", "text": "书房照明亮些", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g074", "kind": "A", "text": "次卧开灯", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g075", "kind": "A", "text": "卧室灯太暗了", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g076", "kind": "A", "text": "儿童房灯光调亮一点", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g077", "kind": "A", "text": "厨房灯光亮些", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g078", "kind": "A", "text": "阳台开灯", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g079", "kind": "A", "text": "玄关照明太暗", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g080", "kind": "A", "text": "卫生间灯光调亮", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g081", "kind": "A", "text": "主卧亮度调高", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g082", "kind": "A", "text": "客厅光线亮一点", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g083", "kind": "A", "text": "书房灯太暗", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g084", "kind": "A", "text": "次卧照明调亮", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g085", "kind": "A", "text": "儿童房开灯吧", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g086", "kind": "A", "text": "厨房灯调亮点", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g087", "kind": "A", "text": "阳台照明亮一些", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g088", "kind": "A", "text": "玄关灯调亮", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g089", "kind": "A", "text": "卧室灯光亮些", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g090", "kind": "A", "text": "书房开灯", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": ""}
+{"id": "g091", "kind": "B", "text": "主卧不要太吵，我会睡不好", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g092", "kind": "B", "text": "客厅别太吵，孩子在写作业", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g093", "kind": "B", "text": "书房我不想听到噪音，安静些", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g094", "kind": "B", "text": "次卧睡觉时不要有声音", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g095", "kind": "B", "text": "卧室别出声", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g096", "kind": "B", "text": "儿童房不要吵到孩子", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g097", "kind": "B", "text": "厨房别太吵闹", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g098", "kind": "B", "text": "阳台我不喜欢吵闹", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "negation must not flip the fact"}
+{"id": "g099", "kind": "B", "text": "主卧灯光别太亮，我不喜欢刺眼", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g100", "kind": "B", "text": "客厅灯不要太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g101", "kind": "B", "text": "书房光线不要刺眼", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g102", "kind": "B", "text": "次卧灯光别调太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g103", "kind": "B", "text": "卧室灯不要那么亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g104", "kind": "B", "text": "儿童房灯光别太强", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g105", "kind": "B", "text": "厨房灯不需要太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g106", "kind": "B", "text": "阳台照明不要太强", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g107", "kind": "B", "text": "玄关灯别太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g108", "kind": "B", "text": "卫生间光线不要太亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "negation must not flip the fact"}
+{"id": "g109", "kind": "B", "text": "主卧空调不要开到28度，26度就够了", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 26}}], "note": "negation must not flip the fact"}
+{"id": "g110", "kind": "B", "text": "客厅温度别设30度，25度吧", "gold": [{"predicate": "temperature_preference", "value": {"celsius": 25}}], "note": "negation must not flip the fact"}
+{"id": "g111", "kind": "C", "text": "今天中午吃什么好呢", "gold": [], "note": "must extract nothing"}
+{"id": "g112", "kind": "C", "text": "现在几点了", "gold": [], "note": "must extract nothing"}
+{"id": "g113", "kind": "C", "text": "帮我看看明天的天气", "gold": [], "note": "must extract nothing"}
+{"id": "g114", "kind": "C", "text": "这个周末有什么安排", "gold": [], "note": "must extract nothing"}
+{"id": "g115", "kind": "C", "text": "我刚才在超市买了鸡蛋", "gold": [], "note": "must extract nothing"}
+{"id": "g116", "kind": "C", "text": "手机快没电了", "gold": [], "note": "must extract nothing"}
+{"id": "g117", "kind": "C", "text": "记得提醒我下午开会", "gold": [], "note": "must extract nothing"}
+{"id": "g118", "kind": "C", "text": "你叫什么名字", "gold": [], "note": "must extract nothing"}
+{"id": "g119", "kind": "C", "text": "今天心情不错", "gold": [], "note": "must extract nothing"}
+{"id": "g120", "kind": "C", "text": "外面下雨了吗", "gold": [], "note": "must extract nothing"}
+{"id": "g121", "kind": "C", "text": "快递到了没", "gold": [], "note": "must extract nothing"}
+{"id": "g122", "kind": "C", "text": "我想看个电影", "gold": [], "note": "must extract nothing"}
+{"id": "g123", "kind": "C", "text": "晚饭做红烧肉吧", "gold": [], "note": "must extract nothing"}
+{"id": "g124", "kind": "C", "text": "明天要早起", "gold": [], "note": "must extract nothing"}
+{"id": "g125", "kind": "C", "text": "这个月工资到账了", "gold": [], "note": "must extract nothing"}
+{"id": "g126", "kind": "C", "text": "猫又把杯子碰倒了", "gold": [], "note": "must extract nothing"}
+{"id": "g127", "kind": "C", "text": "周末想去爬山", "gold": [], "note": "must extract nothing"}
+{"id": "g128", "kind": "C", "text": "我有点困了", "gold": [], "note": "must extract nothing"}
+{"id": "g129", "kind": "C", "text": "这首歌真好听", "gold": [], "note": "must extract nothing"}
+{"id": "g130", "kind": "C", "text": "洗衣机好像坏了", "gold": [], "note": "must extract nothing"}
+{"id": "g131", "kind": "C", "text": "帮我订一张去上海的机票", "gold": [], "note": "must extract nothing"}
+{"id": "g132", "kind": "C", "text": "楼下超市几点关门", "gold": [], "note": "must extract nothing"}
+{"id": "g133", "kind": "C", "text": "最近在追一部剧", "gold": [], "note": "must extract nothing"}
+{"id": "g134", "kind": "C", "text": "今天地铁好挤", "gold": [], "note": "must extract nothing"}
+{"id": "g135", "kind": "C", "text": "记得买牛奶", "gold": [], "note": "must extract nothing"}
+{"id": "g136", "kind": "C", "text": "孩子在写作业", "gold": [], "note": "must extract nothing"}
+{"id": "g137", "kind": "C", "text": "我在加班", "gold": [], "note": "must extract nothing"}
+{"id": "g138", "kind": "C", "text": "车该保养了", "gold": [], "note": "must extract nothing"}
+{"id": "g139", "kind": "C", "text": "冰箱里还有菜吗", "gold": [], "note": "must extract nothing"}
+{"id": "g140", "kind": "C", "text": "晚安", "gold": [], "note": "must extract nothing"}
+{"id": "g141", "kind": "D", "text": "书房网速太慢了", "gold": [{"predicate": "network_quality", "value": {"level": "slow"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g142", "kind": "D", "text": "客厅窗帘拉上吧", "gold": [{"predicate": "curtain_state", "value": {"state": "closed"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g143", "kind": "D", "text": "主卧加湿器开到最大", "gold": [{"predicate": "humidifier_level", "value": {"level": "max"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g144", "kind": "D", "text": "厨房抽油烟机声音很大", "gold": [{"predicate": "hood_noise", "value": {"level": "high"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g145", "kind": "D", "text": "阳台想养几盆花", "gold": [{"predicate": "balcony_plan", "value": {"text": "grow flowers"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g146", "kind": "D", "text": "次卧的床垫太软了", "gold": [{"predicate": "mattress_firmness", "value": {"level": "soft"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g147", "kind": "D", "text": "客厅沙发该换了", "gold": [{"predicate": "furniture_state", "value": {"text": "replace sofa"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g148", "kind": "D", "text": "书房需要一把新椅子", "gold": [{"predicate": "furniture_need", "value": {"text": "new chair"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g149", "kind": "D", "text": "玄关的鞋柜太小", "gold": [{"predicate": "storage_capacity", "value": {"level": "small"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g150", "kind": "D", "text": "卫生间镜子有雾", "gold": [{"predicate": "mirror_state", "value": {"state": "foggy"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g151", "kind": "D", "text": "儿童房想贴卡通壁纸", "gold": [{"predicate": "wallpaper_plan", "value": {"text": "cartoon"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g152", "kind": "D", "text": "卧室的窗帘遮光不好", "gold": [{"predicate": "curtain_quality", "value": {"level": "poor"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g153", "kind": "D", "text": "厨房水龙头漏水", "gold": [{"predicate": "faucet_state", "value": {"state": "leaking"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g154", "kind": "D", "text": "阳台晾衣架不够用", "gold": [{"predicate": "drying_rack", "value": {"level": "insufficient"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g155", "kind": "D", "text": "客厅电视声音太闷", "gold": [{"predicate": "tv_audio", "value": {"level": "muffled"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g156", "kind": "D", "text": "书房插座不够", "gold": [{"predicate": "socket_count", "value": {"level": "insufficient"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g157", "kind": "D", "text": "主卧衣柜门关不严", "gold": [{"predicate": "wardrobe_state", "value": {"state": "ajar"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g158", "kind": "D", "text": "次卧空调有异味", "gold": [{"predicate": "ac_state", "value": {"state": "smelly"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g159", "kind": "D", "text": "卫生间地漏堵了", "gold": [{"predicate": "drain_state", "value": {"state": "blocked"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g160", "kind": "D", "text": "玄关灯开关松了", "gold": [{"predicate": "switch_state", "value": {"state": "loose"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g161", "kind": "D", "text": "儿童房需要加个书架", "gold": [{"predicate": "furniture_need", "value": {"text": "bookshelf"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g162", "kind": "D", "text": "厨房垃圾桶太小", "gold": [{"predicate": "bin_capacity", "value": {"level": "small"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g163", "kind": "D", "text": "客厅地毯脏了", "gold": [{"predicate": "carpet_state", "value": {"state": "dirty"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g164", "kind": "D", "text": "书房隔音不好", "gold": [{"predicate": "soundproofing", "value": {"level": "poor"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g165", "kind": "D", "text": "阳台地面有积水", "gold": [{"predicate": "balcony_state", "value": {"state": "flooded"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g166", "kind": "D", "text": "卧室门锁有点卡", "gold": [{"predicate": "door_lock", "value": {"state": "stuck"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g167", "kind": "D", "text": "厨房冰箱太小了", "gold": [{"predicate": "fridge_capacity", "value": {"level": "small"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g168", "kind": "D", "text": "客厅空调出风口有灰", "gold": [{"predicate": "ac_state", "value": {"state": "dusty"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g169", "kind": "D", "text": "次卧窗台想放绿植", "gold": [{"predicate": "windowsill_plan", "value": {"text": "plants"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g170", "kind": "D", "text": "卫生间需要装个置物架", "gold": [{"predicate": "shelf_need", "value": {"text": "shelf"}}], "note": "outside the home-zh pack: coverage gap"}
+{"id": "g171", "kind": "E", "text": "主卧空调调到22度", "gold": [{"predicate": "temperature_preference", "value": 22}], "note": "pair-before subject=主卧"}
+{"id": "g172", "kind": "E", "text": "主卧空调调到25度", "gold": [{"predicate": "temperature_preference", "value": 25}], "note": "pair-after subject=主卧 (retires the previous value)"}
+{"id": "g173", "kind": "E", "text": "客厅温度设成24度", "gold": [{"predicate": "temperature_preference", "value": 24}], "note": "pair-before subject=客厅"}
+{"id": "g174", "kind": "E", "text": "客厅温度改成27度", "gold": [{"predicate": "temperature_preference", "value": 27}], "note": "pair-after subject=客厅 (retires the previous value)"}
+{"id": "g175", "kind": "E", "text": "书房暖气22度", "gold": [{"predicate": "temperature_preference", "value": 22}], "note": "pair-before subject=书房"}
+{"id": "g176", "kind": "E", "text": "书房暖气改成20度", "gold": [{"predicate": "temperature_preference", "value": 20}], "note": "pair-after subject=书房 (retires the previous value)"}
+{"id": "g177", "kind": "E", "text": "次卧保持安静", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "pair-before subject=次卧"}
+{"id": "g178", "kind": "E", "text": "次卧不用静音了，正常就好", "gold": [], "note": "pair-after subject=次卧 (retires the previous value)"}
+{"id": "g179", "kind": "E", "text": "主卧灯光调暗", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "pair-before subject=主卧"}
+{"id": "g180", "kind": "E", "text": "主卧灯光调亮", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": "pair-after subject=主卧 (retires the previous value)"}
+{"id": "g181", "kind": "E", "text": "客厅灯亮一点", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": "pair-before subject=客厅"}
+{"id": "g182", "kind": "E", "text": "客厅灯还是暗一点好", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "pair-after subject=客厅 (retires the previous value)"}
+{"id": "g183", "kind": "E", "text": "儿童房空调26度", "gold": [{"predicate": "temperature_preference", "value": 26}], "note": "pair-before subject=儿童房"}
+{"id": "g184", "kind": "E", "text": "儿童房空调改成24度", "gold": [{"predicate": "temperature_preference", "value": 24}], "note": "pair-after subject=儿童房 (retires the previous value)"}
+{"id": "g185", "kind": "E", "text": "厨房灯光调亮", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": "pair-before subject=厨房"}
+{"id": "g186", "kind": "E", "text": "厨房灯光太亮了，调暗", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "pair-after subject=厨房 (retires the previous value)"}
+{"id": "g187", "kind": "E", "text": "阳台温度定在18度", "gold": [{"predicate": "temperature_preference", "value": 18}], "note": "pair-before subject=阳台"}
+{"id": "g188", "kind": "E", "text": "阳台温度改成21度", "gold": [{"predicate": "temperature_preference", "value": 21}], "note": "pair-after subject=阳台 (retires the previous value)"}
+{"id": "g189", "kind": "E", "text": "卧室暖气23度", "gold": [{"predicate": "temperature_preference", "value": 23}], "note": "pair-before subject=卧室"}
+{"id": "g190", "kind": "E", "text": "卧室暖气改成25度", "gold": [{"predicate": "temperature_preference", "value": 25}], "note": "pair-after subject=卧室 (retires the previous value)"}
+{"id": "g191", "kind": "E", "text": "玄关保持安静", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "pair-before subject=玄关"}
+{"id": "g192", "kind": "E", "text": "玄关不用静音", "gold": [], "note": "pair-after subject=玄关 (retires the previous value)"}
+{"id": "g193", "kind": "E", "text": "卫生间灯太暗了", "gold": [{"predicate": "light_preference", "value": {"level": "bright"}}], "note": "pair-before subject=卫生间"}
+{"id": "g194", "kind": "E", "text": "卫生间灯不用那么亮", "gold": [{"predicate": "light_preference", "value": {"level": "dim"}}], "note": "pair-after subject=卫生间 (retires the previous value)"}
+{"id": "g195", "kind": "E", "text": "书房静音模式", "gold": [{"predicate": "noise_preference", "value": {"level": "quiet"}}], "note": "pair-before subject=书房"}
+{"id": "g196", "kind": "E", "text": "书房正常模式就行", "gold": [], "note": "pair-after subject=书房 (retires the previous value)"}
+{"id": "g197", "kind": "E", "text": "主卧温度20度", "gold": [{"predicate": "temperature_preference", "value": 20}], "note": "pair-before subject=主卧"}
+{"id": "g198", "kind": "E", "text": "主卧温度22度", "gold": [{"predicate": "temperature_preference", "value": 22}], "note": "pair-after subject=主卧 (retires the previous value)"}
+{"id": "g199", "kind": "E", "text": "客厅空调26度", "gold": [{"predicate": "temperature_preference", "value": 26}], "note": "pair-before subject=客厅"}
+{"id": "g200", "kind": "E", "text": "客厅空调24度", "gold": [{"predicate": "temperature_preference", "value": 24}], "note": "pair-after subject=客厅 (retires the previous value)"}

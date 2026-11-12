@@ -7,3 +7,7 @@ __pycache__/
 *.sqlite
 .venv/
 .preview/
+
+# evaluation corpora are downloaded on demand, not vendored
+data/eval/locomo10.json
+data/eval/longmemeval_oracle.json

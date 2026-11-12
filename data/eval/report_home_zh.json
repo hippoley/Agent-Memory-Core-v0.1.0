@@ -1,0 +1,272 @@
+{
+  "extraction": {
+    "precision": 0.9603960396039604,
+    "recall": 0.8818181818181818,
+    "f1": 0.919431279620853,
+    "tp": 97,
+    "fp": 4,
+    "fn": 13,
+    "by_kind": {
+      "A": {
+        "tp": 83,
+        "fp": 0,
+        "fn": 7,
+        "n": 90
+      },
+      "B": {
+        "tp": 14,
+        "fp": 4,
+        "fn": 6,
+        "n": 20
+      },
+      "C": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "n": 30
+      }
+    },
+    "errors": [
+      {
+        "id": "g068",
+        "kind": "A",
+        "text": "厨房照明暗一些",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g074",
+        "kind": "A",
+        "text": "次卧开灯",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g078",
+        "kind": "A",
+        "text": "阳台开灯",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g081",
+        "kind": "A",
+        "text": "主卧亮度调高",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g085",
+        "kind": "A",
+        "text": "儿童房开灯吧",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g087",
+        "kind": "A",
+        "text": "阳台照明亮一些",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g090",
+        "kind": "A",
+        "text": "书房开灯",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g094",
+        "kind": "B",
+        "text": "次卧睡觉时不要有声音",
+        "gold": [
+          "noise_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g095",
+        "kind": "B",
+        "text": "卧室别出声",
+        "gold": [
+          "noise_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g098",
+        "kind": "B",
+        "text": "阳台我不喜欢吵闹",
+        "gold": [
+          "noise_preference"
+        ],
+        "got": [
+          "dislikes"
+        ]
+      },
+      {
+        "id": "g099",
+        "kind": "B",
+        "text": "主卧灯光别太亮，我不喜欢刺眼",
+        "gold": [
+          "light_preference"
+        ],
+        "got": [
+          "dislikes",
+          "light_preference"
+        ]
+      },
+      {
+        "id": "g103",
+        "kind": "B",
+        "text": "卧室灯不要那么亮",
+        "gold": [
+          "light_preference"
+        ],
+        "got": []
+      },
+      {
+        "id": "g109",
+        "kind": "B",
+        "text": "主卧空调不要开到28度，26度就够了",
+        "gold": [
+          "temperature_preference"
+        ],
+        "got": [
+          "temperature_preference"
+        ]
+      },
+      {
+        "id": "g110",
+        "kind": "B",
+        "text": "客厅温度别设30度，25度吧",
+        "gold": [
+          "temperature_preference"
+        ],
+        "got": [
+          "temperature_preference"
+        ]
+      }
+    ]
+  },
+  "coverage": {
+    "covered": 0,
+    "total": 30,
+    "rate": 0.0
+  },
+  "updates": {
+    "ok": 11,
+    "total": 15,
+    "rate": 0.7333333333333333,
+    "misses": [
+      {
+        "before": "次卧保持安静",
+        "after": "次卧不用静音了，正常就好",
+        "relations": [
+          "DUPLICATE"
+        ],
+        "replaced": []
+      },
+      {
+        "before": "玄关保持安静",
+        "after": "玄关不用静音",
+        "relations": [
+          "DUPLICATE"
+        ],
+        "replaced": []
+      },
+      {
+        "before": "卫生间灯太暗了",
+        "after": "卫生间灯不用那么亮",
+        "relations": [],
+        "replaced": []
+      },
+      {
+        "before": "书房静音模式",
+        "after": "书房正常模式就行",
+        "relations": [],
+        "replaced": []
+      }
+    ]
+  },
+  "retrieval": {
+    "subject_query": {
+      "queries": 20,
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "misses": []
+    },
+    "composite_query": {
+      "queries": 20,
+      "recall_at_5": 0.0,
+      "mrr": 0.0,
+      "misses": [
+        {
+          "query": "主卧温度",
+          "expected": "主卧",
+          "got": []
+        },
+        {
+          "query": "客厅温度",
+          "expected": "客厅",
+          "got": []
+        },
+        {
+          "query": "书房温度",
+          "expected": "书房",
+          "got": []
+        },
+        {
+          "query": "次卧温度",
+          "expected": "次卧",
+          "got": []
+        },
+        {
+          "query": "厨房温度",
+          "expected": "厨房",
+          "got": []
+        },
+        {
+          "query": "阳台温度",
+          "expected": "阳台",
+          "got": []
+        },
+        {
+          "query": "儿童房温度",
+          "expected": "儿童房",
+          "got": []
+        },
+        {
+          "query": "卧室温度",
+          "expected": "卧室",
+          "got": []
+        },
+        {
+          "query": "玄关温度",
+          "expected": "玄关",
+          "got": []
+        },
+        {
+          "query": "卫生间温度",
+          "expected": "卫生间",
+          "got": []
+        }
+      ]
+    }
+  }
+}

@@ -81,6 +81,16 @@ class PostgresMemory:
         ).fetchone()
         return row[0] if row else "one"
 
+    def list_predicate_policies(self, *, tenant_id: str) -> list[dict]:
+        """Trusted policy rows for one tenant; unlisted predicates default to one."""
+        if not tenant_id:
+            raise ValueError("Tenant required")
+        rows = self.conn.execute(
+            "SELECT predicate,cardinality,updated_at FROM memory_predicate_policies "
+            "WHERE tenant_id=%s ORDER BY predicate", (tenant_id,)).fetchall()
+        return [{"predicate": r[0], "cardinality": r[1], "updated_at": r[2]}
+                for r in rows]
+
     def set_predicate_cardinality(self, *, tenant_id: str, predicate: str,
                                   cardinality: str) -> None:
         """Set policy before facts exist; extractor/model output cannot change it."""

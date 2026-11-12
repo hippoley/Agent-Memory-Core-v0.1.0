@@ -10,6 +10,8 @@ EXPECTED={
     "/v1/ready":{"get"},
     "/v1/capabilities":{"get"},
     "/v1/memories":{"get","post","delete"},
+    "/v1/predicate-policies":{"get"},
+    "/v1/predicate-policies/{predicate}":{"put"},
     "/v1/memories/{subject_id}":{"get"},
     "/v1/memories/{memory_id}":{"delete"},
     "/v1/memories/process":{"post"},

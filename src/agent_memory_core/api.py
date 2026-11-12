@@ -5,6 +5,7 @@ import hmac
 import os
 import asyncio
 import json
+import re
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -41,6 +42,16 @@ class Claim(BaseModel):
     valid_to: str | None = Field(default=None, description="Timezone-aware ISO-8601 exclusive validity end.")
     replaces_id: str | None = Field(default=None, description="Existing claim UUID to correct; subject and predicate must match.")
     object_sha256: str | None = Field(default=None, description="Optional SHA-256 reference to separately stored evidence object.")
+
+
+class PredicatePolicyWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    cardinality: str = Field(
+        pattern="^(one|many)$",
+        description=("one = at most one active claim per subject+predicate "
+                     "(temperature, current_mode); many = distinct claims coexist "
+                     "(has_window, allergy). This is trusted tenant policy: a model "
+                     "or extractor cannot raise or lower it."))
 
 
 class WebhookCreate(BaseModel):
@@ -288,6 +299,54 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     "count": len(items), "limit": limit, "offset": offset}
         except (ValueError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get(
+        "/v1/predicate-policies", tags=["Memory"],
+        summary="List trusted predicate cardinality policies",
+        description=(
+            "Cardinality is tenant-scoped trusted configuration stored in "
+            "memory_predicate_policies. Unlisted predicates default to 'one', so a "
+            "room cannot hold two current temperatures unless an operator explicitly "
+            "declares that predicate multi-valued. Models and callers cannot change it."
+        ),
+    )
+    def list_predicate_policies(t: str = Depends(auth)):
+        db = store_factory()
+        try:
+            items = db.list_predicate_policies(tenant_id=t)
+        finally:
+            db.close()
+        return {"tenant_id": t, "default": "one", "items": items}
+
+    @app.put(
+        "/v1/predicate-policies/{predicate}", tags=["Memory"],
+        summary="Set trusted predicate cardinality",
+        description=(
+            "Operator action, not model output. Changing a predicate that already has "
+            "claims is refused (409) until those claims are reconciled, so history can "
+            "never be silently reinterpreted."
+        ),
+    )
+    def set_predicate_policy(predicate: str, item: PredicatePolicyWrite,
+                             t: str = Depends(auth)):
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,99}", predicate):
+            raise HTTPException(
+                status_code=422,
+                detail="predicate must be short snake_case (a-z, 0-9, _)")
+        try:
+            db = store_factory()
+            try:
+                db.set_predicate_cardinality(
+                    tenant_id=t, predicate=predicate,
+                    cardinality=item.cardinality)
+            finally:
+                db.close()
+        except ValueError as exc:
+            message = str(exc)
+            status = 409 if "reconciliation" in message else 422
+            raise HTTPException(status_code=status, detail=message)
+        return {"tenant_id": t, "predicate": predicate,
+                "cardinality": item.cardinality, "updated": True}
 
     @app.get(
         "/v1/memories/{subject_id}", tags=["Memory"], summary="Recall claims for a subject",

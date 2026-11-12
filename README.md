@@ -9,6 +9,16 @@ observation streams and workflow execution.
 > facade have real integration-test paths. This is not yet a hardened public
 > multi-tenant SaaS service.
 
+## Interactive demo and product tour
+
+![Agent Memory Core system architecture](docs/assets/architecture.svg)
+
+**New: [Memory Atlas — interactive synthetic-data demo](docs/demo/index.html).** Open `docs/demo/index.html` in a browser to explore a presentation-ready memory relationship view, inspect provenance/version metadata, and add temporary browser-only facts. This demo is intentionally not connected to real user records.
+
+For a public browser URL, enable **GitHub Pages** from `main /docs` after merging this change. The *expected*, not-yet-verified URL will be [Memory Atlas](https://hippoley.github.io/Agent-Memory-Core-v0.1.0/demo/). See [public demo and secure console deployment](docs/PUBLIC-DEMO-DEPLOYMENT.md) before enabling public access.
+
+The real API-backed console is already served at `/dashboard/`; Swagger UI is at `/docs/swagger`, offline API manual at `/docs`, and machine-readable OpenAPI at `/openapi.json`. These are **relative to a running API server**, not currently verified public links. The browser console does not change the single-tenant security boundary.
+
 ## Architecture
 
 - **PostgreSQL** — canonical claims, provenance, entities, relations,

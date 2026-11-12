@@ -1,9 +1,15 @@
 """Deterministic rule-based fact extraction: no model, no network, no downloads.
 
-Scope is explicit and narrow: regex template rules that operators can extend
-with their own JSON rule files. Builtin rules cover common Chinese
-room/preference utterances so ``POST /v1/memories/process`` works with a text
-payload and *zero* model infrastructure.
+Scope is explicit and narrow: regex template rules that operators supply or
+extend through JSON rule files. Nothing in this module is domain specific —
+the built-in rules cover only generic personal preferences (likes, dislikes,
+allergies) so ``POST /v1/memories/process`` works with a text payload and
+*zero* model infrastructure.
+
+Domain vocabularies (rooms, devices, tickets, accounts, ...) are never baked
+into the code. Load one of the example packs under ``resources/rules`` with
+``RuleFactExtractor.from_preset("home-zh")``, or point ``MEMORY_RULE_PATTERNS``
+at your own JSON file, which supplies both ``subjects`` and ``rules``.
 
 Output matches the shared fact contract used by every extractor:
 ``{subject_id | subject_name, predicate, value: dict, confidence: 0..1}``.
@@ -12,47 +18,17 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Iterable
 
-ROOM_WORDS = ("主卧", "次卧", "卧室", "客厅", "书房", "厨房", "卫生间", "浴室", "阳台", "玄关", "儿童房")
-_ROOMS = "|".join(ROOM_WORDS)
+# Domain vocabularies are configuration, never code. An extractor built with no
+# ``subject_words`` attributes every fact to ``default_subject``; supply your own
+# lexicon (or a rule pack) when a domain has real subjects to distinguish.
+SUBJECT_WORDS: tuple[str, ...] = ()
 
-BUILTIN_RULES = [
-    {
-        "name": "noise_quiet",
-        "regex": r"[^。！？；\n]{0,12}"
-                 r"(?:保持安静|安静一点|安静些|安静|静音|小声|别吵|不要吵|太吵)",
-        "predicate": "noise_preference",
-        "value": {"level": "quiet"},
-        "confidence": 0.7,
-    },
-    {
-        "name": "light_dim",
-        "regex": r"[^。！？；\n]{0,8}"
-                 r"(?:灯光|光线|照明|灯)[^。！？；\n]{0,8}"
-                 r"(?:调暗|暗一点|暗些|柔和|不要太亮|别太亮|刺眼|太亮|太强)",
-        "predicate": "light_preference",
-        "value": {"level": "dim"},
-        "confidence": 0.7,
-    },
-    {
-        "name": "light_bright",
-        "regex": r"[^。！？；\n]{0,8}"
-                 r"(?:灯光|光线|照明|灯)[^。！？；\n]{0,8}"
-                 r"(?:调亮|亮一点|亮些|开灯|太暗)",
-        "predicate": "light_preference",
-        "value": {"level": "bright"},
-        "confidence": 0.7,
-    },
-    {
-        "name": "temperature_celsius",
-        "regex": r"[^。！？；\n]{0,8}"
-                 r"(?:空调|温度|暖气|制冷|制热)[^\d。！？；\n]{0,6}"
-                 r"(?P<celsius>\d{1,2})\s*(?:度|℃)",
-        "predicate": "temperature_preference",
-        "value": {"celsius": "{celsius:int}"},
-        "confidence": 0.75,
-    },
+_RULES_DIR = Path(__file__).with_name("resources") / "rules"
+
+DEFAULT_RULES = [
     {
         "name": "dislikes",
         "regex": r"(?:我)?(?:不喜欢|讨厌|受不了|不爱吃|不爱喝|不吃|不喝)"
@@ -161,34 +137,79 @@ def _sentences(text: str):
         yield match.start(), match.end()
 
 
-def _room_in_sentence(text: str, start: int, end: int) -> str | None:
-    """Return the room word mentioned in the sentence containing the match."""
-    hits = [(text.find(word, start, end), word) for word in ROOM_WORDS]
+def _subject_in_sentence(text: str, start: int, end: int,
+                         subject_words: Iterable[str]) -> str | None:
+    """Return the configured subject word mentioned in the matching sentence."""
+    hits = [(text.find(word, start, end), word) for word in subject_words]
     hits = [(pos, word) for pos, word in hits if pos >= 0]
     if not hits:
         return None
     return min(hits)[1]
 
 
+def available_presets() -> list[str]:
+    """Names of the example rule packs shipped with the package."""
+    if not _RULES_DIR.is_dir():
+        return []
+    return sorted(path.stem for path in _RULES_DIR.glob("*.json"))
+
+
+def _load_rule_document(path: Path) -> tuple[list[dict], list[str]]:
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    rules = payload.get("rules") if isinstance(payload, dict) else payload
+    if not isinstance(rules, list) or not rules:
+        raise RuleExtractorConfigError(
+            f"rule file must contain a non-empty 'rules' array: {path}")
+    subjects = payload.get("subjects", []) if isinstance(payload, dict) else []
+    if not isinstance(subjects, list) or any(not isinstance(s, str) or not s for s in subjects):
+        raise RuleExtractorConfigError("'subjects' must be an array of non-empty strings")
+    return rules, list(subjects)
+
+
 class RuleFactExtractor:
     """Template extractor: deterministic, offline, no model weights."""
 
     def __init__(self, *, rules: Iterable[dict] | None = None,
-                 default_subject: str = "user", confidence: float = 0.7):
+                 default_subject: str = "user", confidence: float = 0.7,
+                 subject_words: Iterable[str] | None = None,
+                 include_defaults: bool = True):
         if not isinstance(default_subject, str) or not default_subject.strip():
             raise ValueError("default_subject must be a non-empty string")
         self.default_subject = default_subject.strip()
-        source = BUILTIN_RULES if rules is None else rules
+        words = list(SUBJECT_WORDS if subject_words is None else subject_words)
+        if any(not isinstance(word, str) or not word for word in words):
+            raise RuleExtractorConfigError("subject_words must be non-empty strings")
+        self.subject_words = tuple(words)
+        if rules is None:
+            source = list(DEFAULT_RULES)
+        else:
+            supplied = list(rules)
+            if not include_defaults:
+                source = supplied
+            else:
+                # A domain pack adds rules; it must not silently drop the generic
+                # preference rules every caller relies on. Same-name rules win.
+                declared = {r.get("name") for r in supplied if isinstance(r, dict)}
+                source = supplied + [r for r in DEFAULT_RULES if r["name"] not in declared]
         self.rules = [_compile_rule(rule, i) for i, rule in enumerate(source)]
 
     @classmethod
     def from_file(cls, path: str, **kwargs) -> "RuleFactExtractor":
-        with open(path, encoding="utf-8") as handle:
-            payload = json.load(handle)
-        rules = payload.get("rules") if isinstance(payload, dict) else payload
-        if not isinstance(rules, list) or not rules:
-            raise RuleExtractorConfigError("rule file must contain a non-empty 'rules' array")
+        rules, subjects = _load_rule_document(Path(path))
+        kwargs.setdefault("subject_words", subjects)
         return cls(rules=rules, **kwargs)
+
+    @classmethod
+    def from_preset(cls, name: str, **kwargs) -> "RuleFactExtractor":
+        """Load one of the shipped example packs, e.g. ``home-zh``."""
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", name or ""):
+            raise RuleExtractorConfigError(f"invalid preset name: {name!r}")
+        path = _RULES_DIR / f"{name}.json"
+        if not path.is_file():
+            raise RuleExtractorConfigError(
+                f"unknown rule preset {name!r}; available: {available_presets()}")
+        return cls.from_file(str(path), **kwargs)
 
     def __call__(self, text: str) -> list[dict]:
         if not isinstance(text, str) or not text.strip() or len(text) > 100000:
@@ -204,7 +225,7 @@ class RuleFactExtractor:
                 subject = (groups.get("subject") or "").strip()
                 if not subject:
                     span = next(((s, e) for s, e in spans if s <= match.start() < e), (0, len(text)))
-                    subject = _room_in_sentence(text, *span) or self.default_subject
+                    subject = _subject_in_sentence(text, *span, self.subject_words) or self.default_subject
                 confidence = rule["confidence"] if subject != self.default_subject else min(rule["confidence"], 0.55)
                 candidate = {"subject_id": subject, "predicate": rule["predicate"],
                              "value": value, "confidence": confidence}

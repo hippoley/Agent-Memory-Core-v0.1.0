@@ -90,33 +90,55 @@ backfills) while turning server-side vectorisation off.
 
 ## rule provider (zero model)
 
-Deterministic regex templates. Builtin rules cover common Chinese room and
-preference utterances (noise, light, temperature, likes, dislikes, allergy).
+Deterministic regex templates, no weights and no network.
+
+**No domain vocabulary lives in the code.** The built-in rule set covers only
+generic personal preference expressions (`likes`, `dislikes`, `allergy`), so
+any caller gets working extraction out of the box without the library knowing
+what business it is in.
+
+Domain phrasing is a *rule pack*: a JSON file carrying both the `subjects`
+lexicon and the rules. One example ships with the package (`home-zh`, for a
+household assistant); it is inert unless you select it.
 
 ```bash
 MEMORY_EXTRACTOR_PROVIDER=rule
 MEMORY_RULE_DEFAULT_SUBJECT=user
-# optional custom rules:
-MEMORY_RULE_PATTERNS=/etc/agent-memory/rules.json
+MEMORY_RULE_PATTERNS=home-zh          # a shipped preset name …
+# MEMORY_RULE_PATTERNS=/etc/agent-memory/rules.json   # … or your own file
 ```
 
-Custom rule file:
+Rule pack format (subjects are optional; rules are appended to the built-in
+generic ones, and a rule with the same `name` overrides the built-in):
 
 ```json
-{"rules": [
-  {"name": "charging_window",
-   "regex": "(?P<subject>car)?[^。\\n]{0,6}充电[^\\d。\\n]{0,6}(?P<hour>\\d{1,2})点",
-   "predicate": "charging_start",
-   "value": {"hour": "{hour:int}"},
-   "confidence": 0.9}
-]}
+{"name": "crm-zh",
+ "subjects": ["客户A", "客户B"],
+ "rules": [
+   {"name": "preferred_channel",
+    "regex": "(?:偏好|喜欢)(?P<channel>[^，。\\s]{1,8})联系",
+    "predicate": "preferred_channel",
+    "value": {"channel": "{channel}"},
+    "confidence": 0.8}
+ ]}
 ```
 
 Value entries are either literals (`"quiet"`, `26`) or templates
 (`"{group}"`, `"{group:int}"`, `"{group:float}"`). Subjects are taken from a
-named `subject` group when present, otherwise the room word of the sentence,
-otherwise `MEMORY_RULE_DEFAULT_SUBJECT`. Invalid rules fail at construction,
-never mid-request.
+named `subject` group when present, otherwise a word from the pack's `subjects`
+lexicon, otherwise `MEMORY_RULE_DEFAULT_SUBJECT`. Invalid rules fail at
+construction, never mid-request.
+
+In Python:
+
+```python
+from agent_memory_core.rule_extractor import RuleFactExtractor, available_presets
+
+RuleFactExtractor()                        # generic preferences only
+RuleFactExtractor.from_preset("home-zh")   # example household pack
+RuleFactExtractor.from_file("/etc/agent-memory/rules.json")
+available_presets()                        # ['home-zh']
+```
 
 ## openai-compat provider
 

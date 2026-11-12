@@ -37,7 +37,7 @@ def require_uuid(memory_id: str) -> str:
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
     subject_id: str = Field(min_length=1, max_length=255, description="Stable entity or subject identifier.")
-    predicate: str = Field(min_length=1, max_length=255, description="Fact type, e.g. preference, has_window, or device_state.")
+    predicate: str = Field(min_length=1, max_length=255, description="Fact type chosen by the caller, e.g. preference, account_status, or device_state.")
     value: dict = Field(description="Structured JSON fact payload.")
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier, e.g. user utterance, sensor event, or document.")
     valid_from: str = Field(description="Timezone-aware ISO-8601 timestamp; inclusive real-world validity start.")
@@ -51,8 +51,8 @@ class PredicatePolicyWrite(BaseModel):
     cardinality: str = Field(
         pattern="^(one|many)$",
         description=("one = at most one active claim per subject+predicate "
-                     "(temperature, current_mode); many = distinct claims coexist "
-                     "(has_window, allergy). This is trusted tenant policy: a model "
+                     "(e.g. current_status); many = distinct claims coexist "
+                     "(e.g. contact_phone). This is trusted tenant policy: a model "
                      "or extractor cannot raise or lower it."))
 
 

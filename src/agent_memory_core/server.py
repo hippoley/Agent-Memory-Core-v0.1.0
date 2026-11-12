@@ -123,8 +123,16 @@ def memory_extractor_factory(tenant_id):
     if provider=="rule":
         from .rule_extractor import RuleFactExtractor
         kwargs={"default_subject":os.getenv("MEMORY_RULE_DEFAULT_SUBJECT","user")}
+        # MEMORY_RULE_PATTERNS accepts either a path to a JSON rule file or the
+        # name of a shipped example pack (e.g. "home-zh"). No domain vocabulary
+        # lives in the code itself.
         patterns=os.getenv("MEMORY_RULE_PATTERNS")
-        return RuleFactExtractor.from_file(patterns,**kwargs) if patterns else RuleFactExtractor(**kwargs)
+        if patterns:
+            looks_like_path = patterns.endswith(".json") or "/" in patterns or "\\" in patterns
+            if looks_like_path:
+                return RuleFactExtractor.from_file(patterns,**kwargs)
+            return RuleFactExtractor.from_preset(patterns,**kwargs)
+        return RuleFactExtractor(**kwargs)
     from .providers import build_extractor
     extractor=build_extractor(tenant_id)
     if extractor is None:

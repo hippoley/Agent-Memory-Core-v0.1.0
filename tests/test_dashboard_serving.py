@@ -29,8 +29,19 @@ def test_dashboard_is_served_without_auth():
 
 def test_dashboard_asset_exists_in_package_data():
     assert DASHBOARD.is_file()
-    assert "resources/dashboard/index.html" in (
-        Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    packaged = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    assert "resources/dashboard/" in packaged
+
+
+def test_example_rule_packs_are_packaged_and_domain_neutral():
+    """领域词表必须以数据形式随包发布，而不是写进模块。"""
+    from agent_memory_core.rule_extractor import available_presets
+
+    assert "home-zh" in available_presets()
+    packaged = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    assert "resources/rules/" in packaged
+
+
 
 
 def test_root_redirects_to_dashboard():

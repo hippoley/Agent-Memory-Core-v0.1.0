@@ -23,7 +23,10 @@ def test_dashboard_is_served_without_auth():
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
-    assert "记忆看板" in body
+    # Anchor on structure, not on copy: the console's wording is design, but the
+    # ledger mount point and the API it calls are what this test is about.
+    assert "记忆台账" in body
+    assert 'id="ledger"' in body
     assert "/v1/capabilities" in body  # the page really talks to this API
 
 

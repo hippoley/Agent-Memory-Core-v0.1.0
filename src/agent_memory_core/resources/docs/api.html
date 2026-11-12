@@ -6,8 +6,10 @@
 <title>API 手册 · Agent Memory Core</title>
 <style>
   :root{
-    --paper:#FBF8F2; --card:#FFFEFB; --ink:#191612; --ink-2:#3B352C; --muted:#6F6759;
-    --hair:#E8DFCE; --hair-2:#F1EADC;
+    --paper:#F3EEE4; --card:#FCFAF4; --ink:#14110C; --ink-2:#3B352C; --muted:#7C7466;
+    --hair:#E3DAC8; --hair-2:#EFE8D9;
+    --rail:#0B1D18; --rail-2:#0E241D; --on-rail:#D9D3C5; --on-rail-dim:rgba(217,211,197,.52);
+    --gold-lite:#C9A96B; --faint:#A69D8C;
     --emerald:#0F6B54; --emerald-bg:#E9F2EE;
     --sapphire:#233F6B; --sapphire-bg:#EAEFF7;
     --gold:#9C7A39; --gold-2:#C9A85F; --gold-bg:#F8F0DC;
@@ -22,14 +24,13 @@
   html{scroll-behavior:smooth}
   body{
     margin:0;background:
-      radial-gradient(1100px 520px at 8% -8%,#FFFEF8 0%,transparent 58%),
-      radial-gradient(900px 480px at 102% 2%,#F3F7F4 0%,transparent 52%),
+      radial-gradient(1100px 520px at 8% -8%,#FBF6EC 0%,transparent 58%),
       var(--paper);
     color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.7;
     -webkit-font-smoothing:antialiased;
   }
   body:before{
-    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.28;
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.18;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.22'/%3E%3C/svg%3E");
     mix-blend-mode:multiply;
   }
@@ -38,27 +39,36 @@
   ::selection{background:var(--gold-bg)}
   code,pre{font-family:var(--mono)}
   .wrap{position:relative;z-index:1;max-width:1480px;margin:0 auto;padding:0 40px 80px}
+  .bar{position:relative;z-index:2;background:var(--rail)}
+  .bar:after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+    background:linear-gradient(90deg,rgba(201,169,107,.55),rgba(201,169,107,.1) 60%,transparent)}
+  .bar-in{max-width:1480px;margin:0 auto;padding:0 40px}
 
   /* ---------- topbar ---------- */
-  .topbar{display:flex;align-items:center;gap:18px;padding:18px 0;border-bottom:1px solid var(--hair)}
-  .mark{width:34px;height:34px;border:1px solid var(--gold-2);display:grid;place-items:center;
-    font-family:var(--serif);font-size:16px;color:var(--gold);letter-spacing:.02em;background:var(--card)}
-  .wordmark{display:flex;flex-direction:column;line-height:1.25}
-  .wordmark b{font-family:var(--serif);font-size:16px;font-weight:600;letter-spacing:.03em}
-  .wordmark span{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .topbar{display:flex;align-items:center;gap:18px;padding:16px 0}
+  .mark{width:32px;height:32px;border:1px solid rgba(201,169,107,.5);display:grid;place-items:center;
+    font-family:var(--serif);font-size:15px;color:var(--gold-lite);letter-spacing:.02em;flex:0 0 auto}
+  .wordmark{display:flex;flex-direction:column;line-height:1.3}
+  .wordmark b{color:#F4EFE2;font-size:11.5px;font-weight:600;letter-spacing:.26em}
+  .wordmark span{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--on-rail-dim);margin-top:4px}
   .topbar .spacer{flex:1}
-  .toplink{font-size:12.5px;color:var(--muted);padding:6px 10px;border:1px solid transparent;border-radius:6px}
-  .toplink:hover{border-color:var(--hair);background:var(--card);text-decoration:none;color:var(--ink)}
-  .keyset{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:4px 6px 4px 10px}
-  .keyset label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-  .keyset input{border:0;outline:none;background:transparent;font-family:var(--mono);font-size:11.5px;width:180px;color:var(--ink)}
-  .keyset button{border:1px solid var(--hair);background:var(--paper);border-radius:5px;font-size:11px;padding:3px 8px;cursor:pointer;color:var(--ink)}
-  .keyset button:hover{border-color:var(--gold-2);color:var(--gold)}
+  .toplink{font-size:11.5px;color:var(--on-rail-dim);padding:6px 2px;border-bottom:1px solid transparent;letter-spacing:.03em}
+  .toplink:hover{color:var(--gold-lite);text-decoration:none;border-color:var(--gold-lite)}
+  .keyset{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.045);
+    border:1px solid rgba(217,211,197,.16);padding:5px 6px 5px 11px}
+  .keyset label{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--on-rail-dim)}
+  .keyset input{border:0;outline:none;background:transparent;font-family:var(--mono);font-size:11px;
+    width:170px;color:#F4EFE2;letter-spacing:.03em}
+  .keyset input::placeholder{color:rgba(217,211,197,.3)}
+  .keyset button{border:1px solid var(--gold-lite);background:var(--gold-lite);font-size:10px;
+    padding:4px 10px;cursor:pointer;color:#1A1408;font-weight:600;letter-spacing:.06em}
+  .keyset button:hover{background:#D8B978;border-color:#D8B978}
 
   /* ---------- hero ---------- */
   .hero{padding:44px 0 30px;border-bottom:1px solid var(--hair)}
   .eyebrow{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin:0 0 14px}
-  .hero h1{font-family:var(--serif);font-size:46px;line-height:1.15;font-weight:600;margin:0;letter-spacing:.01em}
+  .hero h1{font-family:var(--sans);font-size:44px;line-height:1.2;font-weight:300;margin:0;
+    letter-spacing:.05em;max-width:900px}
   .hero h1 em{font-style:normal;color:var(--emerald)}
   .hero p.lede{max-width:760px;margin:14px 0 0;color:var(--ink-2);font-size:15px;line-height:1.8}
   .hero .meta{display:flex;gap:22px;margin-top:22px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
@@ -78,11 +88,11 @@
   .nav a:hover{background:var(--card);text-decoration:none;color:var(--ink)}
   .nav a.active{background:var(--gold-bg);color:var(--ink)}
   .nav a .m{font-family:var(--mono);font-size:9px;letter-spacing:.06em;padding:1px 4px;border-radius:3px;flex:0 0 auto;border:1px solid transparent}
-  .m-GET{color:var(--emerald);background:var(--emerald-bg)}
-  .m-POST{color:var(--sapphire);background:var(--sapphire-bg)}
-  .m-PUT{color:var(--gold);background:var(--gold-bg)}
-  .m-DELETE{color:var(--ruby);background:var(--ruby-bg)}
-  .m-PATCH{color:var(--amethyst);background:var(--amethyst-bg)}
+  .m-GET{color:#0F5F4A;background:rgba(15,95,74,.075)}
+  .m-POST{color:#274770;background:rgba(39,71,112,.075)}
+  .m-PUT{color:#8A6B2F;background:rgba(168,135,74,.11)}
+  .m-DELETE{color:#8A2E42;background:rgba(138,46,66,.075)}
+  .m-PATCH{color:#5A4278;background:rgba(90,66,120,.075)}
   .nav a code{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   /* ---------- concept cards ---------- */
@@ -96,8 +106,10 @@
   .quickstart{background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:20px 22px;margin-bottom:34px;box-shadow:var(--shadow)}
   .quickstart h3{font-family:var(--serif);font-size:17px;margin:0 0 4px}
   .quickstart p{margin:0 0 12px;color:var(--muted);font-size:12.5px}
-  pre{background:#1D1A16;color:#F1EADC;border-radius:8px;padding:14px 16px;overflow:auto;font-size:12px;line-height:1.75;margin:0;position:relative}
-  pre .c{color:#8F8676}
+  pre{background:#0E241D;color:#E9E3D3;border-radius:2px;padding:16px 18px;overflow:auto;
+    font-size:12px;line-height:1.8;margin:0;position:relative;
+    box-shadow:inset 0 0 0 1px rgba(201,169,107,.16)}
+  pre .c{color:#8EA396}
   .copy{position:absolute;top:8px;right:8px;border:1px solid rgba(241,234,220,.22);background:transparent;color:#CFC5B2;
     font-size:10.5px;padding:2px 8px;border-radius:4px;cursor:pointer;opacity:0;transition:.15s}
   pre:hover .copy{opacity:1}
@@ -172,8 +184,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="topbar">
+<div class="bar"><div class="bar-in"><div class="topbar">
     <div class="mark">M</div>
     <div class="wordmark"><b>Memory Core</b><span>Agent Memory · API</span></div>
     <div class="spacer"></div>
@@ -185,8 +196,9 @@
     <a class="toplink" href="/dashboard/">台账看板</a>
     <a class="toplink" href="/openapi.json">openapi.json</a>
     <a class="toplink" href="/docs/swagger">Swagger UI</a>
-  </div>
+  </div></div></div>
 
+<div class="wrap">
   <header class="hero">
     <p class="eyebrow">Reference · v<span id="ver">1.0.0</span></p>
     <h1>接口手册 <em>·</em> 每个端点都讲清它的<em>用户故事</em></h1>

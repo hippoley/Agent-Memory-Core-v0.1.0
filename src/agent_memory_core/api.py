@@ -17,6 +17,20 @@ from .api_models import (HealthResponse, ReadinessResponse, CapabilitiesResponse
                          MemoryReadResponse, SearchResponse)
 
 
+def require_uuid(memory_id: str) -> str:
+    """Reject non-UUID path identifiers before they reach SQL.
+
+    Without this a malformed id surfaces as a PostgreSQL
+    InvalidTextRepresentation (HTTP 500) and tears down the keep-alive
+    connection, which also fails the next request on that connection.
+    """
+    try:
+        return str(UUID(memory_id))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise HTTPException(
+            status_code=422, detail="memory_id must be a valid UUID") from exc
+
+
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
     subject_id: str = Field(min_length=1, max_length=255, description="Stable entity or subject identifier.")
@@ -284,10 +298,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         ),
     )
     def forget_memory(memory_id: str, t: str = Depends(auth)):
-        try:
-            str(UUID(memory_id))
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="memory_id must be a valid UUID") from exc
+        memory_id = require_uuid(memory_id)
         db = store_factory()
         try:
             forgotten = db.forget(tenant_id=t, memory_id=memory_id)
@@ -449,6 +460,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         summary="List provenance sources linked to a memory",
     )
     def get_memory_sources(memory_id: str, t: str = Depends(auth)):
+        memory_id = require_uuid(memory_id)
         try:
             db=store_factory()
             try:
@@ -465,6 +477,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     )
     def put_embedding(memory_id: str, item: EmbeddingWrite,
                       t: str = Depends(auth)):
+        memory_id = require_uuid(memory_id)
         if not (capability_flags or {}).get("semantic", False):
             raise HTTPException(status_code=503, detail="Vector indexing is disabled on this instance")
         try:

@@ -1,10 +1,15 @@
 import hashlib
+import uuid
+
 import pytest
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from agent_memory_core.api import create_app
 from agent_memory_core.objects import ObjectStore
+
+# Path ids are UUID-validated at the edge, so fixtures must look like real ids.
+MEMORY_ID = "8f14e45f-ceea-467f-a1d5-0f0e9a1f0001"
 
 
 class FakeDB:
@@ -29,7 +34,7 @@ class FakeDB:
             for row in self.memories:
                 if row["id"]==old:
                     row["superseded_at"]=datetime.now(timezone.utc)
-        mid=f"memory-{len(self.memories)+1}"
+        mid=str(uuid.uuid4())
         self.memories.append({"id":mid,"tenant_id":kwargs["tenant_id"],
             "subject_id":kwargs["subject_id"],"predicate":kwargs["predicate"],
             "value":kwargs["value"],"source_id":kwargs["source_id"],
@@ -242,13 +247,13 @@ def test_graph_and_vector_write_apis(tmp_path):
     edge={"from_entity":"bedroom-1","predicate":"HAS_WINDOW","to_entity":"window-1"}
     assert client.post("/v1/edges",json=edge,headers=headers).status_code==201
     embedding={"model_id":"bge-small-zh-v1.5","embedding":[0.01]*512}
-    response=client.put("/v1/memories/memory-1/embedding",json=embedding,headers=headers)
+    response=client.put(f"/v1/memories/{MEMORY_ID}/embedding",json=embedding,headers=headers)
     assert response.status_code==200
 
 
 def test_memory_provenance_sources_are_exposed(tmp_path):
     client,headers=make_client(tmp_path)
-    response=client.get("/v1/memories/memory-1/sources",headers=headers)
+    response=client.get(f"/v1/memories/{MEMORY_ID}/sources",headers=headers)
     assert response.status_code==200
     assert response.json()["sources"][0]["source_id"]=="conversation-1"
 

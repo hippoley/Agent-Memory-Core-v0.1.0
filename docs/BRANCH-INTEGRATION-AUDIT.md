@@ -1,7 +1,9 @@
 # Main-branch consolidation audit
 
 Audit scope: repository `hippoley/Agent-Memory-Core-v0.1.0` only.
-Baseline: default branch `main` at `10cc9ba6b575a3a7e76299c31d7abe82e7badad7`.
+Baseline at the time of consolidation: `main` at `10cc9ba6b575a3a7e76299c31d7abe82e7badad7`.
+Re-verified on 2026-11-12 against `main` at `3d5415cf62300e36e21890b8ead0b25b9caf1b36`;
+that re-verification is reproducible, see "Re-verification" below.
 The goal is a complete, coherent main branch, not a zero-branch count. Original
 branches and PRs are retained for provenance; no force-push or branch deletion
 is part of this consolidation.
@@ -48,7 +50,7 @@ Git trees and code, not by merging branch names blindly.
 6. Local SentenceTransformer loading requires an existing local directory,
    disables remote code and sets `local_files_only=True`.
 7. A reproducible 100-logical-Agent PostgreSQL same-fact benchmark.
-8. A 14-case Chinese smoke corpus, explicitly distinguished from the
+8. A 12-case Chinese smoke corpus, explicitly distinguished from the
    200+ human-adjudicated release-quality corpus.
 9. Current `sdk.py` documentation and polarity-aware extraction evaluation.
 
@@ -60,6 +62,47 @@ ledger, old worker handlers and benchmark scripts bound to those old schemas
 would create two competing implementations. Their intended functionality is
 either present in current main or replaced by the ported current implementation.
 The old branch and PR remain available as historical source.
+
+## Re-verification (2026-11-12)
+
+The consolidation above was re-checked against the current `main`, because a
+claim like "main already contains everything valuable" decays the moment either
+side moves. The check is a path-level set difference, never a commit count: a
+branch can be dozens of commits ahead and still contain nothing `main` lacks.
+
+```bash
+python scripts/audit_branches.py            # table
+python scripts/audit_branches.py --json     # machine readable
+```
+
+For every remote branch the script takes its merge base with `main`, lists the
+paths the branch *added*, and reports those absent at the same path on `main`
+(`DRIFT`). `DRIFT` is a question, not a verdict — the capability may live on
+`main` under another name — so each one is resolved below by reading code.
+
+Result at `main @ 3d5415c` (18 refs including `main`; 15 branches audited):
+
+- **12 branches `COVERED`** — every path they added exists on `main`.
+- **3 branches `DRIFT`**, 15 paths total (below). No drift path is a missing
+  capability; each is a stale duplicate superseded by a current implementation.
+
+| Branch | Paths absent on `main` | Disposition |
+|---|---|---|
+| `feat/reliable-projection-engine` (PR #1, closed) | `client.py`, `fts.py`, `projection_jobs.py`, `vector_projection.py`, `benchmarking.py`, `benchmarks/MEMORY-PIPELINE.md`, `benchmarks/chinese_memory_eval.jsonl`, `scripts/benchmark_memory_pipeline.py`, `tests/test_client.py`, `tests/test_evaluation.py`, `tests/test_projection_worker_cli.py` — 11 | Superseded. Live equivalents: `sdk.py`; `memory_claim_search` in `postgres.py`; `projections.py` (`PostgresProjectionHandlers.vector`); `scripts/benchmark_memory_concurrency.py` + `scripts/benchmark_http.py`; `evaluation.py` + `scripts/evaluate_local_extractor.py` / `evaluate_retrieval.py`. Its corpus holds the same 12 scenarios in an older schema (`expected`, no `category`); `main` keeps the categorised form that the evaluator validates. |
+| `fix/memory-association-cardinality-20261110` (PR #2, closed) | `embedding_projection.py`, `tests/test_vector_outbox_runtime.py` — 2 | Superseded. `local_sentence_transformer` lives in `local_embeddings.py`; the worker handler is `PostgresProjectionHandlers.vector`; outbox coverage is `tests/test_outbox_runtime.py` + `tests/test_outbox_api_integration.py`. |
+| `feat/database-rls-tenant-isolation` | `sql/postgresql/004_tenant_rls.sql`, `src/agent_memory_core/resources/004_tenant_rls.sql` — 2 | Rejected, not missing. The mutable-session-GUC RLS design was replaced by the principal-bound one (PR #11); the path also collides with the shipped `004_predicate_cardinality.sql`. |
+
+PR snapshot at the same moment: 14 PRs total, all closed — 12 merged (#3–#9,
+#11–#15), 2 closed as superseded (#1, #2). No open PR. Branch and PR references
+are kept for provenance.
+
+Two corrections to earlier reporting, recorded so the numbers are not repeated:
+
+- The latest `main` is **not** `ecae810`; that was the tip before the dashboard,
+  browse/policy endpoints and extractor-neutrality work landed. Current tip is
+  `3d5415c`.
+- The smoke corpus is **12 cases**, not 14 (`benchmarks/README.md` was already
+  right; item 8 above was wrong and is fixed).
 
 ## Completion rule
 

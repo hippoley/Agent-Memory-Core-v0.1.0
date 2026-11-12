@@ -30,12 +30,15 @@ observation streams and workflow execution.
 
 ## Public API
 
-Run the service and open Swagger:
+Run the service and open the API manual:
 
 - Console: `http://127.0.0.1:8765/dashboard/`
-- Swagger UI: `http://127.0.0.1:8765/docs`
-- ReDoc: `http://127.0.0.1:8765/redoc`
+- API manual (offline, one user story per endpoint): `http://127.0.0.1:8765/docs`
+- Swagger UI (needs a CDN): `http://127.0.0.1:8765/docs/swagger`
 - OpenAPI JSON: `http://127.0.0.1:8765/openapi.json`
+
+`/docs` is packaged with the wheel and renders `x-user-story` from the schema,
+so an air-gapped demo still has readable documentation with a Try-it panel.
 
 Implemented route families include:
 

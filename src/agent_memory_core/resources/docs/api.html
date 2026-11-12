@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API 手册 · Agent Memory Core</title>
+<style>
+  :root{
+    --paper:#FBF8F2; --card:#FFFEFB; --ink:#191612; --ink-2:#3B352C; --muted:#6F6759;
+    --hair:#E8DFCE; --hair-2:#F1EADC;
+    --emerald:#0F6B54; --emerald-bg:#E9F2EE;
+    --sapphire:#233F6B; --sapphire-bg:#EAEFF7;
+    --gold:#9C7A39; --gold-2:#C9A85F; --gold-bg:#F8F0DC;
+    --amethyst:#5D4380; --amethyst-bg:#F0EAF6;
+    --ruby:#8A2E42; --ruby-bg:#F9E9ED;
+    --shadow:0 1px 2px rgba(25,22,18,.04),0 18px 40px -32px rgba(25,22,18,.5);
+    --serif:"Songti SC","STSong","Noto Serif SC","Source Han Serif SC","Source Han Serif CN","SimSun",Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:
+      radial-gradient(1100px 520px at 8% -8%,#FFFEF8 0%,transparent 58%),
+      radial-gradient(900px 480px at 102% 2%,#F3F7F4 0%,transparent 52%),
+      var(--paper);
+    color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  body:before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.28;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.22'/%3E%3C/svg%3E");
+    mix-blend-mode:multiply;
+  }
+  a{color:var(--sapphire);text-decoration:none}
+  a:hover{text-decoration:underline;text-underline-offset:3px}
+  ::selection{background:var(--gold-bg)}
+  code,pre{font-family:var(--mono)}
+  .wrap{position:relative;z-index:1;max-width:1480px;margin:0 auto;padding:0 40px 80px}
+
+  /* ---------- topbar ---------- */
+  .topbar{display:flex;align-items:center;gap:18px;padding:18px 0;border-bottom:1px solid var(--hair)}
+  .mark{width:34px;height:34px;border:1px solid var(--gold-2);display:grid;place-items:center;
+    font-family:var(--serif);font-size:16px;color:var(--gold);letter-spacing:.02em;background:var(--card)}
+  .wordmark{display:flex;flex-direction:column;line-height:1.25}
+  .wordmark b{font-family:var(--serif);font-size:16px;font-weight:600;letter-spacing:.03em}
+  .wordmark span{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .topbar .spacer{flex:1}
+  .toplink{font-size:12.5px;color:var(--muted);padding:6px 10px;border:1px solid transparent;border-radius:6px}
+  .toplink:hover{border-color:var(--hair);background:var(--card);text-decoration:none;color:var(--ink)}
+  .keyset{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:4px 6px 4px 10px}
+  .keyset label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .keyset input{border:0;outline:none;background:transparent;font-family:var(--mono);font-size:11.5px;width:180px;color:var(--ink)}
+  .keyset button{border:1px solid var(--hair);background:var(--paper);border-radius:5px;font-size:11px;padding:3px 8px;cursor:pointer;color:var(--ink)}
+  .keyset button:hover{border-color:var(--gold-2);color:var(--gold)}
+
+  /* ---------- hero ---------- */
+  .hero{padding:44px 0 30px;border-bottom:1px solid var(--hair)}
+  .eyebrow{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin:0 0 14px}
+  .hero h1{font-family:var(--serif);font-size:46px;line-height:1.15;font-weight:600;margin:0;letter-spacing:.01em}
+  .hero h1 em{font-style:normal;color:var(--emerald)}
+  .hero p.lede{max-width:760px;margin:14px 0 0;color:var(--ink-2);font-size:15px;line-height:1.8}
+  .hero .meta{display:flex;gap:22px;margin-top:22px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .hero .meta b{display:block;font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:500}
+
+  .grid{display:grid;grid-template-columns:252px minmax(0,1fr);gap:46px;align-items:start;padding-top:34px}
+  @media (max-width:1080px){.grid{grid-template-columns:1fr;gap:24px}.nav{position:static!important;max-height:none!important}}
+
+  /* ---------- nav ---------- */
+  .nav{position:sticky;top:18px;max-height:calc(100vh - 40px);overflow:auto;padding-right:6px}
+  .nav .searchbox{display:flex;align-items:center;gap:8px;border:1px solid var(--hair);background:var(--card);border-radius:8px;padding:7px 10px;margin-bottom:18px}
+  .nav .searchbox input{border:0;outline:none;background:transparent;font-size:12.5px;width:100%;font-family:var(--sans)}
+  .nav .searchbox span{color:var(--muted);font-size:12px}
+  .nav-group{margin-bottom:20px}
+  .nav-group h4{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:600}
+  .nav a{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:5px;font-size:12px;color:var(--ink-2);line-height:1.5}
+  .nav a:hover{background:var(--card);text-decoration:none;color:var(--ink)}
+  .nav a.active{background:var(--gold-bg);color:var(--ink)}
+  .nav a .m{font-family:var(--mono);font-size:9px;letter-spacing:.06em;padding:1px 4px;border-radius:3px;flex:0 0 auto;border:1px solid transparent}
+  .m-GET{color:var(--emerald);background:var(--emerald-bg)}
+  .m-POST{color:var(--sapphire);background:var(--sapphire-bg)}
+  .m-PUT{color:var(--gold);background:var(--gold-bg)}
+  .m-DELETE{color:var(--ruby);background:var(--ruby-bg)}
+  .m-PATCH{color:var(--amethyst);background:var(--amethyst-bg)}
+  .nav a code{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* ---------- concept cards ---------- */
+  .concepts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 0 34px}
+  @media (max-width:900px){.concepts{grid-template-columns:1fr}}
+  .concept{background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:16px 18px;box-shadow:var(--shadow)}
+  .concept h3{font-family:var(--serif);font-size:15px;margin:0 0 6px;font-weight:600}
+  .concept p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.7}
+  .concept .k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);display:block;margin-bottom:8px}
+
+  .quickstart{background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:20px 22px;margin-bottom:34px;box-shadow:var(--shadow)}
+  .quickstart h3{font-family:var(--serif);font-size:17px;margin:0 0 4px}
+  .quickstart p{margin:0 0 12px;color:var(--muted);font-size:12.5px}
+  pre{background:#1D1A16;color:#F1EADC;border-radius:8px;padding:14px 16px;overflow:auto;font-size:12px;line-height:1.75;margin:0;position:relative}
+  pre .c{color:#8F8676}
+  .copy{position:absolute;top:8px;right:8px;border:1px solid rgba(241,234,220,.22);background:transparent;color:#CFC5B2;
+    font-size:10.5px;padding:2px 8px;border-radius:4px;cursor:pointer;opacity:0;transition:.15s}
+  pre:hover .copy{opacity:1}
+  .copy:hover{color:#FFF;border-color:rgba(241,234,220,.5)}
+
+  /* ---------- section ---------- */
+  .tag-section{margin-bottom:46px;scroll-margin-top:20px}
+  .tag-head{display:flex;align-items:baseline;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--hair);margin-bottom:18px}
+  .tag-head h2{font-family:var(--serif);font-size:26px;margin:0;font-weight:600}
+  .tag-head span{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .tag-desc{color:var(--muted);font-size:12.5px;margin:-8px 0 18px;max-width:820px}
+
+  /* ---------- operation ---------- */
+  .op{background:var(--card);border:1px solid var(--hair);border-radius:10px;margin-bottom:14px;overflow:hidden;scroll-margin-top:16px;transition:.15s}
+  .op:hover{box-shadow:var(--shadow);border-color:#DED3BE}
+  .op-head{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;user-select:none}
+  .op-head .m{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;padding:3px 8px;border-radius:4px;flex:0 0 auto}
+  .op-head .path{font-family:var(--mono);font-size:13px;color:var(--ink)}
+  .op-head .sum{font-size:12.5px;color:var(--muted);margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .op-head .chev{margin-left:auto;color:var(--muted);font-size:11px;transition:transform .18s}
+  .op.open .chev{transform:rotate(90deg)}
+  .op-body{display:none;padding:0 18px 20px;border-top:1px solid var(--hair-2)}
+  .op.open .op-body{display:block;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
+
+  .story{margin:16px 0 18px;border-left:2px solid var(--gold-2);background:linear-gradient(90deg,var(--gold-bg),rgba(248,240,220,0));padding:12px 16px;border-radius:0 6px 6px 0}
+  .story .kicker{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+  .story p{margin:0;font-size:13px;line-height:1.8;color:var(--ink-2)}
+  .story p b{color:var(--ink);font-weight:600}
+  .story ol{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-2);line-height:1.9}
+  .story ol li::marker{color:var(--gold);font-family:var(--mono);font-size:11px}
+
+  .desc{font-size:12.5px;color:var(--ink-2);line-height:1.85;margin:0 0 16px;max-width:900px}
+  .desc code{background:var(--hair-2);padding:1px 5px;border-radius:3px;font-size:11.5px}
+
+  .subhead{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:20px 0 8px;font-weight:600}
+  table.params{width:100%;border-collapse:collapse;font-size:12px}
+  table.params th{text-align:left;font-weight:600;color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--hair)}
+  table.params td{padding:7px 8px;border-bottom:1px solid var(--hair-2);vertical-align:top;color:var(--ink-2)}
+  table.params td:first-child{font-family:var(--mono);font-size:11.5px;color:var(--ink);white-space:nowrap}
+  .req{color:var(--ruby);font-size:10px;margin-left:4px}
+  .type{font-family:var(--mono);font-size:10.5px;color:var(--sapphire);background:var(--sapphire-bg);padding:1px 5px;border-radius:3px}
+  .in{font-size:10px;color:var(--muted);letter-spacing:.06em}
+
+  .example{margin-top:16px;position:relative}
+  .resp{display:flex;flex-direction:column;gap:5px;margin-top:2px;font-size:11.5px}
+  .resp-row{display:flex;align-items:baseline;gap:9px}
+  .resp .code{font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:4px;background:var(--hair-2);color:var(--ink-2);flex:0 0 auto}
+  .resp .code.ok{background:var(--emerald-bg);color:var(--emerald)}
+  .resp .code.err{background:var(--ruby-bg);color:var(--ruby)}
+  .resp .rdesc{color:var(--muted)}
+
+  /* ---------- try it ---------- */
+  .try{margin-top:18px;border:1px dashed #D9CDB6;border-radius:8px;padding:12px 14px;background:rgba(251,248,242,.6)}
+  .try summary{cursor:pointer;font-size:12px;color:var(--sapphire);letter-spacing:.04em;outline:none}
+  .try .field{display:grid;grid-template-columns:170px 1fr;gap:8px;align-items:center;margin-top:8px}
+  .try .field label{font-family:var(--mono);font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+  .try input,.try textarea{width:100%;border:1px solid var(--hair);border-radius:5px;background:var(--card);
+    padding:5px 8px;font-family:var(--mono);font-size:11.5px;color:var(--ink);outline:none}
+  .try input:focus,.try textarea:focus{border-color:var(--gold-2);box-shadow:0 0 0 2px var(--gold-bg)}
+  .try textarea{min-height:96px;line-height:1.6;resize:vertical}
+  .try .actions{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .btn{border:1px solid var(--ink);background:var(--ink);color:#FBF8F2;border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:var(--sans)}
+  .btn:hover{background:#2E2822}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--hair)}
+  .btn.ghost:hover{border-color:var(--gold-2);background:var(--card)}
+  .try .status{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .try pre{margin-top:10px;max-height:340px}
+
+  .empty{padding:60px 10px;text-align:center;color:var(--muted);font-family:var(--serif);font-size:15px}
+  .foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--hair);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="mark">M</div>
+    <div class="wordmark"><b>Memory Core</b><span>Agent Memory · API</span></div>
+    <div class="spacer"></div>
+    <div class="keyset">
+      <label for="key">API KEY</label>
+      <input id="key" type="password" placeholder="Bearer key" autocomplete="off" />
+      <button id="keySave">保存</button>
+    </div>
+    <a class="toplink" href="/dashboard/">台账看板</a>
+    <a class="toplink" href="/openapi.json">openapi.json</a>
+    <a class="toplink" href="/docs/swagger">Swagger UI</a>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Reference · v<span id="ver">1.0.0</span></p>
+    <h1>接口手册 <em>·</em> 每个端点都讲清它的<em>用户故事</em></h1>
+    <p class="lede">这不是一份把路径和状态码堆在一起的清单。每个接口都回答三个问题：
+      谁在什么处境下调用它、它替调用方解决了什么、失败了该怎么读。所有示例都可以直接在页内执行。</p>
+    <div class="meta">
+      <div>端点<b id="opCount">—</b></div>
+      <div>分组<b id="tagCount">—</b></div>
+      <div>认证<b>Bearer · 租户绑定凭据</b></div>
+      <div>规范<b>OpenAPI 3.1</b></div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <nav class="nav">
+      <div class="searchbox"><span>⌕</span><input id="filter" placeholder="搜索路径、场景、关键词" /></div>
+      <div id="navList"></div>
+    </nav>
+
+    <main>
+      <div class="concepts">
+        <div class="concept"><span class="k">Bitemporal</span><h3>双时态，不混用</h3>
+          <p><code>valid_at</code> 是世界什么时候如此，<code>known_at</code> 是我们什么时候相信。两个问题，两套答案。</p></div>
+        <div class="concept"><span class="k">Trusted cardinality</span><h3>基数由库决定</h3>
+          <p>一个房间只能有一条当前温度。这条规则写在租户策略表里，模型无权修改。</p></div>
+        <div class="concept"><span class="k">Soft forget</span><h3>遗忘可撤回，审计不可</h3>
+          <p>删除只是不再相信；行、事件与时间线仍在，随时能回答“当时为什么这么写”。</p></div>
+      </div>
+
+      <section class="quickstart">
+        <h3>先跑通一条链路</h3>
+        <p>下面四条命令覆盖了「探活 → 探能力 → 写一句自然语言 → 回看台账」的完整闭环。</p>
+        <pre><button class="copy">复制</button><span class="c"># 1. 进程活着（无需鉴权）</span>
+curl -s $API/v1/health
+
+<span class="c"># 2. 这个实例到底开了哪些能力</span>
+curl -s -H "Authorization: Bearer $KEY" $API/v1/capabilities
+
+<span class="c"># 3. 写一句自然语言：抽取 → 判重/判矛盾 → 双时态入库</span>
+curl -s -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"text":"我不喜欢卧室太吵","source_id":"demo:1"}' \
+  $API/v1/memories/process
+
+<span class="c"># 4. 回看台账（含已被替换的历史版本）</span>
+curl -s -H "Authorization: Bearer $KEY" \
+  "$API/v1/memories?include_superseded=true&limit=20"</pre>
+      </section>
+
+      <div id="sections"><div class="empty">正在读取 /openapi.json…</div></div>
+
+      <div class="foot">
+        <span>Agent Memory Core · OpenAPI 3.1 · 本文档离线可用，不依赖任何 CDN</span>
+        <span>接口变更请同步 <code>src/agent_memory_core/api_docs.py</code> 中的用户故事</span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const S = { spec:null, key:"", filter:"" };
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const md = (v) => esc(v).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\n/g,"<br>");
+
+/* bearer key is kept in localStorage only; it is never rendered into the page */
+S.key = localStorage.getItem("amc.key") || "";
+$("#key").value = S.key;
+$("#keySave").onclick = () => {
+  S.key = $("#key").value.trim();
+  localStorage.setItem("amc.key", S.key);
+  $("#keySave").textContent = "已保存";
+  setTimeout(() => $("#keySave").textContent = "保存", 1200);
+};
+$("#key").addEventListener("keydown", e => { if (e.key === "Enter") $("#keySave").click(); });
+
+function highlight(code){
+  return esc(code)
+    .replace(/(^|\n)(\s*#.*)/g, "$1<span class='c'>$2</span>")
+    .replace(/(curl|export)/g, "<span style='color:#9CC7B6'>$1</span>");
+}
+function copyable(code){
+  return `<button class="copy" data-code="${esc(code)}">复制</button>${highlight(code)}`;
+}
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".copy"); if (!btn) return;
+  try { await navigator.clipboard.writeText(btn.dataset.code); btn.textContent = "已复制"; }
+  catch { btn.textContent = "复制失败"; }
+  setTimeout(() => btn.textContent = "复制", 1400);
+});
+
+function typeOf(schema){
+  if (!schema) return "—";
+  if (schema.$ref) return schema.$ref.split("/").pop();
+  let t = schema.type || (schema.anyOf ? schema.anyOf.map(x => x.type).filter(Boolean).join("|") : "");
+  if (t === "array" && schema.items) t = typeOf(schema.items) + "[]";
+  if (schema.format) t += " · " + schema.format;
+  return t || "any";
+}
+
+function resolveRef(schema, depth = 0){
+  if (!schema || !schema.$ref || depth > 3) return schema;
+  const name = schema.$ref.split("/").pop();
+  return (S.spec.components?.schemas?.[name]) || schema;
+}
+
+function propsTable(schema){
+  schema = resolveRef(schema);
+  if (!schema) return "";
+  if (schema.type === "array") return propsTable(resolveRef(schema.items));
+  const props = schema.properties;
+  if (!props) return "";
+  const required = new Set(schema.required || []);
+  const rows = Object.entries(props).map(([name, raw]) => {
+    const p = resolveRef(raw);
+    const bits = [p.description || ""];
+    if (p.enum) bits.push("枚举：" + p.enum.join(" / "));
+    if (p.default !== undefined) bits.push("默认：" + JSON.stringify(p.default));
+    return `<tr><td>${esc(name)}${required.has(name) ? '<span class="req">*</span>' : ""}</td>
+      <td><span class="type">${esc(typeOf(raw))}</span></td>
+      <td>${md(bits.filter(Boolean).join("；"))}</td></tr>`;
+  }).join("");
+  return `<table class="params"><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function paramsTable(operation){
+  const params = (operation.parameters || []).filter(p => p.in !== "header");
+  if (!params.length) return "";
+  const rows = params.map(p => `<tr><td>${esc(p.name)}${p.required ? '<span class="req">*</span>' : ""}</td>
+    <td><span class="in">${esc(p.in)}</span></td>
+    <td><span class="type">${esc(typeOf(p.schema))}</span></td>
+    <td>${md(p.description || "")}</td></tr>`).join("");
+  return `<table class="params"><thead><tr><th>参数</th><th>位置</th><th>类型</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function responsesBlock(operation){
+  const codes = Object.entries(operation.responses || {});
+  if (!codes.length) return "";
+  const rows = codes.map(([code, r]) => {
+    const ok = code.startsWith("2");
+    return `<div class="resp-row"><span class="code ${ok ? "ok" : "err"}">${esc(code)}</span>
+      <span class="rdesc">${md(r.description || "")}</span></div>`;
+  }).join("");
+  return `<div class="subhead">响应</div><div class="resp">${rows}</div>`;
+}
+
+function tryForm(method, path, operation){
+  const params = operation.parameters || [];
+  const fields = params.map(p => {
+    if (p.in === "header") return "";
+    return `<div class="field"><label>${esc(p.in)} · ${esc(p.name)}</label>
+      <input data-param="${esc(p.name)}" data-in="${esc(p.in)}" placeholder="${esc(p.description || "")}" /></div>`;
+  }).join("");
+  const body = operation.requestBody ? (() => {
+    const content = operation.requestBody.content || {};
+    const json = content["application/json"];
+    const example = json?.example ?? json?.schema?.example ?? "";
+    return `<div class="field" style="grid-template-columns:1fr"><label>request body · JSON</label>
+      <textarea id="body-${esc(method)}-${esc(path.replace(/\W/g,""))}" placeholder='{"…": "…"}'>${esc(JSON.stringify(example, null, 2))}</textarea></div>`;
+  })() : "";
+  return `<details class="try"><summary>Try it —— 用当前 key 直接调用</summary>
+    ${fields}${body}
+    <div class="actions"><button class="btn" data-send="1">发送请求</button>
+      <span class="status"></span></div>
+    <pre style="display:none"></pre>
+  </details>`;
+}
+
+async function send(target){
+  const box = target.closest(".try");
+  const method = box.dataset.method, path = box.dataset.path;
+  const status = box.querySelector(".status");
+  const out = box.querySelector("pre");
+  const btn = box.querySelector("[data-send]");
+  if (!S.key) { status.textContent = "请先在右上角填入 API key"; return; }
+  let url = path;
+  box.querySelectorAll("input[data-param]").forEach(input => {
+    const value = input.value.trim();
+    if (!value) return;
+    if (input.dataset.in === "path") url = url.replace("{" + input.dataset.param + "}", encodeURIComponent(value));
+    else url += (url.includes("?") ? "&" : "?") + encodeURIComponent(input.dataset.param) + "=" + encodeURIComponent(value);
+  });
+  const area = box.querySelector("textarea");
+  const init = { method, headers: { "Authorization": "Bearer " + S.key } };
+  if (area && area.value.trim()) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = area.value.trim();
+  }
+  btn.disabled = true; status.textContent = "请求中…";
+  const started = performance.now();
+  try {
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let pretty = text;
+    try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+    out.style.display = "block";
+    out.textContent = pretty || "(空响应)";
+    status.textContent = res.status + " · " + Math.round(performance.now() - started) + "ms";
+    status.style.color = res.ok ? "var(--emerald)" : "var(--ruby)";
+  } catch (e) {
+    out.style.display = "block"; out.textContent = String(e);
+    status.textContent = "网络错误"; status.style.color = "var(--ruby)";
+  } finally { btn.disabled = false; }
+}
+
+function opCard(method, path, operation, id){
+  const tag = (operation.tags || ["Other"])[0];
+  const story = operation["x-user-story"];
+  const storyHtml = story ? `<div class="story">
+      <div class="kicker">User story</div>
+      <p>作为<b>${esc(story.persona)}</b>，我希望<b>${esc(story.goal)}</b>，以便<b>${esc(story.value)}</b>。</p>
+      ${story.steps?.length ? `<ol>${story.steps.map(s => `<li>${md(s)}</li>`).join("")}</ol>` : ""}
+    </div>` : "";
+  const requestSchema = operation.requestBody?.content?.["application/json"]?.schema;
+  const responseSchema = (() => {
+    const ok = Object.entries(operation.responses || {}).find(([c]) => c.startsWith("2"))?.[1];
+    return ok?.content?.["application/json"]?.schema;
+  })();
+  return `<article class="op" id="${esc(id)}" data-tag="${esc(tag)}" data-search="${esc((path + " " + (operation.summary||"") + " " + (story ? story.goal + story.value : "")).toLowerCase())}">
+    <div class="op-head"><span class="m m-${method}">${method}</span>
+      <span class="path">${esc(path)}</span>
+      <span class="sum">${esc(operation.summary || "")}</span><span class="chev">▸</span></div>
+    <div class="op-body">
+      ${storyHtml}
+      ${operation.description && !story ? `<p class="desc">${md(operation.description)}</p>` : ""}
+      ${paramsTable(operation) ? `<div class="subhead">请求参数</div>${paramsTable(operation)}` : ""}
+      ${requestSchema ? `<div class="subhead">请求体</div>${propsTable(requestSchema)}` : ""}
+      ${responseSchema ? `<div class="subhead">响应结构</div>${propsTable(responseSchema)}` : ""}
+      ${responsesBlock(operation)}
+      ${story?.example ? `<div class="subhead">示例</div><pre class="example">${copyable(story.example)}</pre>` : ""}
+      ${tryForm(method, path, operation)}
+    </div>
+  </article>`;
+}
+
+async function boot(){
+  try {
+    const res = await fetch("/openapi.json");
+    S.spec = await res.json();
+  } catch (e) {
+    $("#sections").innerHTML = `<div class="empty">无法读取 /openapi.json（${esc(e)}）</div>`;
+    return;
+  }
+  const spec = S.spec;
+  $("#ver").textContent = spec.info?.version || "1.0.0";
+  const tagOrder = (spec.tags || []).map(t => t.name);
+  const tagDesc = Object.fromEntries((spec.tags || []).map(t => [t.name, t.description || ""]));
+  const groups = new Map(tagOrder.map(t => [t, []]));
+  let total = 0;
+
+  for (const [path, operations] of Object.entries(spec.paths || {})) {
+    for (const [method, operation] of Object.entries(operations)) {
+      if (!["get","post","put","delete","patch"].includes(method)) continue;
+      const tag = (operation.tags || ["Other"])[0];
+      if (!groups.has(tag)) groups.set(tag, []);
+      groups.get(tag).push({ method: method.toUpperCase(), path, operation });
+      total += 1;
+    }
+  }
+  $("#opCount").textContent = total;
+  $("#tagCount").textContent = [...groups.keys()].length;
+
+  const nav = [], sections = [];
+  let n = 0;
+  for (const [tag, ops] of groups) {
+    if (!ops.length) continue;
+    const tagId = "tag-" + tag.replace(/\W/g, "-");
+    nav.push(`<div class="nav-group"><h4>${esc(tag)}</h4>${ops.map(({method, path, operation}) => {
+      const id = "op-" + (++n);
+      operation.__id = id;
+      return `<a href="#${id}" data-target="${id}"><span class="m m-${method}">${method}</span><code>${esc(path.replace("/v1",""))}</code></a>`;
+    }).join("")}</div>`);
+    sections.push(`<section class="tag-section" id="${tagId}">
+      <div class="tag-head"><h2>${esc(tag)}</h2><span>${ops.length} endpoints</span></div>
+      ${tagDesc[tag] ? `<p class="tag-desc">${md(tagDesc[tag])}</p>` : ""}
+      ${ops.map(({method, path, operation}) => opCard(method, path, operation, operation.__id)).join("")}
+    </section>`);
+  }
+  $("#navList").innerHTML = nav.join("");
+  $("#sections").innerHTML = sections.join("");
+
+  document.querySelectorAll(".op-head").forEach(head => {
+    head.onclick = () => head.parentElement.classList.toggle("open");
+  });
+  // Print/review mode: /docs?expand=all opens every operation.
+  if (new URLSearchParams(location.search).get("expand") === "all") {
+    document.querySelectorAll(".op").forEach(op => op.classList.add("open"));
+  }
+  document.querySelectorAll("[data-send]").forEach(btn => {
+    btn.onclick = () => send(btn);
+  });
+  document.querySelectorAll(".try").forEach(box => {
+    const head = box.parentElement;
+    box.dataset.method = head.querySelector(".m").textContent;
+    box.dataset.path = head.querySelector(".path").textContent;
+  });
+
+  $("#filter").oninput = (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll(".op").forEach(op => {
+      op.style.display = !q || op.dataset.search.includes(q) ? "" : "none";
+    });
+    document.querySelectorAll(".tag-section").forEach(section => {
+      const visible = [...section.querySelectorAll(".op")].some(op => op.style.display !== "none");
+      section.style.display = visible ? "" : "none";
+    });
+    document.querySelectorAll(".nav a").forEach(a => {
+      const op = document.getElementById(a.dataset.target);
+      a.style.display = !op || op.style.display === "none" ? "none" : "";
+    });
+    document.querySelectorAll(".nav-group").forEach(g => {
+      g.style.display = [...g.querySelectorAll("a")].some(a => a.style.display !== "none") ? "" : "none";
+    });
+  };
+  window.addEventListener("scroll", () => {
+    const heads = [...document.querySelectorAll(".op")].filter(o => o.getBoundingClientRect().top < 160);
+    const current = heads[heads.length - 1];
+    document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("active", !!current && a.dataset.target === current.id));
+  }, { passive: true });
+}
+boot();
+</script>
+</body>
+</html>

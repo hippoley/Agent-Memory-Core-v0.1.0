@@ -5,8 +5,10 @@ Runtime: FastAPI / OpenAPI 3.x
 Deployment model: local-first, one tenant per API process
 
 This document is the source-oriented guide for the current public HTTP facade.
-The generated contract is available at `/openapi.json` and Swagger UI at
-`/docs`. Optional channels must be checked through `GET /v1/capabilities`.
+The generated contract is available at `/openapi.json`. `/docs` serves the
+packaged API manual (every operation carries a user story, a runnable example
+and a Try-it panel, no CDN required); `/docs/swagger` serves the stock Swagger
+UI. Optional channels must be checked through `GET /v1/capabilities`.
 
 ## SDK failure contract
 
@@ -31,11 +33,12 @@ and Unicode/reserved characters are escaped as a single segment.
 
 When the service is running:
 
-- Swagger UI: `http://127.0.0.1:8765/docs`
-- ReDoc: `http://127.0.0.1:8765/redoc`
+- API manual: `http://127.0.0.1:8765/docs`
+- Swagger UI: `http://127.0.0.1:8765/docs/swagger`
 - OpenAPI JSON: `http://127.0.0.1:8765/openapi.json`
 
-Swagger's Authorize control accepts the API key without the `Bearer ` prefix.
+The manual's top-right `API KEY` box and Swagger's Authorize control both take
+the key without the `Bearer ` prefix. `/redoc` redirects to `/docs`.
 
 ## 2. Local installation
 

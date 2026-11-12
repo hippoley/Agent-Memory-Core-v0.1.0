@@ -89,9 +89,14 @@ def test_swagger_and_openapi_are_published_with_bearer_security():
         tenant_id="home",
     )
     client=TestClient(app)
+    # /docs is the packaged, CDN-free manual; the stock Swagger UI lives at
+    # /docs/swagger so an air-gapped instance still has readable API docs.
     docs=client.get("/docs")
     assert docs.status_code==200
-    assert "swagger-ui" in docs.text.lower()
+    assert "接口手册" in docs.text
+    swagger=client.get("/docs/swagger")
+    assert swagger.status_code==200
+    assert "swagger-ui" in swagger.text.lower()
     spec=client.get("/openapi.json")
     assert spec.status_code==200
     body=spec.json()

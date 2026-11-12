@@ -18,6 +18,34 @@ from pydantic import BaseModel, ConfigDict, Field
 from .contracts import CONTRACT_VERSION, aware_iso, capabilities
 from .api_models import (HealthResponse, ReadinessResponse, CapabilitiesResponse, MemoryWriteResponse,
                          MemoryReadResponse, SearchResponse)
+from .api_docs import SERVICE_DESCRIPTION, TAG_METADATA, install as install_api_docs
+
+
+_SWAGGER_PAGE = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Swagger UI · Agent Memory Core</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+<style>body{margin:0;font-family:-apple-system,"PingFang SC",system-ui,sans-serif}
+#fallback{display:none;max-width:640px;margin:80px auto;padding:0 24px;font-size:14px;line-height:1.8;color:#3b352c}
+#fallback code{background:#f3ede0;padding:2px 6px;border-radius:4px}
+</style></head>
+<body>
+<div id="swagger-ui"></div>
+<div id="fallback"><h2>Swagger UI 需要访问 CDN</h2>
+<p>当前网络无法加载 <code>swagger-ui-dist</code>。这不影响接口本身：</p>
+<p>· 使用内置离线手册 <a href="/docs">/docs</a>（含每个接口的 User Story 与 Try it）<br />
+· 或直接读取机器可读的 <a href="/openapi.json">/openapi.json</a></p></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+if (window.SwaggerUIBundle) {
+  window.ui = SwaggerUIBundle({url:"/openapi.json",dom_id:"#swagger-ui",
+    deepLinking:true,docExpansion:"list",defaultModelsExpandDepth:0,
+    persistAuthorization:true,tryItOutEnabled:true});
+} else { document.getElementById("fallback").style.display = "block"; }
+</script>
+</body></html>
+"""
 
 
 def require_uuid(memory_id: str) -> str:
@@ -147,28 +175,14 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     app = FastAPI(
         title="Agent Memory Core API",
         version=CONTRACT_VERSION,
-        description=(
-            "Local-first, evidence-aware Agent memory. PostgreSQL is the canonical "
-            "record; pgvector and Apache AGE are optional retrieval indexes; object "
-            "storage and Temporal are independent optional adapters. The currently "
-            "implemented HTTP surface includes memory claims and processing, evidence "
-            "objects, observations, events, entity/edge operations, hybrid retrieval, "
-            "and optional Temporal workflow lifecycle endpoints. Optional capabilities "
-            "must be enabled and are reported through capability discovery."
-        ),
-        docs_url="/docs",
-        redoc_url="/redoc",
+        description=SERVICE_DESCRIPTION,
+        # The built-in pages depend on a CDN; this service is deployed on
+        # isolated networks, so /docs is served from packaged static assets
+        # and the stock Swagger UI stays available at /docs/swagger.
+        docs_url=None,
+        redoc_url=None,
         openapi_url="/openapi.json",
-        openapi_tags=[
-            {"name": "System", "description": "Health and runtime capability discovery."},
-            {"name": "Memory", "description": "Canonical claim write and bitemporal recall."},
-            {"name": "Retrieval", "description": "Optional SQL + vector + graph hybrid search."},
-            {"name": "Objects", "description": "Content-addressed evidence object upload and download."},
-            {"name": "Observations", "description": "Idempotent device observations with event-time queries."},
-            {"name": "Events", "description": "Durable tenant-scoped event replay with cursor pagination."},
-            {"name": "Knowledge Graph", "description": "Canonical entity registry, relation writes and vector indexing."},
-            {"name": "Workflows", "description": "Optional Temporal workflow lifecycle operations."},
-        ],
+        openapi_tags=TAG_METADATA,
     )
     bearer = HTTPBearer(
         auto_error=False,
@@ -977,6 +991,27 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     close()
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    docs_dir = Path(__file__).resolve().parent / "resources" / "docs"
+    if docs_dir.is_dir():
+        # Self-contained manual: no CDN, works on an air-gapped demo network.
+        # Every operation renders its user story from the x-user-story field
+        # that install_api_docs() injects into /openapi.json.
+        @app.get("/docs", include_in_schema=False)
+        def api_manual():
+            return Response(
+                (docs_dir / "api.html").read_text(encoding="utf-8"),
+                media_type="text/html; charset=utf-8")
+
+        @app.get("/docs/swagger", include_in_schema=False)
+        def swagger_ui():
+            return Response(_SWAGGER_PAGE, media_type="text/html; charset=utf-8")
+
+        @app.get("/redoc", include_in_schema=False)
+        def redoc_redirect():
+            return RedirectResponse("/docs")
+
+    install_api_docs(app)
 
     dashboard_dir = Path(__file__).resolve().parent / "resources" / "dashboard"
     if dashboard_dir.is_dir():

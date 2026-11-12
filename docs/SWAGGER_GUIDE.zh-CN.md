@@ -60,11 +60,12 @@ Windows PowerShell 请使用 `$env:NAME='value'` 设置环境变量。
 
 打开：
 
-- Swagger UI： http://127.0.0.1:8765/docs
-- ReDoc： http://127.0.0.1:8765/redoc
+- 接口手册（离线、每个接口带 User Story 与 Try it）： http://127.0.0.1:8765/docs
+- 标准 Swagger UI（需要能访问 CDN）： http://127.0.0.1:8765/docs/swagger
 - OpenAPI JSON： http://127.0.0.1:8765/openapi.json
 
-在 Swagger 右上角 Authorize 中输入 API Key，不要加 `Bearer ` 前缀。
+在接口手册右上角 `API KEY` 或 Swagger 的 Authorize 中输入 API Key，不要加
+`Bearer ` 前缀。
 
 ## 三、认证和租户边界
 

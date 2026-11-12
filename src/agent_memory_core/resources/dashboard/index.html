@@ -3,272 +3,627 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Agent Memory Core · 记忆看板</title>
+<title>记忆台账 · Agent Memory Core</title>
 <style>
   :root{
-    --paper:#FAF7F0; --card:#FFFDF8; --ink:#1E1B16; --muted:#6E675C;
-    --hair:#E7DECB; --hair-soft:#F0E9DA;
-    --emerald:#0E6B54; --emerald-soft:#E7F2ED;
-    --sapphire:#24416F; --sapphire-soft:#E9EEF7;
-    --amethyst:#6A4B8A; --amethyst-soft:#F0EAF6;
-    --ruby:#8C2F45; --ruby-soft:#F8E9ED;
-    --gold:#A8813C; --gold-soft:#F7EFDC;
-    --shadow:0 1px 2px rgba(30,27,22,.05), 0 8px 24px -18px rgba(30,27,22,.35);
-    --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",Georgia,"Times New Roman",serif;
+    --paper:#FAF7F1; --card:#FFFEFB; --ink:#1A1713; --ink-2:#3D372E; --muted:#726A5C;
+    --hair:#E7DECC; --hair-2:#F1EADC;
+    --emerald:#0F6B54; --emerald-bg:#E9F2EE;
+    --sapphire:#233F6B; --sapphire-bg:#EAEFF7;
+    --gold:#9C7A39; --gold-2:#C6A45C; --gold-bg:#F8F0DC;
+    --amethyst:#5D4380; --amethyst-bg:#F0EAF6;
+    --ruby:#8A2E42; --ruby-bg:#F9E9ED;
+    --shadow-sm:0 1px 2px rgba(26,23,19,.04);
+    --shadow:0 1px 2px rgba(26,23,19,.04), 0 24px 48px -40px rgba(26,23,19,.55);
+    --serif:"Songti SC","STSong","Noto Serif SC","Source Han Serif SC","Source Han Serif CN","SimSun",Georgia,serif;
     --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
-    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Courier New",monospace;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
-    margin:0; background:
-      radial-gradient(1200px 600px at 12% -10%, #FFFDF6 0%, transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, #F4F7F4 0%, transparent 55%),
+    margin:0;color:var(--ink);font-family:var(--sans);font-size:13.5px;line-height:1.65;
+    background:
+      radial-gradient(1200px 560px at 6% -12%,#FFFEF9 0%,transparent 58%),
+      radial-gradient(980px 520px at 104% -4%,#F2F7F4 0%,transparent 52%),
       var(--paper);
-    color:var(--ink); font-family:var(--sans); font-size:14px; line-height:1.6;
-    -webkit-font-smoothing:antialiased;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   }
-  a{color:var(--sapphire)}
-  ::selection{background:var(--gold-soft)}
-
-  /* ---------- shell ---------- */
-  .shell{display:grid; grid-template-columns:248px minmax(0,1fr) 316px; gap:0; min-height:100vh}
-  .rail{border-right:1px solid var(--hair); padding:26px 20px; display:flex; flex-direction:column; gap:22px; background:linear-gradient(180deg,rgba(255,253,248,.7),rgba(250,247,240,.2))}
-  .main{padding:26px 30px 60px; min-width:0}
-  .aside{border-left:1px solid var(--hair); padding:26px 20px; background:linear-gradient(180deg,rgba(255,253,248,.6),rgba(250,247,240,.15)); min-width:0}
-  @media (max-width:1180px){ .shell{grid-template-columns:224px minmax(0,1fr)} .aside{display:none} }
-  @media (max-width:820px){ .shell{grid-template-columns:1fr} .rail{border-right:0;border-bottom:1px solid var(--hair)} }
-
-  /* ---------- brand ---------- */
-  .brand{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .brand h1{font-family:var(--serif); font-size:22px; white-space:nowrap; font-weight:600; margin:0; letter-spacing:.02em}
-  .brand .dot{width:6px;height:6px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px var(--emerald-soft)}
-  .brand small{display:block;width:100%;color:var(--muted);font-size:10.5px;letter-spacing:.12em;margin-top:2px}
-
-  .section-label{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
-
-  /* ---------- key ---------- */
-  .keybox{display:flex;flex-direction:column;gap:8px}
-  .keybox input{
-    width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:9px;background:var(--card);
-    font-family:var(--mono);font-size:11.5px;color:var(--ink)
+  body:before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.3;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.2'/%3E%3C/svg%3E");
+    mix-blend-mode:multiply;
   }
-  .keybox input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+  a{color:var(--sapphire);text-decoration:none}
+  a:hover{text-decoration:underline;text-underline-offset:3px}
+  ::selection{background:var(--gold-bg)}
+  code,pre{font-family:var(--mono)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#DED3BE;border-radius:9px}
+  ::-webkit-scrollbar-track{background:transparent}
 
-  /* ---------- stats ---------- */
-  .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .stat{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:10px 11px}
-  .stat b{display:block;font-family:var(--serif);font-size:21px;font-weight:600;line-height:1.15}
-  .stat span{font-size:10.5px;color:var(--muted);letter-spacing:.06em}
+  .app{position:relative;z-index:1;display:grid;grid-template-columns:252px minmax(0,1fr) 324px;min-height:100vh}
 
-  /* ---------- policy ---------- */
-  .policy-list{display:flex;flex-direction:column;gap:6px;max-height:168px;overflow:auto}
-  .policy{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:9px;background:var(--card);border:1px solid var(--hair-soft)}
-  .policy code{font-family:var(--mono);font-size:11px;color:var(--sapphire);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .toggle{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;flex:0 0 auto}
-  .toggle button{border:0;background:transparent;font-size:10px;padding:3px 7px;color:var(--muted);cursor:pointer;font-family:var(--sans)}
-  .toggle button[aria-pressed="true"]{background:var(--emerald-soft);color:var(--emerald);font-weight:600}
-  .toggle button:last-child[aria-pressed="true"]{background:var(--amethyst-soft);color:var(--amethyst)}
+  /* ================= rail ================= */
+  .rail{position:sticky;top:0;height:100vh;padding:28px 22px 22px;border-right:1px solid var(--hair);
+    display:flex;flex-direction:column;gap:26px;background:linear-gradient(180deg,rgba(255,254,251,.75),rgba(250,247,241,.15))}
+  .brand{display:flex;align-items:center;gap:11px}
+  .monogram{width:36px;height:36px;border:1px solid var(--gold-2);display:grid;place-items:center;
+    font-family:var(--serif);font-size:17px;color:var(--gold);background:var(--card);flex:0 0 auto;
+    box-shadow:inset 0 0 0 3px var(--card), inset 0 0 0 4px rgba(198,164,92,.3)}
+  .brand-text b{display:block;font-family:var(--serif);font-size:16px;font-weight:600;letter-spacing:.03em;line-height:1.2}
+  .brand-text span{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:3px;white-space:nowrap}
 
-  /* ---------- header ---------- */
-  .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
-  .topbar h2{font-family:var(--serif);font-size:26px;font-weight:600;margin:0;letter-spacing:.01em}
-  .topbar p{margin:4px 0 0;color:var(--muted);font-size:12.5px}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-  .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;border:1px solid var(--hair);background:var(--card);font-size:11px;color:var(--muted);white-space:nowrap}
-  .chip i{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block}
-  .chip.ok{color:var(--emerald);border-color:#CFE3D9;background:var(--emerald-soft)} .chip.ok i{background:var(--emerald)}
-  .chip.warn{color:var(--gold);border-color:#EBDCBE;background:var(--gold-soft)} .chip.warn i{background:var(--gold)}
-  .chip.off{color:var(--ruby);border-color:#EED3D9;background:var(--ruby-soft)} .chip.off i{background:var(--ruby)}
-
-  /* ---------- composer ---------- */
-  .composer{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:14px;box-shadow:var(--shadow);margin-bottom:14px}
-  .composer.drag{border-color:var(--gold);box-shadow:0 0 0 4px var(--gold-soft)}
-  .composer textarea{
-    width:100%;min-height:74px;resize:vertical;border:0;outline:none;background:transparent;
-    font-family:var(--sans);font-size:14.5px;line-height:1.65;color:var(--ink)
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav button{
+    display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;
+    padding:8px 10px;border-radius:6px;font-size:13px;color:var(--ink-2);cursor:pointer;font-family:var(--sans);text-align:left;
+    transition:background .14s,color .14s;
   }
-  .composer textarea::placeholder{color:#B4AC9C}
-  .composer-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--hair-soft);padding-top:10px;margin-top:6px}
-  .hint{font-size:11.5px;color:var(--muted)}
-  .btn{border:1px solid transparent;border-radius:10px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:var(--sans);transition:.16s ease}
-  .btn.primary{background:linear-gradient(180deg,#12795F,#0E6B54);color:#F7FBF9;box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 6px 14px -10px rgba(14,107,84,.9)}
-  .btn.primary:hover{filter:brightness(1.05)}
-  .btn.ghost{background:var(--card);border-color:var(--hair);color:var(--ink)}
-  .btn.ghost:hover{border-color:#D8CDB6;background:#FFFCF4}
+  .nav button:hover{background:rgba(255,254,251,.9);color:var(--ink)}
+  .nav button[aria-current="true"]{background:var(--card);color:var(--ink);box-shadow:var(--shadow-sm);font-weight:600}
+  .nav button[aria-current="true"] .nav-dot{background:var(--gold);box-shadow:0 0 0 3px var(--gold-bg)}
+  .nav-dot{width:5px;height:5px;border-radius:50%;background:#CFC5B0;flex:0 0 auto}
+  .nav .count{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+
+  .rail-block{border-top:1px solid var(--hair-2);padding-top:18px}
+  .rail-label{font-size:9.5px;letter-spacing:.19em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+  .tenant{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);word-break:break-all}
+  .tenant small{display:block;font-family:var(--sans);font-size:10.5px;color:var(--muted);margin-top:3px;letter-spacing:.02em}
+  .rail-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+  .rail-link{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--muted);
+    padding:7px 9px;border:1px solid var(--hair);border-radius:6px;background:var(--card)}
+  .rail-link:hover{border-color:var(--gold-2);color:var(--gold);text-decoration:none}
+  .rail-link span:last-child{font-family:var(--mono);font-size:10px}
+
+  /* ================= stage ================= */
+  .stage{padding:30px 38px 70px;min-width:0}
+  .masthead{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding-bottom:20px;border-bottom:1px solid var(--hair)}
+  .eyebrow{display:flex;align-items:center;gap:10px;font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+  .eyebrow .sep{color:#CFC5B0}
+  .live{display:inline-flex;align-items:center;gap:5px;color:var(--emerald);letter-spacing:.14em}
+  .live i{width:5px;height:5px;border-radius:50%;background:var(--emerald);animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(15,107,84,.35)}50%{box-shadow:0 0 0 4px rgba(15,107,84,0)}}
+  .masthead h1{font-family:var(--serif);font-size:34px;font-weight:600;letter-spacing:.01em;margin:0;line-height:1.2}
+  .masthead p{margin:7px 0 0;color:var(--muted);font-size:12.5px;max-width:560px}
+  .mast-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding-top:4px}
+  .ghost-btn{border:1px solid var(--hair);background:var(--card);color:var(--ink-2);border-radius:7px;
+    padding:7px 12px;font-size:12px;font-family:var(--sans);cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.14s}
+  .ghost-btn:hover{border-color:var(--gold-2);color:var(--gold)}
+  .ghost-btn.icon{padding:7px 9px;font-size:13px}
+  .ghost-btn.on{border-color:var(--gold-2);background:var(--gold-bg);color:var(--gold)}
+
+  /* ================= kpis ================= */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--hair);border-radius:10px;
+    background:var(--card);margin:20px 0 18px;box-shadow:var(--shadow-sm);overflow:hidden;position:relative}
+  .kpis:before{content:"";position:absolute;inset:0 0 auto;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(198,164,92,.65),transparent)}
+  .kpi{padding:15px 20px 13px;position:relative}
+  .kpi + .kpi{border-left:1px solid var(--hair-2)}
+  .kpi span{display:block;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  .kpi b{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;letter-spacing:.01em;
+    font-variant-numeric:tabular-nums;display:block}
+  .kpi small{display:block;font-size:10.5px;color:var(--muted);margin-top:7px}
+  .kpi small em{font-style:normal;color:var(--emerald)}
+  .kpi small em.warn{color:var(--gold)}
+
+  /* ================= composer ================= */
+  .desk{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:16px 18px 13px;
+    box-shadow:var(--shadow-sm);transition:border-color .16s,box-shadow .16s}
+  .desk:focus-within{border-color:var(--gold-2);box-shadow:0 0 0 4px rgba(198,164,92,.14)}
+  .desk.drag{border-color:var(--gold-2);background:#FFFCF3}
+  .desk-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .desk-label{font-size:9.5px;letter-spacing:.19em;text-transform:uppercase;color:var(--gold)}
+  .desk-hint{font-size:10.5px;color:var(--muted);font-family:var(--mono)}
+  .desk textarea{width:100%;min-height:64px;border:0;outline:none;background:transparent;resize:vertical;
+    font-family:var(--sans);font-size:14px;line-height:1.75;color:var(--ink)}
+  .desk textarea::placeholder{color:#B6AD9C}
+  .desk-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid var(--hair-2);padding-top:11px;margin-top:4px}
+  .desk-foot .hint{font-size:11px;color:var(--muted)}
+  .btn{border:1px solid transparent;border-radius:7px;padding:8px 17px;font-size:12.5px;cursor:pointer;
+    font-family:var(--sans);transition:.15s ease;display:inline-flex;align-items:center;gap:8px}
+  .btn.primary{background:linear-gradient(180deg,#12785D,#0F6B54);color:#F7FBF9;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 8px 18px -14px rgba(15,107,84,.9)}
+  .btn.primary:hover{filter:brightness(1.06)}
   .btn:disabled{opacity:.55;cursor:progress}
+  .btn .arrow{font-size:13px;line-height:1}
 
-  /* ---------- result strip ---------- */
-  .result{margin:0 0 16px;display:none}
-  .result.show{display:block;animation:rise .28s ease}
-  @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  .result-card{border:1px solid var(--hair);border-radius:14px;background:var(--card);padding:12px 14px;box-shadow:var(--shadow)}
-  .result-head{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
-  .relation{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.05em;padding:3px 8px;border-radius:6px}
-  .rel-CREATED{background:var(--emerald-soft);color:var(--emerald)}
-  .rel-DUPLICATE{background:var(--sapphire-soft);color:var(--sapphire)}
-  .rel-CONTRADICTION,.rel-SUPERSEDES{background:var(--ruby-soft);color:var(--ruby)}
-  .rel-MERGED{background:var(--amethyst-soft);color:var(--amethyst)}
+  /* ================= result ================= */
+  .result{display:none;margin:12px 0 0}
+  .result.show{display:block;animation:rise .22s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  .result-card{border:1px solid var(--hair);border-radius:10px;background:var(--card);padding:12px 14px;box-shadow:var(--shadow-sm)}
+  .result-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 8px;border-radius:4px;
+    border:1px solid var(--hair);color:var(--muted);background:var(--paper);letter-spacing:.03em}
+  .tag b{font-family:var(--mono);font-weight:600;color:var(--ink)}
+  .rel{display:flex;align-items:center;gap:9px;padding:4px 0;font-size:11.5px;color:var(--ink-2)}
+  .rel .badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;padding:2px 7px;border-radius:3px;flex:0 0 auto}
+  .r-CREATED{background:var(--emerald-bg);color:var(--emerald)}
+  .r-DUPLICATE{background:var(--sapphire-bg);color:var(--sapphire)}
+  .r-SUPERSEDES{background:var(--gold-bg);color:var(--gold)}
+  .r-CONTRADICTION{background:var(--ruby-bg);color:var(--ruby)}
+  .r-MERGED{background:var(--amethyst-bg);color:var(--amethyst)}
+  .rel code{font-family:var(--mono);font-size:11px;color:var(--sapphire)}
 
-  /* ---------- tabs / toolbar ---------- */
-  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 12px;flex-wrap:wrap}
-  .tabs{display:inline-flex;background:#F3EDE0;border-radius:10px;padding:3px;gap:2px}
-  .tabs button{border:0;background:transparent;padding:6px 12px;border-radius:8px;font-size:12.5px;color:var(--muted);cursor:pointer;font-family:var(--sans)}
-  .tabs button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(30,27,22,.08);font-weight:600}
-  .search{display:flex;gap:8px;align-items:center}
-  .search input{width:230px;padding:7px 11px;border:1px solid var(--hair);border-radius:10px;background:var(--card);font-size:12.5px;font-family:var(--sans)}
-  .search input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+  /* ================= viewpoint banner ================= */
+  .viewpoint-bar{display:none;align-items:center;gap:12px;margin:14px 0 0;padding:9px 14px;border-radius:8px;
+    background:var(--gold-bg);border:1px solid #E8D7AF;color:#6B5325;font-size:11.5px}
+  .viewpoint-bar.show{display:flex}
+  .viewpoint-bar b{font-family:var(--mono);font-size:11px;color:#57431C}
+  .viewpoint-bar button{margin-left:auto;border:0;background:transparent;color:#7A5E28;font-size:11px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 
-  /* ---------- ledger ---------- */
-  .ledger{display:flex;flex-direction:column;gap:9px}
-  .claim{position:relative;background:var(--card);border:1px solid var(--hair);border-radius:13px;padding:12px 14px 11px 16px;box-shadow:var(--shadow);cursor:pointer;transition:.16s ease}
-  .claim:before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--emerald)}
-  .claim[data-status="superseded"]:before{background:var(--gold)}
-  .claim[data-status="forgotten"]:before{background:var(--ruby)}
-  .claim:hover{transform:translateY(-1px);border-color:#DCD1BB}
-  .claim.selected{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft),var(--shadow)}
-  .claim-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .subject{font-family:var(--mono);font-size:12px;color:var(--emerald);background:var(--emerald-soft);padding:2px 7px;border-radius:6px}
-  .predicate{font-family:var(--mono);font-size:12px;color:var(--sapphire)}
-  .pill{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:999px;padding:2px 8px}
-  .pill.active{color:var(--emerald);border-color:#CFE3D9;background:var(--emerald-soft)}
-  .pill.superseded{color:var(--gold);border-color:#EBDCBE;background:var(--gold-soft)}
-  .pill.forgotten{color:var(--ruby);border-color:#EED3D9;background:var(--ruby-soft)}
-  .value{font-family:var(--mono);font-size:12.5px;color:#3A352C;margin-top:7px;word-break:break-all;white-space:pre-wrap}
-  .meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px;font-size:11px;color:var(--muted)}
-  .meta code{font-family:var(--mono);font-size:10.5px;color:#8A8175}
+  /* ================= ledger toolbar ================= */
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:20px 0 10px;flex-wrap:wrap}
+  .tabs{display:inline-flex;gap:1px;background:#F2EBDD;border-radius:7px;padding:3px}
+  .tabs button{border:0;background:transparent;padding:6px 12px;border-radius:5px;font-size:12px;color:var(--muted);
+    cursor:pointer;font-family:var(--sans);transition:.14s}
+  .tabs button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:var(--shadow-sm);font-weight:600}
+  .tabs .n{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:4px}
+  .tool-right{display:flex;align-items:center;gap:8px}
+  .mini-search{display:flex;align-items:center;gap:7px;border:1px solid var(--hair);background:var(--card);
+    border-radius:7px;padding:6px 10px;width:230px}
+  .mini-search input{border:0;outline:none;background:transparent;font-size:12px;width:100%;font-family:var(--sans);color:var(--ink)}
+  .mini-search kbd{font-family:var(--mono);font-size:9px;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px}
 
-  /* ---------- aside ---------- */
-  .feed{display:flex;flex-direction:column;gap:0;position:relative}
-  .feed:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;border-left:1px dashed var(--hair)}
-  .event{position:relative;padding:0 0 14px 20px}
-  .event:before{content:"";position:absolute;left:1px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--card);border:1.5px solid var(--sapphire)}
-  .event[data-kind="forgotten"]:before{border-color:var(--ruby)}
-  .event[data-kind="created"]:before{border-color:var(--emerald)}
-  .event[data-kind="replaced"]:before{border-color:var(--gold)}
-  .event b{display:block;font-size:11.5px;font-weight:600;letter-spacing:.01em}
-  .event span{display:block;font-size:10.5px;color:var(--muted);font-family:var(--mono)}
-  .event p{margin:3px 0 0;font-size:11px;color:#5C564B;word-break:break-all}
+  /* ================= ledger ================= */
+  .ledger{display:flex;flex-direction:column;gap:7px}
+  .row{position:relative;display:grid;grid-template-columns:3px minmax(0,1fr) auto;gap:0;
+    background:var(--card);border:1px solid var(--hair);border-radius:9px;overflow:hidden;
+    transition:border-color .15s,box-shadow .15s,transform .15s;cursor:pointer;
+    animation:rowIn .18s ease}
+  @keyframes rowIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  .row:hover{border-color:#DCCFB6;box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .row.selected{border-color:var(--gold-2);box-shadow:0 0 0 3px rgba(198,164,92,.16)}
+  .row-rail{background:var(--emerald)}
+  .row[data-s="superseded"] .row-rail{background:var(--gold-2)}
+  .row[data-s="forgotten"] .row-rail{background:var(--ruby)}
+  .row-body{padding:11px 14px 11px 15px;min-width:0}
+  .row-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .subject{font-family:var(--mono);font-size:11.5px;color:var(--emerald);background:var(--emerald-bg);
+    padding:1px 6px;border-radius:4px;letter-spacing:.01em}
+  .predicate{font-family:var(--mono);font-size:11.5px;color:var(--sapphire)}
+  .state{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;padding:1px 6px;border-radius:3px;border:1px solid transparent}
+  .state.active{color:var(--emerald);background:var(--emerald-bg)}
+  .state.superseded{color:var(--gold);background:var(--gold-bg)}
+  .state.forgotten{color:var(--ruby);background:var(--ruby-bg)}
+  .row-value{display:flex;align-items:baseline;gap:7px;margin-top:5px;min-width:0;line-height:1.55}
+  .val-main{font-family:var(--mono);font-size:12.5px;color:var(--ink);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .val-kv{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--paper);
+    border:1px solid var(--hair-2);border-radius:3px;padding:0 5px;white-space:nowrap;flex:0 0 auto}
+  .val-kv i{font-style:normal;color:#A79D8A;margin-right:3px}
+  .row-meta{display:flex;gap:14px;margin-top:5px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+  .row-meta code{font-size:10px;color:#8B8273}
+  .row-side{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:4px;
+    padding:10px 14px;border-left:1px solid var(--hair-2);min-width:132px}
+  .row-side .t{font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+  .row-side .s{font-family:var(--mono);font-size:9.5px;color:var(--muted);max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row-acts{position:absolute;right:10px;top:50%;transform:translateY(-50%) translateX(6px);display:flex;gap:5px;
+    opacity:0;pointer-events:none;transition:.15s;background:linear-gradient(90deg,transparent,var(--card) 34%);padding-left:26px}
+  .row:hover .row-acts{opacity:1;pointer-events:auto;transform:translateY(-50%)}
+  .act{border:1px solid var(--hair);background:var(--card);border-radius:5px;font-size:10.5px;padding:3px 8px;
+    cursor:pointer;color:var(--ink-2);font-family:var(--sans)}
+  .act:hover{border-color:var(--gold-2);color:var(--gold)}
+  .act.danger:hover{border-color:#E3BCC6;color:var(--ruby);background:var(--ruby-bg)}
 
-  /* ---------- drawer ---------- */
-  .drawer{position:fixed;top:0;right:0;height:100%;width:400px;max-width:92vw;background:var(--card);border-left:1px solid var(--hair);box-shadow:-24px 0 60px -40px rgba(30,27,22,.7);transform:translateX(102%);transition:transform .26s ease;z-index:40;display:flex;flex-direction:column}
+  .empty{padding:58px 20px;text-align:center;color:#A79D8A}
+  .empty b{display:block;font-family:var(--serif);font-size:16px;font-weight:500;color:var(--ink-2);margin-bottom:6px}
+  .empty span{font-size:11.5px}
+
+  /* ================= side ================= */
+  .side{position:sticky;top:0;height:100vh;overflow:auto;border-left:1px solid var(--hair);
+    padding:30px 22px 40px;background:linear-gradient(180deg,rgba(255,254,251,.6),rgba(250,247,241,.1));
+    display:flex;flex-direction:column;gap:24px}
+  .card-block{display:flex;flex-direction:column;gap:9px}
+  .block-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .block-head h3{font-size:9.5px;letter-spacing:.19em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:600}
+  .block-head span{font-size:10px;color:var(--muted);font-family:var(--mono)}
+
+  .caps{display:flex;flex-direction:column;gap:1px}
+  .cap{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:4px 0;color:var(--ink-2)}
+  .cap i{width:5px;height:5px;border-radius:50%;flex:0 0 auto;background:#CFC5B0}
+  .cap.on i{background:var(--emerald)}
+  .cap.off i{background:#D8C9AE}
+  .cap.off{color:#9C9384}
+  .cap em{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:9.5px;color:var(--muted);
+    max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .more{border:0;background:transparent;color:var(--sapphire);font-size:10.5px;cursor:pointer;padding:2px 0;text-align:left}
+
+  .spark-wrap{background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:11px 12px 8px}
+  .spark-wrap svg{display:block;width:100%;height:44px;overflow:visible}
+  .spark-foot{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);margin-top:5px;font-family:var(--mono)}
+
+  .policies{display:flex;flex-direction:column;gap:5px}
+  .policy{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--hair-2);border-radius:6px;padding:5px 8px}
+  .policy code{font-size:10.5px;color:var(--sapphire);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .seg{display:inline-flex;border:1px solid var(--hair);border-radius:4px;overflow:hidden;flex:0 0 auto}
+  .seg button{border:0;background:transparent;font-size:9px;padding:2px 6px;color:var(--muted);cursor:pointer;font-family:var(--mono)}
+  .seg button[aria-pressed="true"]{background:var(--emerald-bg);color:var(--emerald);font-weight:600}
+  .seg button:last-child[aria-pressed="true"]{background:var(--amethyst-bg);color:var(--amethyst)}
+  .policy-add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;margin-top:3px}
+  .policy-add input{grid-column:1/-1;min-width:0;border:1px solid var(--hair);border-radius:5px;background:var(--card);
+    padding:4px 7px;font-family:var(--mono);font-size:10.5px;outline:none}
+  .policy-add input:focus{border-color:var(--gold-2)}
+  .policy-add button{border:1px solid var(--hair);background:var(--card);border-radius:5px;font-size:10.5px;padding:3px 8px;cursor:pointer;color:var(--ink-2)}
+  .policy-add button:hover{border-color:var(--gold-2);color:var(--gold)}
+
+  .feed{display:flex;flex-direction:column;position:relative}
+  .feed:before{content:"";position:absolute;left:3px;top:5px;bottom:5px;border-left:1px solid var(--hair)}
+  .ev{position:relative;padding:0 0 13px 17px}
+  .ev:before{content:"";position:absolute;left:0;top:5px;width:7px;height:7px;border-radius:50%;
+    background:var(--card);border:1.5px solid var(--sapphire)}
+  .ev[data-k="created"]:before{border-color:var(--emerald)}
+  .ev[data-k="forgotten"]:before{border-color:var(--ruby)}
+  .ev[data-k="replaced"]:before{border-color:var(--gold-2)}
+  .ev b{display:block;font-size:11px;font-weight:600;color:var(--ink-2);letter-spacing:.01em}
+  .ev span{display:block;font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:1px}
+  .ev p{margin:2px 0 0;font-size:10.5px;color:#6A6357;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ev.new{animation:slide .4s ease}
+  @keyframes slide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+  /* ================= drawer ================= */
+  .drawer{position:fixed;top:0;right:0;height:100%;width:470px;max-width:94vw;background:var(--card);
+    border-left:1px solid var(--hair);box-shadow:-40px 0 80px -60px rgba(26,23,19,.85);
+    transform:translateX(103%);transition:transform .28s cubic-bezier(.3,.8,.3,1);z-index:50;
+    display:flex;flex-direction:column}
   .drawer.open{transform:none}
-  .drawer header{padding:20px 20px 12px;border-bottom:1px solid var(--hair-soft);display:flex;align-items:center;justify-content:space-between}
-  .drawer header h3{margin:0;font-family:var(--serif);font-size:17px;font-weight:600}
-  .drawer .body{padding:16px 20px 40px;overflow:auto}
-  .kv{display:grid;grid-template-columns:88px 1fr;gap:6px 10px;font-size:12px;margin-bottom:14px}
-  .kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--mono);font-size:11.5px;word-break:break-all}
-  .timeline{border-left:1px solid var(--hair);margin-left:4px;padding-left:14px}
-  .timeline div{position:relative;padding-bottom:10px;font-size:11.5px;color:#4F4A40}
-  .timeline div:before{content:"";position:absolute;left:-19px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--gold)}
-  .timeline small{display:block;color:var(--muted);font-family:var(--mono);font-size:10px}
+  .drawer-head{padding:22px 24px 16px;border-bottom:1px solid var(--hair);position:relative}
+  .drawer-head .eyebrow{margin-bottom:8px}
+  .drawer-head h2{font-family:var(--serif);font-size:22px;margin:0;font-weight:600;line-height:1.3;padding-right:40px}
+  .drawer-close{position:absolute;top:18px;right:18px;border:1px solid var(--hair);background:var(--card);
+    border-radius:5px;width:26px;height:26px;cursor:pointer;color:var(--muted);font-size:13px;line-height:1}
+  .drawer-close:hover{border-color:var(--gold-2);color:var(--gold)}
+  .seal{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    padding:3px 9px;border-radius:3px;border:1px solid transparent}
+  .seal.active{color:var(--emerald);background:var(--emerald-bg)}
+  .seal.superseded{color:var(--gold);background:var(--gold-bg)}
+  .seal.forgotten{color:var(--ruby);background:var(--ruby-bg)}
+  .drawer-body{padding:18px 24px 34px;overflow:auto;flex:1}
+  .section{margin-bottom:22px}
+  .section h4{font-size:9.5px;letter-spacing:.19em;text-transform:uppercase;color:var(--muted);margin:0 0 9px;font-weight:600}
+  .fact{background:var(--paper);border:1px solid var(--hair-2);border-radius:7px;padding:11px 12px;
+    font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap;word-break:break-all}
+  .kv{display:grid;grid-template-columns:94px 1fr;gap:5px 12px;font-size:11.5px;margin:0}
+  .kv dt{color:var(--muted)}
+  .kv dd{margin:0;font-family:var(--mono);font-size:11px;color:var(--ink-2);word-break:break-all}
+  .timeline{position:relative;margin:2px 0 0;padding-left:16px;border-left:1px solid var(--hair)}
+  .tl{position:relative;padding-bottom:12px}
+  .tl:last-child{padding-bottom:0}
+  .tl:before{content:"";position:absolute;left:-20px;top:5px;width:7px;height:7px;border-radius:50%;
+    background:var(--card);border:1.5px solid var(--gold-2)}
+  .tl b{display:block;font-size:11.5px;font-weight:600;color:var(--ink-2)}
+  .tl span{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
+  .src{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--hair-2);font-size:11.5px}
+  .src:last-child{border-bottom:0}
+  .src code{font-size:11px;color:var(--sapphire);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src em{font-style:normal;font-size:10px;color:var(--muted);font-family:var(--mono)}
+  .related{display:flex;flex-direction:column;gap:3px}
+  .related button{display:flex;align-items:center;gap:8px;border:1px solid transparent;background:transparent;
+    border-radius:5px;padding:4px 6px;font-size:11px;color:var(--ink-2);cursor:pointer;text-align:left;font-family:var(--sans)}
+  .related button:hover{background:var(--paper);border-color:var(--hair-2)}
+  .related code{font-size:10px;color:var(--muted)}
+  .drawer-foot{border-top:1px solid var(--hair);padding:12px 24px;display:flex;align-items:center;gap:8px}
+  .drawer-foot .id{font-family:var(--mono);font-size:9.5px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  .empty{text-align:center;padding:34px 10px;color:#A9A08E;font-family:var(--serif);font-size:14px}
-  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,12px);background:#1E1B16;color:#F7F4EC;padding:9px 16px;border-radius:10px;font-size:12.5px;opacity:0;pointer-events:none;transition:.22s ease;z-index:60}
+  /* ================= search view ================= */
+  .search-hero{max-width:760px;margin:6px 0 22px}
+  .search-hero h2{font-family:var(--serif);font-size:24px;margin:0 0 6px;font-weight:600}
+  .search-hero p{margin:0 0 16px;color:var(--muted);font-size:12.5px}
+  .search-box{display:flex;align-items:center;gap:10px;border:1px solid var(--hair);background:var(--card);
+    border-radius:9px;padding:11px 14px;box-shadow:var(--shadow-sm)}
+  .search-box:focus-within{border-color:var(--gold-2);box-shadow:0 0 0 4px rgba(198,164,92,.14)}
+  .search-box input{flex:1;border:0;outline:none;background:transparent;font-size:15px;color:var(--ink);font-family:var(--sans)}
+  .examples{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .examples button{border:1px solid var(--hair);background:var(--card);border-radius:999px;font-size:11px;
+    padding:4px 10px;color:var(--muted);cursor:pointer;font-family:var(--sans)}
+  .examples button:hover{border-color:var(--gold-2);color:var(--gold)}
+  .hit{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:14px;background:var(--card);border:1px solid var(--hair);
+    border-radius:9px;padding:12px 14px;margin-bottom:7px}
+  .hit-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .hit-value{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);margin-top:5px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .channels{display:flex;gap:4px;margin-top:6px}
+  .channels span{font-family:var(--mono);font-size:9px;letter-spacing:.05em;padding:1px 5px;border-radius:3px;
+    background:var(--sapphire-bg);color:var(--sapphire)}
+  .score{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:5px}
+  .score b{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+  .bar{width:100%;height:2px;background:var(--hair);border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--emerald)}
+
+  /* ================= system view ================= */
+  .sys-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
+  .sys-card{background:var(--card);border:1px solid var(--hair);border-radius:9px;padding:14px 16px}
+  .sys-card h3{font-family:var(--serif);font-size:15px;margin:0 0 8px;font-weight:600}
+  .sys-card p{margin:0;font-size:11.5px;color:var(--muted)}
+  .sys-card .big{font-family:var(--mono);font-size:13px;color:var(--ink)}
+  .matrix{width:100%;border-collapse:collapse;font-size:11.5px;background:var(--card);border:1px solid var(--hair);border-radius:9px;overflow:hidden}
+  .matrix th{text-align:left;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    padding:9px 14px;border-bottom:1px solid var(--hair);font-weight:600}
+  .matrix td{padding:8px 14px;border-bottom:1px solid var(--hair-2);color:var(--ink-2)}
+  .matrix tr:last-child td{border-bottom:0}
+  .matrix td:first-child{font-family:var(--mono);font-size:11px;color:var(--ink)}
+  .pill{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:3px;letter-spacing:.05em}
+  .pill.yes{background:var(--emerald-bg);color:var(--emerald)}
+  .pill.no{background:var(--hair-2);color:var(--muted)}
+
+  /* ================= misc ================= */
+  .stage-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    margin-top:26px;padding-top:12px;border-top:1px solid var(--hair);font-size:10.5px;color:var(--muted)}
+  .stage-foot b{font-family:var(--mono);font-weight:600;color:var(--ink-2);border:1px solid var(--hair);
+    border-radius:3px;padding:0 4px;margin-right:2px;font-size:9.5px}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);background:#1F1B16;color:#F7F4EC;
+    padding:9px 16px;border-radius:6px;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:70;max-width:70vw}
   .toast.show{opacity:1;transform:translate(-50%,0)}
   .toast.err{background:var(--ruby)}
 
-  /* key gate */
-  .gate{position:fixed;inset:0;background:rgba(250,247,240,.92);backdrop-filter:blur(6px);display:grid;place-items:center;z-index:80}
-  .gate .card{background:var(--card);border:1px solid var(--hair);border-radius:18px;padding:28px;width:min(420px,92vw);box-shadow:var(--shadow)}
-  .gate h2{font-family:var(--serif);font-size:21px;margin:0 0 6px}
-  .gate p{margin:0 0 16px;color:var(--muted);font-size:12.5px}
-  .gate input{width:100%;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;font-family:var(--mono);font-size:12.5px}
-  .gate input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
-  .gate .row{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px}
+  .gate{position:fixed;inset:0;z-index:80;display:none;place-items:center;
+    background:rgba(250,247,241,.9);backdrop-filter:blur(8px) saturate(.9)}
+  .gate.show{display:grid}
+  .gate-card{width:min(430px,92vw);background:var(--card);border:1px solid var(--hair);border-radius:12px;
+    padding:30px 30px 26px;box-shadow:0 40px 90px -60px rgba(26,23,19,.8)}
+  .gate-card .monogram{margin-bottom:16px}
+  .gate-card h2{font-family:var(--serif);font-size:22px;margin:0 0 6px;font-weight:600}
+  .gate-card p{margin:0 0 18px;color:var(--muted);font-size:12px;line-height:1.7}
+  .gate-card input{width:100%;padding:10px 12px;border:1px solid var(--hair);border-radius:6px;
+    font-family:var(--mono);font-size:12px;outline:none;background:var(--paper)}
+  .gate-card input:focus{border-color:var(--gold-2);box-shadow:0 0 0 3px rgba(198,164,92,.15)}
+  .gate-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px}
+  .gate-foot span{font-size:11px;color:var(--muted)}
+  .gate-foot .err{color:var(--ruby)}
+
+  .pop{position:absolute;z-index:60;top:44px;right:0;width:296px;background:var(--card);border:1px solid var(--hair);
+    border-radius:9px;box-shadow:0 30px 60px -40px rgba(26,23,19,.7);padding:14px;display:none}
+  .pop.show{display:block;animation:rise .16s ease}
+  .pop h4{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
+  .pop label{display:block;font-size:10.5px;color:var(--muted);margin:8px 0 4px;font-family:var(--mono)}
+  .pop input{width:100%;border:1px solid var(--hair);border-radius:5px;background:var(--paper);
+    padding:5px 7px;font-family:var(--mono);font-size:11px;outline:none}
+  .pop input:focus{border-color:var(--gold-2)}
+  .pop .presets{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+  .pop .presets button{border:1px solid var(--hair);background:var(--paper);border-radius:4px;font-size:10px;
+    padding:3px 7px;cursor:pointer;color:var(--muted)}
+  .pop .presets button:hover{border-color:var(--gold-2);color:var(--gold)}
+  .pop .actions{display:flex;gap:6px;margin-top:12px}
+  .pop .actions button{flex:1;border:1px solid var(--hair);background:var(--card);border-radius:5px;
+    font-size:11px;padding:6px 0;cursor:pointer;color:var(--ink-2)}
+  .pop .actions button.go{background:var(--ink);border-color:var(--ink);color:#FBF8F2}
+
+  @media (max-width:1400px){
+    .app{grid-template-columns:238px minmax(0,1fr) 300px}
+    .stage{padding:28px 28px 60px}
+    .side{padding:28px 18px 40px}
+  }
+  @media (max-width:1140px){.app{grid-template-columns:236px minmax(0,1fr)}.side{display:none}}
+  @media (max-width:900px){
+    .app{grid-template-columns:1fr}
+    .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--hair);flex-direction:row;
+      align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap}
+    .rail-block,.rail-foot{display:none}
+    .nav{flex-direction:row;margin-left:auto}
+    .stage{padding:22px 18px 60px}
+    .kpis{grid-template-columns:1fr 1fr}
+    .kpi:nth-child(3){border-left:0;border-top:1px solid var(--hair-2)}
+    .kpi:nth-child(4){border-top:1px solid var(--hair-2)}
+    .sys-grid{grid-template-columns:1fr}
+    .row-side{display:none}
+  }
 </style>
 </head>
 <body>
-<div class="shell">
+<div class="app">
+  <!-- ============ rail ============ -->
   <aside class="rail">
     <div class="brand">
-      <h1>Memory Core<span class="dot"></span></h1>
-      <small>Agent 记忆看板 · 双时态台账</small>
-    </div>
-
-    <div>
-      <p class="section-label">凭证</p>
-      <div class="keybox">
-        <input id="keyInput" type="password" placeholder="MEMORY_API_KEY" autocomplete="off" />
-        <button class="btn ghost" id="keySave" style="font-size:12px">保存并连接</button>
+      <div class="monogram">M</div>
+      <div class="brand-text">
+        <b>Memory Core</b>
+        <span>Agent Memory · 记忆看板</span>
       </div>
     </div>
 
-    <div>
-      <p class="section-label">库内概况</p>
-      <div class="stats">
-        <div class="stat"><b id="statActive">–</b><span>有效事实</span></div>
-        <div class="stat"><b id="statHistory">–</b><span>历史版本</span></div>
-        <div class="stat"><b id="statSubjects">–</b><span>主体数</span></div>
-        <div class="stat"><b id="statPolicy">–</b><span>多值谓词</span></div>
+    <nav class="nav" id="nav">
+      <button data-view="ledger" aria-current="true"><span class="nav-dot"></span>记忆台账<span class="count" id="navCount">–</span></button>
+      <button data-view="search" aria-current="false"><span class="nav-dot"></span>混合检索</button>
+      <button data-view="system" aria-current="false"><span class="nav-dot"></span>实例与能力</button>
+    </nav>
+
+    <div class="rail-block">
+      <p class="rail-label">租户</p>
+      <div class="tenant" id="tenantId">—</div>
+    </div>
+
+    <div class="rail-block">
+      <p class="rail-label">写入节奏 · 14 天</p>
+      <div class="spark-wrap">
+        <svg id="spark" viewBox="0 0 240 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="spark-foot"><span id="sparkTotal">0 条</span><span id="sparkPeak">峰值 0</span></div>
       </div>
     </div>
 
-    <div>
-      <p class="section-label">谓词基数策略（数据库可信配置）</p>
-      <div class="policy-list" id="policyList"></div>
-      <div class="hint" style="margin-top:8px">未列出的谓词默认 <code style="font-family:var(--mono)">one</code>，模型不能自行升级</div>
-    </div>
-
-    <div style="margin-top:auto">
-      <p class="section-label">接口文档</p>
-      <a class="btn ghost" href="/docs" target="_blank" style="display:block;text-align:center;text-decoration:none">Swagger /docs</a>
+    <div class="rail-foot">
+      <a class="rail-link" href="/docs">接口手册<span>/docs</span></a>
+      <a class="rail-link" href="/openapi.json">OpenAPI<span>json</span></a>
+      <a class="rail-link" href="/docs/swagger">Swagger UI<span>cdn</span></a>
     </div>
   </aside>
 
-  <main class="main">
-    <div class="topbar">
+  <!-- ============ stage ============ -->
+  <main class="stage">
+    <header class="masthead">
       <div>
-        <h2>记忆台账</h2>
-        <p>写一句中文，看它如何被抽取、判重、替换；每条事实都可回溯到来源与时间。</p>
+        <p class="eyebrow">
+          <span class="live"><i></i>LIVE</span><span class="sep">/</span>
+          <span id="today">—</span><span class="sep">/</span>
+          <span id="contract">CONTRACT 1.0.0</span>
+        </p>
+        <h1 id="viewTitle">记忆台账</h1>
+        <p id="viewSub">写入即留痕。每条事实都能回答：什么时候为真、什么时候被相信、凭什么。</p>
       </div>
-      <div class="chips" id="chips"></div>
+      <div class="mast-actions">
+        <div style="position:relative" id="viewpointWrap">
+          <button class="ghost-btn" id="viewpointBtn">◷ 视点 · 现在</button>
+          <div class="pop" id="viewpointPop">
+            <h4>回到某个时刻</h4>
+            <label for="vpValid">世界时间 valid_at</label>
+            <input id="vpValid" type="datetime-local" />
+            <label for="vpKnown">相信时间 known_at</label>
+            <input id="vpKnown" type="datetime-local" />
+            <div class="presets">
+              <button data-preset="now">现在</button>
+              <button data-preset="1h">1 小时前</button>
+              <button data-preset="today">今天 00:00</button>
+              <button data-preset="yesterday">昨天 09:00</button>
+            </div>
+            <div class="actions">
+              <button id="vpReset">回到现在</button>
+              <button class="go" id="vpApply">应用视点</button>
+            </div>
+          </div>
+        </div>
+        <button class="ghost-btn icon" id="refreshBtn" title="刷新">↻</button>
+      </div>
+    </header>
+
+    <section class="kpis">
+      <div class="kpi"><span>有效事实</span><b id="kActive">—</b><small id="kActiveNote">当前被相信</small></div>
+      <div class="kpi"><span>历史版本</span><b id="kHistory">—</b><small>被替换或遗忘</small></div>
+      <div class="kpi"><span>主体</span><b id="kSubjects">—</b><small id="kSubjectsNote">独立 subject</small></div>
+      <div class="kpi"><span>谓词</span><b id="kPredicates">—</b><small id="kPredicatesNote">多值 0</small></div>
+    </section>
+
+    <div class="viewpoint-bar" id="viewpointBar">
+      <span>正在回看 <b id="vpLabel">—</b> 时点的记忆视图</span>
+      <button id="vpExit">退出视点</button>
     </div>
 
-    <div class="composer" id="composer">
-      <textarea id="utterance" placeholder="输入一句自然语言，系统会抽出结构化事实，并判定为 新增 / 重复 / 替换 / 矛盾。&#10;（也可以把 .txt / .md 文件拖进来）"></textarea>
-      <div class="composer-foot">
-        <span class="hint" id="composerHint">抽取 → 判重/判矛盾 → 双时态写入</span>
-        <button class="btn primary" id="submitBtn">记为记忆</button>
+    <!-- ledger view -->
+    <section id="view-ledger">
+      <div class="desk" id="desk">
+        <div class="desk-head">
+          <span class="desk-label">New entry · 自然语言入账</span>
+          <span class="desk-hint">⌘↵ 提交 · 可拖入 .txt</span>
+        </div>
+        <textarea id="utterance" placeholder="例如：主卧的温度改成 23 度，之前那个有点冷。&#10;系统会抽取事实、判断它与旧值的关系，再决定新增、合并还是替换。"></textarea>
+        <div class="desk-foot">
+          <span class="hint" id="composerHint">抽取 → 判重 / 判矛盾 → 双时态写入</span>
+          <button class="btn primary" id="submitBtn">入账<span class="arrow">→</span></button>
+        </div>
       </div>
-    </div>
 
-    <div class="result" id="result"></div>
+      <div class="result" id="result"></div>
 
-    <div class="toolbar">
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-filter="active">当前有效</button>
-        <button role="tab" aria-selected="false" data-filter="history">含历史</button>
-        <button role="tab" aria-selected="false" data-filter="forgotten">已遗忘</button>
+      <div class="toolbar">
+        <div class="tabs" role="tablist" id="tabs">
+          <button role="tab" data-tab="active" aria-selected="true">有效<span class="n" id="nActive">0</span></button>
+          <button role="tab" data-tab="history" aria-selected="false">含历史<span class="n" id="nHistory">0</span></button>
+          <button role="tab" data-tab="forgotten" aria-selected="false">已遗忘<span class="n" id="nForgotten">0</span></button>
+        </div>
+        <div class="tool-right">
+          <div class="mini-search">
+            <span style="color:var(--muted);font-size:12px">⌕</span>
+            <input id="quickSearch" placeholder="在台账中筛主体 / 谓词 / 值" />
+            <kbd>/</kbd>
+          </div>
+          <button class="ghost-btn icon" id="exportBtn" title="导出当前视图 JSON">↓</button>
+        </div>
       </div>
-      <div class="search">
-        <input id="searchInput" placeholder="语义 + 词法混合检索…" />
-        <button class="btn ghost" id="searchBtn">检索</button>
-        <button class="btn ghost" id="refreshBtn" title="刷新">↺</button>
-      </div>
-    </div>
 
-    <div class="ledger" id="ledger"></div>
+      <div class="ledger" id="ledger"></div>
+      <footer class="stage-foot">
+        <span>Agent Memory Core · PostgreSQL 为规范事实源 · pgvector / AGE 为可选索引</span>
+        <span><b>/</b> 搜索 · <b>N</b> 新入账 · <b>Esc</b> 收起</span>
+      </footer>
+    </section>
+
+    <!-- search view -->
+    <section id="view-search" hidden>
+      <div class="search-hero">
+        <div class="search-box">
+          <span style="color:var(--muted)">⌕</span>
+          <input id="searchInput" placeholder="问一句话，例如：卧室温度偏好是什么？" />
+          <button class="btn primary" id="searchBtn">检索</button>
+        </div>
+        <div class="examples" id="examples">
+          <button>卧室温度</button><button>不喜欢什么</button><button>作息偏好</button><button>当前状态</button>
+        </div>
+      </div>
+      <div id="searchMeta" style="font-size:11px;color:var(--muted);margin-bottom:10px"></div>
+      <div id="searchResults"></div>
+    </section>
+
+    <!-- system view -->
+    <section id="view-system" hidden>
+      <div class="sys-grid">
+        <div class="sys-card"><h3>规范库</h3><p class="big" id="sysReady">检查中…</p>
+          <p style="margin-top:6px">PostgreSQL 是唯一事实源；AGE 与 pgvector 是可选索引。</p></div>
+        <div class="sys-card"><h3>契约版本</h3><p class="big" id="sysContract">—</p>
+          <p style="margin-top:6px">接口与响应字段的兼容基线，破坏性变更会提升版本号。</p></div>
+        <div class="sys-card"><h3>抽取通道</h3><p class="big" id="sysExtractor">—</p>
+          <p style="margin-top:6px">自然语言入账依赖服务端配置的本地抽取器；未配置时只能提交结构化候选。</p></div>
+        <div class="sys-card"><h3>向量通道</h3><p class="big" id="sysEmbedding">—</p>
+          <p style="margin-top:6px">服务端可自动向量化；否则由调用方提供向量，失败不影响事实落库。</p></div>
+      </div>
+      <table class="matrix" id="capMatrix">
+        <thead><tr><th>能力</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
   </main>
 
-  <aside class="aside">
-    <p class="section-label">实时事件流</p>
-    <div class="feed" id="feed"></div>
+  <!-- ============ side ============ -->
+  <aside class="side">
+    <div class="card-block">
+      <div class="block-head"><h3>实例能力</h3><span id="capCount">—</span></div>
+      <div class="caps" id="caps"></div>
+      <button class="more" id="capsMore">展开全部</button>
+    </div>
+
+    <div class="card-block">
+      <div class="block-head"><h3>基数策略</h3><span>trusted</span></div>
+      <div class="policies" id="policyList"></div>
+      <div class="policy-add">
+        <input id="newPredicate" placeholder="新增谓词，如 contact_phone" />
+        <select id="newCardinality" style="width:78px;border:1px solid var(--hair);border-radius:5px;background:var(--card);font-size:10.5px;padding:3px 4px;color:var(--ink-2)">
+          <option value="one">one</option><option value="many">many</option>
+        </select>
+        <button id="addPolicy">添加</button>
+      </div>
+      <p style="font-size:10px;color:var(--muted);margin:2px 0 0;line-height:1.6">未列出的谓词默认 one。基数由数据库策略决定，模型无权修改。</p>
+    </div>
+
+    <div class="card-block">
+      <div class="block-head"><h3>事件流</h3><span id="evCount">—</span></div>
+      <div class="feed" id="feed"></div>
+    </div>
   </aside>
 </div>
 
+<!-- ============ drawer ============ -->
 <div class="drawer" id="drawer" aria-hidden="true">
-  <header><h3 id="drawerTitle">事实详情</h3><button class="btn ghost" id="drawerClose" style="padding:4px 10px">关闭</button></header>
-  <div class="body" id="drawerBody"></div>
+  <div class="drawer-head">
+    <p class="eyebrow">Memory claim</p>
+    <h2 id="drawerTitle">—</h2>
+    <div id="drawerSeal"></div>
+    <button class="drawer-close" id="drawerClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-foot">
+    <span class="id" id="drawerId">—</span>
+    <button class="ghost-btn" id="copyId">复制 ID</button>
+    <button class="ghost-btn" id="forgetBtn" style="color:var(--ruby);border-color:#E8CBD2">遗忘</button>
+  </div>
 </div>
 
 <div class="gate" id="gate">
-  <div class="card">
-    <h2>连接你的记忆库</h2>
-    <p>输入该实例的 <code style="font-family:var(--mono);font-size:11px">MEMORY_API_KEY</code>。凭证只存在本机 localStorage，不会写进页面源码。</p>
+  <div class="gate-card">
+    <div class="monogram">M</div>
+    <h2>连接记忆库</h2>
+    <p>输入该实例的 <code style="font-family:var(--mono);font-size:11px">MEMORY_API_KEY</code>。凭据只保存在本机 localStorage，不会写进页面源码，也不会出现在 URL 里。</p>
     <input id="gateKey" type="password" placeholder="Bearer key" autocomplete="off" />
-    <div class="row">
-      <span class="hint" id="gateMsg"></span>
+    <div class="gate-foot">
+      <span id="gateMsg">等待连接</span>
       <button class="btn primary" id="gateGo">连接</button>
     </div>
   </div>
@@ -277,222 +632,419 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const state = { key:"", items:[], all:[], events:[], policies:[], selected:null, filter:"active", query:"" };
+const CAP_LABELS = {
+  "memory.claims":"事实写入", "memory.bitemporal":"双时态", "memory.processing":"结构化处理",
+  "memory.extraction":"文本抽取", "memory.vector":"向量索引", "memory.embedding":"服务端向量",
+  "memory.graph":"知识图谱", "memory.objects":"证据对象", "memory.observations":"设备观测",
+  "events.replay":"事件回放", "events.sse":"实时事件流", "workflow.temporal":"Temporal 工作流"
+};
+const state = {
+  key:"", tenant:"", contract:"1.0.0", caps:[], policies:[], all:[], events:[], history:[],
+  view:"ledger", tab:"active", query:"", selected:null,
+  viewpoint:{ valid_at:"", known_at:"" }, search:null, capsOpen:false, loading:false
+};
 
-const $ = (sel) => document.querySelector(sel);
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const fmt = (iso) => { if(!iso) return "—"; const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString("zh-CN",{hour12:false}); };
-const shortId = (id) => id ? id.slice(0,8) : "—";
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (n) => new Intl.NumberFormat("zh-CN").format(n || 0);
+const shortId = (id) => (id || "").slice(0, 8);
+const dateTime = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso); if (isNaN(d)) return String(iso);
+  return d.toLocaleString("zh-CN", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false });
+};
+const dayKey = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toISOString().slice(0,10); };
+const relTime = (iso) => {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  const s = Math.round((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return "刚刚";
+  if (s < 3600) return Math.round(s/60) + " 分钟前";
+  if (s < 86400) return Math.round(s/3600) + " 小时前";
+  return Math.round(s/86400) + " 天前";
+};
 
 function toast(msg, err){
-  const el = $("#toast"); el.textContent = msg; el.className = "toast show" + (err ? " err" : "");
-  clearTimeout(el._t); el._t = setTimeout(() => el.className = "toast", 2600);
+  const el = $("#toast"); el.textContent = msg;
+  el.className = "toast show" + (err ? " err" : "");
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "toast", 2800);
 }
 
 async function api(path, options = {}){
   const res = await fetch(path, {
     ...options,
-    headers: { "Authorization": "Bearer " + state.key, "Content-Type": "application/json", ...(options.headers||{}) },
+    headers: { "Authorization": "Bearer " + state.key, "Content-Type": "application/json", ...(options.headers || {}) },
   });
-  if (res.status === 401 || res.status === 403) throw new Error("凭证无效或已过期");
+  if (res.status === 401 || res.status === 403) throw Object.assign(new Error("凭据无效"), { status: res.status });
   const text = await res.text();
   let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!res.ok) {
-    const detail = body && body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.status;
-    const err = new Error(detail); err.status = res.status; throw err;
+    const detail = body && body.detail
+      ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : "HTTP " + res.status;
+    throw Object.assign(new Error(detail), { status: res.status });
   }
   return body;
 }
 
-/* ---------------- boot ---------------- */
+/* ---------------- boot / auth ---------------- */
 function boot(){
-  // Optional #key=... handoff for demo links: the fragment never reaches the
-  // server, and it is scrubbed from the address bar once stored locally.
-  const hash = location.hash || "";
-  if (hash.startsWith("#key=")) {
-    const fromHash = decodeURIComponent(hash.slice(5)).trim();
-    if (fromHash) { localStorage.setItem("amc.key", fromHash); history.replaceState(null, "", location.pathname); }
+  // Deep links: #key=<bearer> hands a demo link a credential without a query
+  // string; #view=search&q=… and #claim=<uuid> open a view or a single fact.
+  const params = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+  const fromHash = (params.get("key") || "").trim();
+  if (fromHash) {
+    localStorage.setItem("amc.key", fromHash);
+    history.replaceState(null, "", location.pathname);
   }
+  state.deepLink = { view: params.get("view"), q: params.get("q"), claim: params.get("claim") };
   state.key = localStorage.getItem("amc.key") || "";
-  $("#keyInput").value = state.key;
-  if (!state.key) { $("#gate").style.display = "grid"; return; }
+  $("#today").textContent = new Date().toLocaleDateString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit" });
+  if (!state.key) { $("#gate").classList.add("show"); return; }
   connect();
 }
 async function connect(){
   try {
     await refreshAll();
-    $("#gate").style.display = "none";
+    $("#gate").classList.remove("show");
+    const link = state.deepLink || {};
+    if (link.view) setView(link.view);
+    if (link.q) runSearch(link.q);
+    if (link.claim) openDetail(link.claim);
   } catch (e) {
-    $("#gate").style.display = "grid";
+    $("#gate").classList.add("show");
     $("#gateMsg").textContent = e.message;
-    $("#gateMsg").style.color = "var(--ruby)";
+    $("#gateMsg").className = "err";
   }
 }
 $("#gateGo").onclick = async () => {
-  const v = $("#gateKey").value.trim();
-  if (!v) return;
-  state.key = v; $("#keyInput").value = v; localStorage.setItem("amc.key", v);
-  $("#gateMsg").textContent = "连接中…"; $("#gateMsg").style.color = "var(--muted)";
+  const v = $("#gateKey").value.trim(); if (!v) return;
+  state.key = v; localStorage.setItem("amc.key", v);
+  $("#gateMsg").textContent = "连接中…"; $("#gateMsg").className = "";
   await connect();
 };
-$("#gateKey").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#gateGo").click(); });
-$("#keySave").onclick = () => {
-  const v = $("#keyInput").value.trim(); if (!v) return;
-  state.key = v; localStorage.setItem("amc.key", v); connect().then(() => toast("已连接"));
-};
+$("#gateKey").addEventListener("keydown", e => { if (e.key === "Enter") $("#gateGo").click(); });
 
+/* ---------------- load ---------------- */
 async function refreshAll(){
-  const [caps, policies] = await Promise.all([api("/v1/capabilities"), api("/v1/predicate-policies")]);
-  renderChips(caps);
+  state.loading = true;
+  const browse = new URLSearchParams({ limit: "500", include_superseded: "true" });
+  const [caps, policies, memories, events] = await Promise.all([
+    api("/v1/capabilities"),
+    api("/v1/predicate-policies"),
+    api("/v1/memories?" + browse.toString()),
+    api("/v1/events?limit=24"),
+  ]);
+  state.contract = caps.contract_version || state.contract;
+  state.tenant = caps.tenant_id || "";
+  state.caps = caps.capabilities || [];
   state.policies = policies.items || [];
-  renderPolicies();
-  await Promise.all([loadMemories(), loadEvents()]);
+  state.history = memories.items || [];
+  state.events = events.items || [];
+  state.loading = false;
+  renderCaps(); renderPolicies(); renderStats(); renderSpark(); renderFeed();
+  await loadLedger();
+  api("/v1/ready").then(() => { $("#sysReady").textContent = "ready · PostgreSQL"; })
+    .catch(() => { $("#sysReady").textContent = "unavailable"; });
+  $("#sysContract").textContent = state.contract;
+  $("#sysExtractor").textContent = capOf("memory.extraction").available ? providerOf(capOf("memory.extraction").reason) : "struct-only";
+  $("#sysEmbedding").textContent = capOf("memory.embedding").available ? providerOf(capOf("memory.embedding").reason) : "caller-supplied";
+  $("#contract").textContent = "CONTRACT " + state.contract;
+  $("#tenantId").innerHTML = esc(state.tenant) + "<small>租户身份由凭据派生</small>";
 }
 
-/* ---------------- header chips ---------------- */
-function renderChips(caps){
-  const map = Object.fromEntries((caps.capabilities||[]).map(c => [c.name, c]));
-  const ex = map["memory.extraction"], emb = map["memory.embedding"];
-  const providerName = (reason, fallback) => {
-    const m = /(?:provider|model):\s*([^\s;]+)/.exec(reason || "");
-    return m ? m[1] : fallback;
+function capOf(name){ return state.caps.find(c => c.name === name) || { name, available:false, reason:"" }; }
+function providerOf(reason){
+  const m = /(?:provider|model):\s*([^\s;]+)/.exec(reason || "");
+  return m ? m[1] : (reason || "configured");
+}
+
+async function loadLedger(){
+  const params = new URLSearchParams({ limit: "300" });
+  if (state.tab !== "active") params.set("include_superseded", "true");
+  if (state.viewpoint.valid_at) params.set("valid_at", state.viewpoint.valid_at);
+  if (state.viewpoint.known_at) params.set("known_at", state.viewpoint.known_at);
+  const body = await api("/v1/memories?" + params.toString());
+  state.all = body.items || [];
+  renderLedger(); renderStats();
+}
+
+/* ---------------- stats ---------------- */
+function statusOf(item){
+  if (!item.superseded_at) return "active";
+  return /forget/i.test(item.source_id || "") ? "forgotten" : "superseded";
+}
+function setNum(el, value){
+  const target = Number(value) || 0;
+  const from = Number(el.dataset.v || 0) || 0;
+  el.dataset.v = String(target);
+  if (from === target) { el.textContent = num(target); return; }
+  const start = performance.now(), span = 380;
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / span);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = num(Math.round(from + (target - from) * eased));
+    if (p < 1) requestAnimationFrame(tick);
   };
-  const chip = (label, ok, tone, note) =>
-    `<span class="chip ${ok ? tone : "off"}" title="${esc(note||"")}"><i></i>${esc(label)}</span>`;
-  $("#chips").innerHTML = [
-    chip("PostgreSQL · 就绪", true, "ok", "canonical store"),
-    chip("抽取 " + (ex && ex.available ? providerName(ex.reason, "provider") : "未配置"), !!(ex && ex.available), "ok", ex && ex.reason),
-    chip("向量 " + (emb && emb.available ? providerName(emb.reason, "provider") : "调用方提供"), true, emb && emb.available ? "ok" : "warn", emb && emb.reason),
-    chip("图谱 AGE", true, "ok", "graph projection"),
-  ].join("");
+  requestAnimationFrame(tick);
+}
+function renderStats(){
+  const rows = state.history;
+  const active = rows.filter(i => !i.superseded_at);
+  const subjects = new Set(active.map(i => i.subject_id));
+  const predicates = new Set(active.map(i => i.predicate));
+  const many = state.policies.filter(p => p.cardinality === "many").length;
+  setNum($("#kActive"), active.length);
+  setNum($("#kHistory"), rows.length - active.length);
+  setNum($("#kSubjects"), subjects.size);
+  setNum($("#kPredicates"), predicates.size);
+  $("#kPredicatesNote").textContent = "多值 " + many;
+  $("#kActiveNote").textContent = state.viewpoint.known_at || state.viewpoint.valid_at ? "视点内仍有效" : "当前被相信";
+  $("#navCount").textContent = num(active.length);
+  $("#nActive").textContent = num(active.length);
+  $("#nHistory").textContent = num(rows.length - active.length);
+  $("#nForgotten").textContent = num(rows.filter(i => statusOf(i) === "forgotten").length);
+  $("#evCount").textContent = state.events.length + " 条";
+}
+
+/* ---------------- capabilities ---------------- */
+function renderCaps(){
+  const list = state.capsOpen ? state.caps : state.caps.slice(0, 6);
+  $("#caps").innerHTML = list.map(c => `
+    <div class="cap ${c.available ? "on" : "off"}" title="${esc(c.reason || "")}">
+      <i></i><span>${esc(CAP_LABELS[c.name] || c.name)}</span>
+      <em>${esc(c.available ? "on" : "off")}</em>
+    </div>`).join("");
+  $("#capCount").textContent = state.caps.filter(c => c.available).length + "/" + state.caps.length;
+  $("#capsMore").textContent = state.capsOpen ? "收起" : "展开全部";
+  $("#capMatrix tbody").innerHTML = state.caps.map(c => `
+    <tr><td>${esc(c.name)}</td>
+      <td><span class="pill ${c.available ? "yes" : "no"}">${c.available ? "available" : "disabled"}</span></td>
+      <td>${esc(c.reason || (c.available ? "已启用" : ""))}</td></tr>`).join("");
+}
+$("#capsMore").onclick = () => { state.capsOpen = !state.capsOpen; renderCaps(); };
+
+/* ---------------- sparkline ---------------- */
+function renderSpark(){
+  const days = [...Array(14)].map((_, i) => {
+    const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - (13 - i)); return d.toISOString().slice(0,10);
+  });
+  const counts = days.map(day => state.history.filter(m => dayKey(m.recorded_at) === day).length);
+  const peak = Math.max(1, ...counts);
+  const step = 240 / 13;
+  const points = counts.map((n, i) => [i * step, 40 - (n / peak) * 34]);
+  const line = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const area = `0,44 ${line} 240,44`;
+  $("#spark").innerHTML = `
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F6B54" stop-opacity=".16"/>
+      <stop offset="100%" stop-color="#0F6B54" stop-opacity="0"/></linearGradient></defs>
+    <polygon points="${area}" fill="url(#g)"></polygon>
+    <polyline points="${line}" fill="none" stroke="#0F6B54" stroke-width="1.3" stroke-linejoin="round"></polyline>
+    <circle cx="${points[13][0]}" cy="${points[13][1]}" r="2.4" fill="#0F6B54"></circle>`;
+  $("#sparkTotal").textContent = counts.reduce((a, b) => a + b, 0) + " 条";
+  $("#sparkPeak").textContent = "峰值 " + peak;
 }
 
 /* ---------------- policies ---------------- */
 function renderPolicies(){
   const el = $("#policyList");
-  $("#statPolicy").textContent = state.policies.filter(p => p.cardinality === "many").length;
-  if (!state.policies.length){
-    el.innerHTML = `<div class="hint">还没有显式策略，全部谓词按单值处理。</div>`;
+  if (!state.policies.length) {
+    el.innerHTML = `<div style="font-size:10.5px;color:var(--muted);padding:2px 0 4px">还没有显式策略，全部按单值处理。</div>`;
     return;
   }
   el.innerHTML = state.policies.map(p => `
-    <div class="policy">
-      <code title="${esc(p.predicate)}">${esc(p.predicate)}</code>
-      <div class="toggle" data-predicate="${esc(p.predicate)}">
-        <button data-card="one" aria-pressed="${p.cardinality === "one"}">one</button>
-        <button data-card="many" aria-pressed="${p.cardinality === "many"}">many</button>
-      </div>
-    </div>`).join("");
-  el.querySelectorAll(".toggle button").forEach(btn => {
+    <div class="policy"><code title="${esc(p.predicate)}">${esc(p.predicate)}</code>
+      <div class="seg" data-p="${esc(p.predicate)}">
+        <button data-c="one" aria-pressed="${p.cardinality === "one"}">one</button>
+        <button data-c="many" aria-pressed="${p.cardinality === "many"}">many</button>
+      </div></div>`).join("");
+  $$(".seg button").forEach(btn => {
     btn.onclick = async () => {
-      const predicate = btn.parentElement.dataset.predicate;
+      const predicate = btn.parentElement.dataset.p;
       try {
-        await api("/v1/predicate-policies/" + encodeURIComponent(predicate), { method:"PUT", body: JSON.stringify({ cardinality: btn.dataset.card }) });
-        toast(`${predicate} → ${btn.dataset.card}`);
+        await api("/v1/predicate-policies/" + encodeURIComponent(predicate),
+          { method:"PUT", body: JSON.stringify({ cardinality: btn.dataset.c }) });
+        toast(predicate + " → " + btn.dataset.c);
         state.policies = (await api("/v1/predicate-policies")).items || [];
-        renderPolicies();
+        renderPolicies(); renderStats();
       } catch (e) { toast(e.message, true); }
     };
   });
 }
+$("#addPolicy").onclick = async () => {
+  const predicate = $("#newPredicate").value.trim();
+  if (!predicate) return toast("先写一个谓词名", true);
+  try {
+    await api("/v1/predicate-policies/" + encodeURIComponent(predicate),
+      { method:"PUT", body: JSON.stringify({ cardinality: $("#newCardinality").value }) });
+    $("#newPredicate").value = "";
+    state.policies = (await api("/v1/predicate-policies")).items || [];
+    renderPolicies(); renderStats(); toast(predicate + " 已登记");
+  } catch (e) { toast(e.message, true); }
+};
 
-/* ---------------- memories ---------------- */
-async function loadMemories(){
-  const params = new URLSearchParams({ limit: "120" });
-  if (state.filter !== "active") params.set("include_superseded", "true");
-  // Stats always come from the full picture, never from the filtered tab.
-  const [body, everything] = await Promise.all([
-    api("/v1/memories?" + params.toString()),
-    api("/v1/memories?limit=200&include_superseded=true"),
-  ]);
-  state.items = body.items || [];
-  state.all = state.items;
-  state.everything = everything.items || [];
-  renderLedger();
-  renderStats();
+/* ---------------- ledger ---------------- */
+function describeValue(value){
+  // Facts are small JSON objects, but a raw dump is noise on a ledger row.
+  // Lead with the human-meaningful scalar, keep the rest as quiet key/value
+  // chips: {"value":"安静","reason":"睡眠浅"} -> 安静 · reason 睡眠浅
+  const scalar = (v) => v !== null && typeof v !== "object";
+  if (value === null || value === undefined) return { main: "", chips: [] };
+  if (!scalar(value) && !Array.isArray(value)) {
+    const entries = Object.entries(value);
+    const preferred = ["value", "text", "name", "state", "status", "number"]
+      .find(k => k in value && scalar(value[k]));
+    if (preferred) {
+      return {
+        main: String(value[preferred]),
+        chips: entries.filter(([k]) => k !== preferred).map(([k, v]) => [k, scalar(v) ? String(v) : JSON.stringify(v)]),
+      };
+    }
+    if (entries.length === 1 && scalar(entries[0][1])) return { main: String(entries[0][1]), chips: [[entries[0][0], ""]] };
+    if (entries.every(([, v]) => scalar(v))) {
+      return { main: entries.map(([, v]) => String(v)).join(" · "), chips: [] };
+    }
+    return { main: JSON.stringify(value), chips: [] };
+  }
+  return { main: Array.isArray(value) ? JSON.stringify(value) : String(value), chips: [] };
 }
-
-function statusOf(item){
-  if (item.superseded_at) return /forget/i.test(item.source_id || "") ? "forgotten" : "superseded";
-  return "active";
+function valueHtml(value){
+  const d = describeValue(value);
+  const chips = d.chips.map(([k, v]) => `<span class="val-kv"><i>${esc(k)}</i>${esc(v)}</span>`).join("");
+  return `<span class="val-main">${esc(d.main || "—")}</span>${chips}`;
 }
-function renderStats(){
-  const rows = state.everything || [];
-  const active = rows.filter(i => !i.superseded_at);
-  $("#statActive").textContent = active.length;
-  $("#statHistory").textContent = rows.length - active.length;
-  $("#statSubjects").textContent = new Set(active.map(i => i.subject_id)).size;
+function filteredRows(){
+  let rows = state.all.slice();
+  if (state.tab === "active") rows = rows.filter(i => !i.superseded_at);
+  if (state.tab === "forgotten") rows = rows.filter(i => statusOf(i) === "forgotten");
+  if (state.query) {
+    const q = state.query.toLowerCase();
+    rows = rows.filter(i => JSON.stringify(i).toLowerCase().includes(q));
+  }
+  return rows;
 }
-
 function renderLedger(){
   const el = $("#ledger");
-  let rows = state.all.slice();
-  if (state.filter === "active") rows = rows.filter(i => !i.superseded_at);
-  if (state.filter === "forgotten") rows = rows.filter(i => statusOf(i) === "forgotten");
-  if (state.query) rows = rows.filter(i => JSON.stringify(i).toLowerCase().includes(state.query.toLowerCase()));
-  if (!rows.length){ el.innerHTML = `<div class="empty">这里还是空的 —— 在上面写一句话试试。</div>`; return; }
+  const rows = filteredRows();
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty"><b>${state.query ? "没有匹配的事实" : "台账还是空的"}</b>
+      <span>${state.query ? "换一个词，或清空筛选。" : "在上面写一句话，或先用 /docs 里的示例灌一条。"}</span></div>`;
+    return;
+  }
   el.innerHTML = rows.map(item => {
-    const status = statusOf(item);
-    const label = status === "active" ? "有效" : status === "forgotten" ? "已遗忘" : "已替换";
-    return `<article class="claim" data-id="${esc(item.id)}" data-status="${status}">
-      <div class="claim-top">
-        <span class="subject">${esc(item.subject_id)}</span>
-        <span class="predicate">${esc(item.predicate)}</span>
-        <span class="pill ${status}">${label}</span>
+    const s = statusOf(item);
+    const label = s === "active" ? "有效" : s === "forgotten" ? "已遗忘" : "已替换";
+    return `<article class="row" data-s="${s}" data-id="${esc(item.id)}">
+      <div class="row-rail"></div>
+      <div class="row-body">
+        <div class="row-top">
+          <span class="subject">${esc(item.subject_id)}</span>
+          <span class="predicate">${esc(item.predicate)}</span>
+          <span class="state ${s}">${label}</span>
+        </div>
+        <div class="row-value">${valueHtml(item.value)}</div>
+        <div class="row-meta">
+          <span>生效 <code>${dateTime(item.valid_from)}</code></span>
+          <span>ID <code>${esc(shortId(item.id))}</code></span>
+          ${item.valid_to ? `<span>失效 <code>${dateTime(item.valid_to)}</code></span>` : ""}
+        </div>
       </div>
-      <div class="value">${esc(JSON.stringify(item.value))}</div>
-      <div class="meta">
-        <span>valid_from <code>${fmt(item.valid_from)}</code></span>
-        <span>source <code>${esc(item.source_id)}</code></span>
-        <span>id <code>${esc(shortId(item.id))}</code></span>
+      <div class="row-side">
+        <span class="t">${dateTime(item.recorded_at)}</span>
+        <span class="s">${relTime(item.recorded_at)}</span>
+      </div>
+      <div class="row-acts">
+        <button class="act" data-act="open">详情</button>
+        ${s === "active" ? '<button class="act danger" data-act="forget">遗忘</button>' : ""}
       </div>
     </article>`;
   }).join("");
-  el.querySelectorAll(".claim").forEach(card => {
-    card.onclick = () => openDetail(card.dataset.id);
+  $$(".row").forEach(row => {
+    row.onclick = (e) => {
+      const act = e.target.closest("[data-act]");
+      if (act && act.dataset.act === "forget") { e.stopPropagation(); armForget(act, row.dataset.id); return; }
+      openDetail(row.dataset.id);
+    };
   });
 }
 
-/* ---------------- detail ---------------- */
+function armForget(btn, id){
+  // A native confirm() dialog breaks the atmosphere of a live demo and cannot
+  // be styled. Two deliberate clicks on the same control do the same job.
+  if (btn.dataset.armed === "1") { forget(id); return; }
+  btn.dataset.armed = "1"; btn.dataset.label = btn.textContent;
+  btn.textContent = "确认遗忘";
+  const reset = () => {
+    if (btn.dataset.armed !== "1") return;
+    btn.dataset.armed = ""; btn.textContent = btn.dataset.label || "遗忘";
+    btn.style.borderColor = ""; btn.style.color = "";
+  };
+  btn.style.borderColor = "#E3BCC6"; btn.style.color = "var(--ruby)";
+  setTimeout(reset, 3200);
+}
+async function forget(id){
+  const item = state.all.find(i => i.id === id) || state.history.find(i => i.id === id);
+  if (!item) return;
+  try {
+    await api("/v1/memories/" + encodeURIComponent(id), { method:"DELETE" });
+    toast("已遗忘，审计保留");
+    const fb = $("#forgetBtn"); fb.textContent = "遗忘"; delete fb.dataset.armed; fb.style.borderColor = ""; fb.style.color = "";
+    $("#drawer").classList.remove("open");
+    await refreshAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------------- drawer ---------------- */
 async function openDetail(id){
-  state.selected = state.all.find(i => i.id === id);
-  if (!state.selected) return;
-  const item = state.selected;
-  document.querySelectorAll(".claim").forEach(c => c.classList.toggle("selected", c.dataset.id === id));
+  const item = state.all.find(i => i.id === id) || state.history.find(i => i.id === id);
+  if (!item) return;
+  state.selected = item;
+  $$(".row").forEach(r => r.classList.toggle("selected", r.dataset.id === id));
+  const s = statusOf(item);
+  const label = s === "active" ? "有效" : s === "forgotten" ? "已遗忘" : "已替换";
   $("#drawer").classList.add("open");
   $("#drawer").setAttribute("aria-hidden", "false");
-  $("#drawerTitle").textContent = `${item.subject_id} · ${item.predicate}`;
+  $("#drawerTitle").textContent = item.subject_id + " · " + item.predicate;
+  $("#drawerSeal").innerHTML = `<span class="seal ${s}">${label}</span>`;
+  $("#drawerId").textContent = item.id;
   $("#drawerBody").innerHTML = `
-    <dl class="kv">
-      <dt>memory_id</dt><dd>${esc(item.id)}</dd>
-      <dt>value</dt><dd>${esc(JSON.stringify(item.value, null, 2))}</dd>
-      <dt>valid_from</dt><dd>${fmt(item.valid_from)}</dd>
-      <dt>valid_to</dt><dd>${fmt(item.valid_to)}</dd>
-      <dt>recorded_at</dt><dd>${fmt(item.recorded_at)}</dd>
-      <dt>superseded</dt><dd>${item.superseded_at ? fmt(item.superseded_at) : "—"}</dd>
+    <div class="section"><h4>事实</h4>
+      <div class="fact">${esc(JSON.stringify(item.value, null, 2))}</div></div>
+    <div class="section"><h4>双时态</h4>
+      <div class="timeline">
+        <div class="tl"><b>生效 valid_from</b><span>${dateTime(item.valid_from)}</span></div>
+        ${item.valid_to ? `<div class="tl"><b>失效 valid_to</b><span>${dateTime(item.valid_to)}</span></div>` : ""}
+        <div class="tl"><b>被系统记录 recorded_at</b><span>${dateTime(item.recorded_at)}</span></div>
+        ${item.superseded_at ? `<div class="tl"><b>停止相信 superseded_at</b><span>${dateTime(item.superseded_at)}</span></div>` : ""}
+      </div></div>
+    <div class="section"><h4>来源链</h4><div id="sourcesBox" style="font-size:11px;color:var(--muted)">读取中…</div></div>
+    <div class="section"><h4>同主体版本</h4><div class="related" id="relatedBox"></div></div>
+    <div class="section"><h4>其它字段</h4><dl class="kv">
       <dt>source_id</dt><dd>${esc(item.source_id)}</dd>
-      <dt>evidence</dt><dd>${esc(item.object_sha256 || "—")}</dd>
-    </dl>
-    <p class="section-label">来源链</p>
-    <div id="sourcesBox" class="hint">读取中…</div>
-    <p class="section-label" style="margin-top:16px">双时态</p>
-    <div class="timeline">
-      <div>写入（recorded_at）<small>${fmt(item.recorded_at)}</small></div>
-      <div>生效（valid_from）<small>${fmt(item.valid_from)}</small></div>
-      ${item.valid_to ? `<div>失效（valid_to）<small>${fmt(item.valid_to)}</small></div>` : ""}
-      ${item.superseded_at ? `<div>被替换（superseded_at）<small>${fmt(item.superseded_at)}</small></div>` : ""}
-    </div>`;
+      <dt>object_sha256</dt><dd>${esc(item.object_sha256 || "—")}</dd>
+      <dt>tenant</dt><dd>${esc(state.tenant)}</dd>
+    </dl></div>`;
+  const related = state.history.filter(x => x.subject_id === item.subject_id && x.predicate === item.predicate && x.id !== item.id);
+  $("#relatedBox").innerHTML = related.length ? related.map(x => `
+      <button data-id="${esc(x.id)}"><span class="state ${statusOf(x)}">${statusOf(x) === "active" ? "有效" : "旧版"}</span>
+        <code>${dateTime(x.valid_from)}</code></button>`).join("")
+    : `<span style="font-size:11px;color:var(--muted)">没有其它版本</span>`;
+  $$("#relatedBox button").forEach(b => { b.onclick = () => openDetail(b.dataset.id); });
   try {
     const body = await api(`/v1/memories/${item.id}/sources`);
     const rows = body.sources || [];
-    $("#sourcesBox").innerHTML = rows.length
-      ? rows.map(s => `<div style="font-family:var(--mono);font-size:11px;padding:4px 0;border-bottom:1px solid var(--hair-soft)">
-          ${esc(s.source_id)} <span style="color:var(--muted)">· ${esc(s.trust_level || "")} ${s.confidence != null ? "· conf " + esc(s.confidence) : ""}</span>
-        </div>`).join("")
-      : "无额外来源";
+    $("#sourcesBox").innerHTML = rows.length ? rows.map(s => `
+      <div class="src"><code>${esc(s.source_id)}</code>
+        <em>${esc(s.trust_level || "unknown")}${s.confidence != null ? " · " + esc(s.confidence) : ""}</em></div>`).join("")
+      : "无额外来源记录";
   } catch (e) { $("#sourcesBox").textContent = e.message; }
 }
 $("#drawerClose").onclick = () => { $("#drawer").classList.remove("open"); $("#drawer").setAttribute("aria-hidden","true"); };
+$("#copyId").onclick = async () => {
+  try { await navigator.clipboard.writeText($("#drawerId").textContent); toast("已复制 memory id"); }
+  catch { toast("复制失败", true); }
+};
+$("#forgetBtn").onclick = () => { if (state.selected) armForget($("#forgetBtn"), state.selected.id); };
 
 /* ---------------- write ---------------- */
 async function submitUtterance(){
@@ -501,111 +1053,203 @@ async function submitUtterance(){
   const btn = $("#submitBtn"); btn.disabled = true; btn.textContent = "抽取中…";
   try {
     const report = await api("/v1/memories/process", {
-      method: "POST",
-      body: JSON.stringify({ text, source_id: "dashboard:" + Date.now() }),
+      method:"POST", body: JSON.stringify({ text, source_id: "dashboard:" + Date.now() }),
     });
     renderResult(report);
     $("#utterance").value = "";
-    await Promise.all([loadMemories(), loadEvents()]);
-  } catch (e) {
-    toast(e.message, true);
-  } finally {
-    btn.disabled = false; btn.textContent = "记为记忆";
-  }
+    await refreshAll();
+  } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; btn.innerHTML = '入账<span class="arrow">→</span>'; }
 }
 function renderResult(report){
-  const rel = (report.relations || []);
-  const badge = (r) => `<span class="relation rel-${esc(r.relation)}">${esc(r.relation)}</span>`;
-  const lines = rel.length
-    ? rel.map(r => `<div style="display:flex;gap:8px;align-items:center;padding:3px 0">
-        ${badge(r)} <code style="font-family:var(--mono);font-size:11.5px;color:var(--sapphire)">${esc(r.subject_id)}/${esc(r.predicate)}</code>
-        ${r.merged ? `<span class="hint">已合并</span>` : ""}
-      </div>`).join("")
-    : `<div class="hint">没有抽出可入库的事实（可能这句话不含稳定偏好，或抽取器未配置）。</div>`;
-  const counts = [
-    ["新建", report.created?.length || 0], ["重复", report.duplicates || 0],
-    ["替换", report.replaced?.length || 0], ["拒收", report.rejected || 0],
-  ].map(([k,v]) => `<span class="chip">${k} ${v}</span>`).join("");
+  const relations = report.relations || [];
+  const chips = [["新建", report.created?.length || 0], ["重复", report.duplicates || 0],
+                 ["替换", report.replaced?.length || 0], ["拒收", report.rejected || 0]]
+    .map(([k, v]) => `<span class="tag">${k} <b>${v}</b></span>`).join("");
+  const lines = relations.length ? relations.map(r => `
+      <div class="rel"><span class="badge r-${esc(r.relation)}">${esc(r.relation)}</span>
+        <code>${esc(r.subject_id)} / ${esc(r.predicate)}</code>
+        ${r.merged ? '<span style="color:var(--muted);font-size:10.5px">已合并</span>' : ""}</div>`).join("")
+    : `<div style="font-size:11.5px;color:var(--muted)">这句话没有抽出可入库的稳定事实。</div>`;
   $("#result").innerHTML = `<div class="result-card">
-      <div class="result-head">${counts}</div>${lines}
-      ${report.embedding_failures?.length ? `<div class="hint" style="color:var(--ruby)">向量化失败 ${report.embedding_failures.length} 条（不影响事实写入）</div>` : ""}
+      <div class="result-top">${chips}</div>${lines}
+      ${report.embedding_failures?.length ? `<div style="font-size:11px;color:var(--ruby);margin-top:6px">向量化失败 ${report.embedding_failures.length} 条，事实已落库</div>` : ""}
     </div>`;
   $("#result").classList.add("show");
 }
 $("#submitBtn").onclick = submitUtterance;
-$("#utterance").addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitUtterance();
-});
+$("#utterance").addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitUtterance(); });
 
-/* drag & drop text file */
-const composer = $("#composer");
-["dragenter","dragover"].forEach(ev => composer.addEventListener(ev, (e) => { e.preventDefault(); composer.classList.add("drag"); }));
-["dragleave","drop"].forEach(ev => composer.addEventListener(ev, (e) => { e.preventDefault(); composer.classList.remove("drag"); }));
-composer.addEventListener("drop", async (e) => {
-  const file = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (!file) return;
+const desk = $("#desk");
+["dragenter","dragover"].forEach(ev => desk.addEventListener(ev, e => { e.preventDefault(); desk.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev => desk.addEventListener(ev, e => { e.preventDefault(); desk.classList.remove("drag"); }));
+desk.addEventListener("drop", async e => {
+  const file = e.dataTransfer.files && e.dataTransfer.files[0]; if (!file) return;
   const text = await file.text();
   $("#utterance").value = text.slice(0, 4000);
   $("#composerHint").textContent = `已载入 ${file.name}（${text.length} 字），确认后提交`;
 });
 
 /* ---------------- events ---------------- */
-async function loadEvents(){
-  const body = await api("/v1/events?limit=20");
-  // Order defensively: the feed is a live view, so newest must sit on top
-  // regardless of whether the API returns ascending or descending pages.
-  state.events = (body.items || []).slice().sort((a, b) =>
-    new Date(b.recorded_at || b.created_at || 0) - new Date(a.recorded_at || a.created_at || 0)
-  ).slice(0, 14);
-  renderFeed();
-}
 function renderFeed(){
   const el = $("#feed");
-  if (!state.events.length){ el.innerHTML = `<div class="hint">暂无事件</div>`; return; }
-  el.innerHTML = state.events.map(ev => {
+  if (!state.events.length) { el.innerHTML = `<div style="font-size:10.5px;color:var(--muted)">暂无事件</div>`; return; }
+  const sorted = state.events.slice().sort((a, b) => new Date(b.recorded_at || 0) - new Date(a.recorded_at || 0)).slice(0, 14);
+  el.innerHTML = sorted.map(ev => {
     const kind = /forgotten/.test(ev.event_type) ? "forgotten" : /created/.test(ev.event_type) ? "created" : "replaced";
-    const label = ev.event_type.replace("memory.claim.", "").replace("memory.", "");
-    const payload = ev.payload && (ev.payload.subject_id ? `${ev.payload.subject_id} · ${ev.payload.predicate}` : JSON.stringify(ev.payload).slice(0, 80));
-    return `<div class="event" data-kind="${kind}">
-      <b>${esc(label)}</b>
-      <span>${fmt(ev.recorded_at || ev.created_at)}</span>
-      <p>${esc(payload)}</p>
-    </div>`;
+    const raw = ev.event_type.replace("memory.claim.", "").replace("memory.", "");
+    const label = { created:"新增事实", superseded:"替换旧值", forgotten:"软遗忘", merged:"合并" }[raw] || raw;
+    const payload = ev.payload && ev.payload.subject_id
+      ? `${ev.payload.subject_id} · ${ev.payload.predicate}` : JSON.stringify(ev.payload || {}).slice(0, 60);
+    return `<div class="ev" data-k="${kind}" title="${esc(ev.event_type)}"><b>${esc(label)}</b>
+      <span>${dateTime(ev.recorded_at)} · ${relTime(ev.recorded_at)}</span>
+      <p title="${esc(payload)}">${esc(payload)}</p></div>`;
   }).join("");
 }
 
-/* ---------------- tabs / search / refresh ---------------- */
-document.querySelectorAll(".tabs button").forEach(btn => {
+/* ---------------- search ---------------- */
+async function runSearch(query){
+  const q = (query ?? $("#searchInput").value).trim();
+  if (!q) return toast("先写一个问题", true);
+  $("#searchInput").value = q;
+  $("#searchMeta").textContent = "检索中…";
+  try {
+    const body = await api("/v1/search", { method:"POST", body: JSON.stringify({ query:q, limit:30 }) });
+    const hits = body.items || [];
+    state.search = { q, hits, channels: body.channels_used || [], degraded: body.degraded_channels || {} };
+    const degraded = Object.keys(state.search.degraded);
+    $("#searchMeta").innerHTML = `命中 <b style="color:var(--ink)">${hits.length}</b> 条 · 通道 ` +
+      `<code style="color:var(--sapphire)">${esc(state.search.channels.join(" + ") || "sql")}</code>` +
+      (degraded.length ? ` · <span style="color:var(--gold)">降级 ${esc(degraded.join(", "))}</span>` : "");
+    $("#searchResults").innerHTML = hits.length ? hits.map(h => `
+      <div class="hit">
+        <div>
+          <div class="hit-top"><span class="subject">${esc(h.subject_id)}</span>
+            <span class="predicate">${esc(h.predicate)}</span>
+            <span style="margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--muted)">${esc(shortId(h.memory_id))}</span></div>
+          <div class="hit-value" style="display:flex;gap:7px;align-items:baseline">${valueHtml(h.value)}</div>
+          <div class="channels">${(h.channels || []).map(c => `<span>${esc(c)}</span>`).join("")}</div>
+        </div>
+        <div class="score"><b>${Number(h.score).toFixed(3)}</b>
+          <div class="bar"><i style="width:${Math.max(3, Math.min(100, Number(h.score) * 100))}%"></i></div>
+        </div>
+      </div>`).join("")
+      : `<div class="empty"><b>没有命中</b><span>换一种说法，或先写几条记忆再试。</span></div>`;
+  } catch (e) {
+    $("#searchMeta").textContent = "";
+    $("#searchResults").innerHTML = `<div class="empty"><b>检索不可用</b><span>${esc(e.message)}</span></div>`;
+  }
+}
+$("#searchBtn").onclick = () => runSearch();
+$("#searchInput").addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
+$$("#examples button").forEach(b => { b.onclick = () => runSearch(b.textContent); });
+
+/* ---------------- views ---------------- */
+const VIEW_COPY = {
+  ledger: ["记忆台账", "写入即留痕。每条事实都能回答：什么时候为真、什么时候被相信、凭什么。"],
+  search: ["混合检索", "词法、语义、图邻域并行；每个命中都标明它由哪条通道召回。"],
+  system: ["实例与能力", "部署态决定能力边界。先看这里，再决定调用哪些可选通道。"],
+};
+function setView(view){
+  state.view = view;
+  $$("#nav button").forEach(b => b.setAttribute("aria-current", String(b.dataset.view === view)));
+  ["ledger","search","system"].forEach(v => { $("#view-" + v).hidden = v !== view; });
+  $("#viewTitle").textContent = VIEW_COPY[view][0];
+  $("#viewSub").textContent = VIEW_COPY[view][1];
+  // The KPI strip and the time-travel control describe the ledger, not the
+  // other views; keeping them visible would be decoration without meaning.
+  $(".kpis").style.display = view === "ledger" ? "" : "none";
+  $("#viewpointWrap").style.display = view === "ledger" ? "" : "none";
+  if (view === "search") setTimeout(() => $("#searchInput").focus(), 40);
+}
+$$("#nav button").forEach(b => { b.onclick = () => setView(b.dataset.view); });
+
+$$("#tabs button").forEach(btn => {
   btn.onclick = () => {
-    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
-    state.filter = btn.dataset.filter;
-    state.query = ""; $("#searchInput").value = "";
-    loadMemories().catch(e => toast(e.message, true));
+    $$("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
+    state.tab = btn.dataset.tab;
+    loadLedger().catch(e => toast(e.message, true));
   };
 });
-$("#searchBtn").onclick = async () => {
-  const q = $("#searchInput").value.trim();
-  if (!q) { state.query = ""; return renderLedger(); }
-  try {
-    const body = await api("/v1/search", { method: "POST", body: JSON.stringify({ query: q, limit: 30 }) });
-    const hits = (body.items || []);
-    state.all = hits.map(h => ({
-      id: h.memory_id, subject_id: h.subject_id, predicate: h.predicate, value: h.value,
-      source_id: h.source_id, valid_from: null, superseded_at: null,
-      _score: h.score, _channels: h.channels,
-    }));
-    state.query = "";
-    renderLedger();
-    if (body.degraded_channels && Object.keys(body.degraded_channels).length)
-      toast("部分通道降级：" + Object.keys(body.degraded_channels).join(", "));
-    else toast(`命中 ${hits.length} 条 · 通道 ${(body.channels_used||[]).join("+") || "词法"}`);
-  } catch (e) { toast(e.message, true); }
+$("#quickSearch").oninput = e => { state.query = e.target.value.trim(); renderLedger(); };
+$("#exportBtn").onclick = () => {
+  const rows = filteredRows();
+  const blob = new Blob([JSON.stringify({ exported_at: new Date().toISOString(), count: rows.length, items: rows }, null, 2)], { type:"application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "memory-claims-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(`已导出 ${rows.length} 条`);
 };
-$("#searchInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#searchBtn").click(); });
 $("#refreshBtn").onclick = () => refreshAll().then(() => toast("已刷新")).catch(e => toast(e.message, true));
 
-/* live polling */
-setInterval(() => { if (state.key) loadEvents().catch(() => {}); }, 6000);
+/* ---------------- viewpoint ---------------- */
+function localInput(iso){
+  if (!iso) return "";
+  const d = new Date(iso); if (isNaN(d)) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+$("#viewpointBtn").onclick = (e) => { e.stopPropagation(); $("#viewpointPop").classList.toggle("show"); };
+document.addEventListener("click", e => {
+  if (!e.target.closest("#viewpointPop") && !e.target.closest("#viewpointBtn")) $("#viewpointPop").classList.remove("show");
+});
+$$("#viewpointPop .presets button").forEach(btn => {
+  btn.onclick = () => {
+    const now = new Date(); const d = new Date(now);
+    if (btn.dataset.preset === "1h") d.setHours(d.getHours() - 1);
+    if (btn.dataset.preset === "today") d.setHours(0, 0, 0, 0);
+    if (btn.dataset.preset === "yesterday") { d.setDate(d.getDate() - 1); d.setHours(9, 0, 0, 0); }
+    $("#vpKnown").value = localInput(d.toISOString());
+    $("#vpValid").value = localInput(d.toISOString());
+  };
+});
+$("#vpApply").onclick = async () => {
+  const valid = $("#vpValid").value, known = $("#vpKnown").value;
+  if (!valid && !known) return toast("至少填一个时间", true);
+  state.viewpoint.valid_at = valid ? new Date(valid).toISOString() : "";
+  state.viewpoint.known_at = known ? new Date(known).toISOString() : "";
+  $("#viewpointPop").classList.remove("show");
+  $("#viewpointBar").classList.add("show");
+  $("#vpLabel").textContent = dateTime(valid || known);
+  $("#viewpointBtn").classList.add("on");
+  $("#viewpointBtn").textContent = "◷ 视点 · " + dateTime(valid || known);
+  try { await loadLedger(); toast("已切换视点"); } catch (e) { toast(e.message, true); }
+};
+$("#vpReset").onclick = () => exitViewpoint();
+$("#vpExit").onclick = () => exitViewpoint();
+async function exitViewpoint(){
+  state.viewpoint = { valid_at:"", known_at:"" };
+  $("#vpValid").value = ""; $("#vpKnown").value = "";
+  $("#viewpointPop").classList.remove("show");
+  $("#viewpointBar").classList.remove("show");
+  $("#viewpointBtn").classList.remove("on");
+  $("#viewpointBtn").textContent = "◷ 视点 · 现在";
+  await loadLedger();
+}
+
+/* ---------------- shortcuts ---------------- */
+document.addEventListener("keydown", e => {
+  const typing = /INPUT|TEXTAREA/.test(document.activeElement?.tagName || "");
+  if (e.key === "Escape") {
+    $("#drawer").classList.remove("open");
+    $("#viewpointPop").classList.remove("show");
+  }
+  if (e.key === "/" && !typing) { e.preventDefault(); setView("ledger"); $("#quickSearch").focus(); }
+  if (e.key.toLowerCase() === "n" && !typing) { e.preventDefault(); setView("ledger"); $("#utterance").focus(); }
+});
+
+/* ---------------- live polling ---------------- */
+setInterval(() => {
+  if (!state.key) return;
+  api("/v1/events?limit=24").then(body => {
+    const incoming = body.items || [];
+    if (incoming.length !== state.events.length) {
+      state.events = incoming; renderFeed(); renderStats();
+    }
+  }).catch(() => {});
+}, 8000);
+
 boot();
 </script>
 </body>

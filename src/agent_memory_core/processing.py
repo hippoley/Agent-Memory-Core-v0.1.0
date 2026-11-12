@@ -107,6 +107,7 @@ class ProcessingReport:
     replaced: list[str] = field(default_factory=list)
     embedding_failures: list[str] = field(default_factory=list)
     relations: list[dict] = field(default_factory=list)
+    ambiguous: int = 0
 
 
 class MemoryProcessor:
@@ -150,16 +151,34 @@ class MemoryProcessor:
                 continue
             subject = candidate.get("subject_id")
             subject_name = candidate.get("subject_name")
-            if subject_name and self.entity_resolver is not None:
+            if subject_name is not None:
+                if not isinstance(subject_name,str) or not subject_name.strip() or self.entity_resolver is None:
+                    report.ambiguous += 1
+                    report.rejected += 1
+                    continue
                 try:
                     resolved = self.entity_resolver(tenant_id, subject_name)
                 except ValueError:
+                    report.ambiguous += 1
                     report.rejected += 1
                     continue
-                if resolved is not None:
-                    subject = resolved["entity_id"]
+                resolved_id = resolved.get("entity_id") if isinstance(resolved,dict) else None
+                if (not isinstance(resolved_id,str) or not resolved_id.strip()
+                        or (subject is not None and subject != resolved_id)):
+                    report.ambiguous += 1
+                    report.rejected += 1
+                    continue
+                subject = resolved_id
             predicate = candidate.get("predicate")
             value = candidate.get("value")
+            policy = getattr(self.store,"predicate_cardinality",None)
+            cardinality = policy(tenant_id=tenant_id,predicate=predicate) if (
+                callable(policy) and isinstance(predicate,str) and predicate.strip()) else "one"
+            asserted_cardinality = candidate.get("cardinality")
+            if asserted_cardinality is not None and asserted_cardinality != cardinality:
+                report.ambiguous += 1
+                report.rejected += 1
+                continue
             confidence = candidate.get("confidence", 1.0)
             merge_requested = candidate.get("merge") is True
             if (not isinstance(subject, str) or not subject.strip()
@@ -252,6 +271,15 @@ class MemoryProcessor:
                 link_source(tenant_id=tenant_id, memory_id=exact["id"],
                             source_id=source_id, confidence=confidence)
             return exact["id"], None, RELATION_DUPLICATE
+        policy = getattr(self.store,"predicate_cardinality",None)
+        cardinality = policy(tenant_id=tenant_id,predicate=predicate) if callable(policy) else "one"
+        if cardinality == "many":
+            memory_id=self.store.remember(
+                tenant_id=tenant_id,subject_id=subject,predicate=predicate,
+                value=value,source_id=source_id,valid_from=now)
+            return memory_id,None,RELATION_CREATED
+        if len(active)>1:
+            raise ValueError("Single-valued predicate has multiple active claims; reconcile first")
         replaces_id = active[0]["id"] if active else None
         relation = RELATION_CREATED if replaces_id is None else RELATION_SUPERSEDES
         payload = value

@@ -99,3 +99,16 @@ These are implementation advances, not a release sign-off. Database RLS,
 measured local model quality, Chinese retrieval quality, process/database
 fault recovery, and load/performance evidence remain release blockers.
 
+
+
+## Trusted predicate cardinality (2026-11-12)
+
+Tenant-scoped `memory_predicate_policies` now defines trusted `one` / `many`
+semantics. Missing policy defaults to `one`. Writes and policy changes share
+advisory-lock ordering; direct writes enforce non-overlapping single-valued
+claims, while multi-valued facts coexist and deduplicate by canonical value.
+Model-supplied cardinality cannot override the database policy. Under the
+principal-bound RLS mode, tenant roles can read but cannot mutate these policies.
+
+Real PostgreSQL acceptance: `tests/test_predicate_cardinality.py`.
+The 100-Agent same-fact benchmark is `scripts/benchmark_memory_concurrency.py`.

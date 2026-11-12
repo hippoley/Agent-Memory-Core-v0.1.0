@@ -174,3 +174,29 @@ structured memory processing. PostgreSQL/pgvector/AGE and Temporal have real
 integration test paths. The remaining gap is not "all features are missing";
 it is production hardening, richer memory intelligence, object lifecycle
 controls, projection orchestration and general Temporal workflow management.
+
+
+## Main-branch consolidation and trusted cardinality (2026-11-12)
+
+The main branch has now reconciled the useful parts of the former projection and
+association branches without retaining their incompatible duplicate projection
+tables or old SDK implementation.
+
+- Tenant-scoped predicate cardinality is persisted in
+  `memory_predicate_policies`; absent policy means `one`.
+- `one` rejects overlapping active facts unless the only overlapping fact is
+  explicitly replaced. `many` preserves distinct values and links exact
+  duplicates as provenance only.
+- Predicate-policy writes and claim writes use a consistent advisory-lock order.
+  Model output cannot alter policy, and historical policies cannot be changed
+  without explicit reconciliation.
+- Principal-bound RLS includes predicate policy. Tenant logins may read their
+  policy but cannot modify it.
+- A local-only SentenceTransformer loader and a 100-Agent same-fact benchmark
+  are available. The benchmark persists rows in its dedicated tenant and is
+  not a measured capacity claim until run against the target deployment.
+- Chinese extraction scoring now distinguishes positive and negative polarity.
+  The 14-case smoke corpus is not the 200+ human-adjudicated release corpus.
+
+The branch-by-branch disposition is recorded in
+`docs/BRANCH-INTEGRATION-AUDIT.md`. Historical branches are retained.

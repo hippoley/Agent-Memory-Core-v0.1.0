@@ -14,14 +14,11 @@ from pathlib import Path
 import sys
 import time
 
+from agent_memory_core.evaluation import score_case
+
 REQUIRED_CATEGORIES={"negation","correction","coreference","entity_ambiguity",
                      "temporal","durable_preference","no_fact"}
 CORRECTION_CATEGORIES={"negation","correction","coreference","entity_ambiguity","temporal"}
-
-def canonical(fact):
-    return json.dumps({k:fact.get(k) for k in
-        ("subject_id","subject_name","predicate","value")},
-        ensure_ascii=False,sort_keys=True,separators=(",",":"))
 
 def score(rows):
     tp=fp=fn=exact=errors=0
@@ -29,11 +26,12 @@ def score(rows):
     correction_exact=correction_total=0
     latencies=[]
     for row in rows:
-        expected={canonical(x) for x in row["expected_facts"]}
-        predicted={canonical(x) for x in row["predicted_facts"]}
-        a=len(expected & predicted);b=len(predicted-expected);c=len(expected-predicted)
+        case_score=score_case(row["expected_facts"],row["predicted_facts"])
+        a=case_score["true_positive"]
+        b=case_score["false_positive"]
+        c=case_score["false_negative"]
         tp+=a;fp+=b;fn+=c
-        matched=expected==predicted
+        matched=(b==0 and c==0)
         exact+=int(matched)
         category=row["category"]
         item=per[category]

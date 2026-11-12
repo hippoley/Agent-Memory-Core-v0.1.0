@@ -113,6 +113,35 @@ deployment acceptance requirements.
 | GET | `/v1/events` | Durable event replay with cursor pagination |
 | GET | `/v1/events/stream` | Bounded SSE stream with reconnect cursor |
 
+## 4b. Browsing and trust policy
+
+Two operator-facing reads back the console and any admin UI:
+
+```bash
+# Newest-first browse; include_superseded keeps replaced/forgotten claims visible
+curl "$BASE/v1/memories?limit=50&include_superseded=true" -H "$AUTH"
+curl "$BASE/v1/memories?known_at=2026-11-11T00:00:00Z"      -H "$AUTH"   # what did we believe then
+curl "$BASE/v1/memories?subject_id=bedroom&predicate=noise_preference" -H "$AUTH"
+
+# Cardinality is trusted tenant policy, never model output
+curl "$BASE/v1/predicate-policies" -H "$AUTH"
+curl -X PUT "$BASE/v1/predicate-policies/has_window" -H "$AUTH" \
+     -H 'Content-Type: application/json' -d '{"cardinality":"many"}'
+```
+
+Unlisted predicates default to `one`. A predicate that already has claims
+returns **409** instead of silently reinterpreting history. Extraction
+candidates that assert a cardinality different from the stored policy are
+rejected, so a model cannot decide that a room may hold two current
+temperatures.
+
+## 4c. Console
+
+`GET /dashboard/` serves a same-origin single-page console (ledger, search,
+live event feed, policy toggles). It is static HTML with no build step and no
+third-party scripts; the bearer key is entered once and kept in
+`localStorage`. `GET /` redirects there. The OpenAPI surface stays at `/docs`.
+
 ## 5. Core memory operations
 
 ### 5.1 Create a fact

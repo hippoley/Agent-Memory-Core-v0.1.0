@@ -32,6 +32,7 @@ observation streams and workflow execution.
 
 Run the service and open Swagger:
 
+- Console: `http://127.0.0.1:8765/dashboard/`
 - Swagger UI: `http://127.0.0.1:8765/docs`
 - ReDoc: `http://127.0.0.1:8765/redoc`
 - OpenAPI JSON: `http://127.0.0.1:8765/openapi.json`
@@ -39,7 +40,9 @@ Run the service and open Swagger:
 Implemented route families include:
 
 - Health, readiness and capability discovery.
-- Memory create, recall, structured processing and provenance.
+- Memory create, browse, recall, structured processing and provenance.
+- Trusted tenant predicate cardinality policy (`one` / `many`) with policy API.
+- Same-origin console at `/dashboard/` for demos: write, browse, inspect, search.
 - Caller-generated embedding ingestion and hybrid SQL/vector/graph search.
 - Entity and edge writes with AGE projection.
 - Object upload/download with SHA-256 verification and tenant ownership.

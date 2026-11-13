@@ -26,7 +26,7 @@
     },
     {
       "name": "noise_retract",
-      "regex": "[^。！？；\\n]{0,12}(?:不用静音(?:了)?|取消静音|撤销静音|不需要安静|不用保持安静|正常模式(?:就行|就好|即可))",
+      "regex": "[^。！？；\\n]{0,12}(?:不用静音(?:了)?|取消静音|撤销静音|不需要安静|不用保持安静)",
       "predicate": "noise_preference",
       "value": {
         "reason": "explicit_withdrawal"

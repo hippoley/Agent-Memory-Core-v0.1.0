@@ -49,7 +49,7 @@ def test_retract_is_scoped_by_tenant_room_and_predicate():
 def test_retract_rejects_multi_valued_predicate():
     store = ScopedFakeStore(cardinality="many")
     report = MemoryProcessor(store).process(
-        tenant_id="tenant-1", text="书房正常模式就行",
+        tenant_id="tenant-1", text="书房取消静音",
         source_id="utterance:withdraw-2",
         extractor=RuleFactExtractor.from_preset("home-zh"))
     assert not store.forget_calls

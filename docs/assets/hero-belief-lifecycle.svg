@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="570" viewBox="0 0 1280 570" role="img" aria-labelledby="t d">
+<title id="t">Agent Memory Core — beliefs are versioned, not overwritten</title><desc id="d">Dark editorial technical hero illustrating an agent's initial belief, a correction, two historical versions, and one canonical record with provenance.</desc>
+<defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#101b2c"/><stop offset=".55" stop-color="#0a111c"/><stop offset="1" stop-color="#102428"/></linearGradient><linearGradient id="mint" x1="0" x2="1"><stop stop-color="#8ef1cf"/><stop offset="1" stop-color="#80bdff"/></linearGradient><pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".9" fill="#294658" opacity=".55"/></pattern><filter id="glow"><feGaussianBlur stdDeviation="24"/></filter></defs>
+<rect width="1280" height="570" fill="url(#bg)" rx="22"/><rect width="1280" height="570" fill="url(#dots)" rx="22"/>
+<circle cx="996" cy="260" r="185" fill="#3acead" opacity=".075" filter="url(#glow)"/>
+<g font-family="Inter,Arial,Helvetica,sans-serif">
+<text x="58" y="68" font-size="12" letter-spacing="3" fill="#8de9cc">AGENT MEMORY CORE</text><text x="1198" y="68" text-anchor="end" font-size="11" letter-spacing="2" fill="#6f889b">SYSTEM OF RECORD / 001</text>
+<text x="58" y="147" font-size="53" font-weight="650" fill="#f5f9ff">Agents change their minds.</text>
+<text x="58" y="208" font-size="53" font-weight="650" fill="url(#mint)">Memory should know how.</text>
+<text x="60" y="251" font-size="16" fill="#b1c1d1">A system of record for evolving agent beliefs.</text>
+<text x="60" y="277" font-size="16" fill="#b1c1d1">Versioned in time. Bound to evidence. Built to run locally.</text>
+<rect x="58" y="325" rx="9" width="526" height="170" fill="#121e2d" stroke="#35516a"/>
+<text x="82" y="357" font-size="11" letter-spacing="1.6" fill="#89a8bd">BELIEF LIFECYCLE / LIVE EXAMPLE</text>
+<text x="82" y="391" font-size="15" fill="#dce6ed">10:00</text><rect x="151" y="373" width="135" height="29" rx="6" fill="#253449"/><text x="164" y="393" font-size="13" fill="#b6c6d6">quiet bedroom</text>
+<path d="M301 387 H334" fill="none" stroke="#7993a5" stroke-width="1.5"/><path d="M329 383 L336 387 L329 391" fill="none" stroke="#7993a5" stroke-width="1.5"/>
+<text x="350" y="391" font-size="12" fill="#f0c18b">SUPERSEDED</text>
+<text x="82" y="442" font-size="15" fill="#dce6ed">10:20</text><rect x="151" y="423" width="136" height="29" rx="6" fill="#18473c" stroke="#69cfa9"/><text x="163" y="443" font-size="13" fill="#bbfbe1">soft music</text>
+<text x="350" y="442" font-size="12" fill="#88f0ca">CURRENT</text>
+<text x="82" y="476" font-size="11" fill="#6e899f">The new belief wins. The old evidence stays.</text>
+<rect x="653" y="320" width="565" height="175" rx="13" fill="#101d2d" stroke="#2f4b61"/>
+<text x="679" y="353" font-size="11" letter-spacing="1.7" fill="#82a6bc">CANONICAL MEMORY TRANSACTION</text>
+<rect x="683" y="382" width="147" height="67" rx="8" fill="#1b3343" stroke="#4b7284"/><text x="756" y="410" text-anchor="middle" fill="#f0f7fd" font-size="15">Claims</text><text x="756" y="429" text-anchor="middle" fill="#8aaaba" font-size="11">bitemporal</text>
+<rect x="858" y="382" width="147" height="67" rx="8" fill="#1b3343" stroke="#4b7284"/><text x="931" y="410" text-anchor="middle" fill="#f0f7fd" font-size="15">Evidence</text><text x="931" y="429" text-anchor="middle" fill="#8aaaba" font-size="11">provenance</text>
+<rect x="1033" y="382" width="147" height="67" rx="8" fill="#1b3343" stroke="#4b7284"/><text x="1106" y="410" text-anchor="middle" fill="#f0f7fd" font-size="15">Outbox</text><text x="1106" y="429" text-anchor="middle" fill="#8aaaba" font-size="11">recoverable</text>
+<path d="M832 416H852M1007 416H1027" fill="none" stroke="#6cc7ac" stroke-width="2"/>
+<text x="682" y="477" fill="#7d9ba8" font-size="11">ONE AUTHORITY · MULTIPLE RETRIEVAL VIEWS</text>
+<path d="M58 524H1220" stroke="#284053"/><text x="58" y="549" font-size="11" letter-spacing="1.5" fill="#648b91">BELIEF REVISION</text><text x="252" y="549" font-size="11" letter-spacing="1.5" fill="#648b91">EVIDENCE-BOUND RECALL</text><text x="535" y="549" font-size="11" letter-spacing="1.5" fill="#648b91">LOCAL-FIRST INFRASTRUCTURE</text>
+</g></svg>

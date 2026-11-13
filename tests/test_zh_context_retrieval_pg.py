@@ -76,8 +76,20 @@ def test_chinese_contextual_retraction_and_composite_recall_real_postgres():
                             known_at=known_before,valid_at=known_before)
         assert any(x["id"] == mid for x in past)
         assert store.recall(tenant_id="other-tenant",subject_id="书房") == []
+        # An intervening newer value must not be withdrawn by stale context.
+        created = store.apply_candidate(
+            tenant_id=tenant, subject_id="书房", predicate="noise_preference",
+            value={"level": "normal"}, source_id="turn:newer", confidence=0.99)
+        newer_id = created[0]
     finally:
         store.close()
+    stale = process("书房正常模式就行", "turn:stale",
+                    context_turns=["书房静音模式"])
+    assert stale["replaced"] == []
+    assert stale["relations"][0]["relation"] == "NOOP"
+    active = client.get("/v1/memories/书房", headers=auth).json()["items"]
+    assert any(x["id"] == newer_id for x in active)
+
 
 
 def test_api_rejects_context_ambiguity_and_supplied_candidates():

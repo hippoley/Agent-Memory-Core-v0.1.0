@@ -114,3 +114,16 @@ retrieval   subject queries   Recall@5=1.000  MRR=1.000
 3. 带纠正的温度句取错数字：`不要开到28度，26度就够了` 抽成 28（应取 26）。
 4. 撤回类表达（`不用静音了`、`正常模式就行`）被当作 DUPLICATE，旧值不关闭——系统目前没有"取消偏好"的语义。
 5. 复合查询（`主卧温度`）在纯词法通道下召回为 0：词法只做整句子串匹配；需要分词通道或向量通道。
+
+
+## 三、2026-11-13 新增：冻结多轮评测 v1（开发中）
+
+独立的 [中文多轮质量协议](ZH-FROZEN-QUALITY-PROTOCOL.md) 已建立，包含 12 条针对改口、撤回、歧义、跨属性混淆的高风险回归案例，与既有 200 条规则黄金集互补。新评分器分别计算抽取 F1、最终记忆状态完全一致率、事实级 Recall@5/MRR@5、最终答案准确率，禁止将只匹配房间的结果标为正确事实召回。
+
+```bash
+python scripts/eval/score_zh_frozen.py --manifest
+python scripts/eval/diagnose_zh_frozen_rules.py --out /tmp/rule-no-context.json
+python scripts/eval/diagnose_zh_frozen_rules.py --context --out /tmp/rule-context.json
+```
+
+**注意：** 上面的规则诊断只测实际抽取，不会凭空产生 PostgreSQL 记忆状态、检索输出或模型回答。完整四项分数需要隔离测试环境的真实预测文件。原 2026-11-12 报告为历史基线，尚未以最新代码完成正式全量复评。

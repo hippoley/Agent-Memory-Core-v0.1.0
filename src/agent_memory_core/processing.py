@@ -208,6 +208,18 @@ class MemoryProcessor:
                               "predicate": predicate}
                     if "source_id" in inspect.signature(forget).parameters:
                         kwargs["source_id"] = source_id
+                    expected = candidate.get("expected_value")
+                    if expected is not None:
+                        # Context-derived withdrawal must compare against the
+                        # *current* canonical value. No store-side support for
+                        # compare-and-withdraw means fail closed.
+                        if not isinstance(expected, dict) or not expected:
+                            report.rejected += 1
+                            continue
+                        if "expected_value" not in inspect.signature(forget).parameters:
+                            report.rejected += 1
+                            continue
+                        kwargs["expected_value"] = expected
                     withdrawn = forget(**kwargs)
                 except (TypeError, ValueError):
                     report.rejected += 1

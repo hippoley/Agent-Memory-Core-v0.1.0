@@ -81,9 +81,16 @@ _DEFAULT_CHANNEL_WEIGHTS = {"vector": 1.0, "sql": 0.8, "fts": 0.4, "graph": 0.6}
 
 
 class HybridMemorySearch:
-    def __init__(self, store, graph=None, *, channel_weights: dict | None = None):
+    def __init__(self, store, graph=None, *, channel_weights: dict | None = None,
+                 query_aliases: dict[str, str] | None = None):
         self.store = store
         self.graph = graph
+        self.query_aliases = {}
+        for alias, predicate in (query_aliases or {}).items():
+            if (not isinstance(alias, str) or not 1 <= len(alias) <= 32
+                    or not isinstance(predicate, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,99}", predicate)):
+                raise ValueError("query_aliases must map short natural-language strings to valid predicate names")
+            self.query_aliases[alias] = predicate
         # Channels are not equally trustworthy. Exact-match lexical hits are
         # precise; dense vectors find paraphrases but rank noisy neighbours
         # high; the simple-dictionary FTS is the weakest signal. Equal-weight
@@ -150,6 +157,12 @@ class HybridMemorySearch:
             # terms rank first, so a full question still recalls the claim that
             # carries its key nouns instead of nothing.
             terms = query_terms(query)
+            # Domain synonyms supplement—not replace—the lexical candidate
+            # search. They are configured data, never guessed global synonyms.
+            # Match original query, not arbitrary coincidental CJK bigrams.
+            for alias, predicate in self.query_aliases.items():
+                if alias in query and predicate not in terms and len(terms) < 20:
+                    terms.append(predicate)
             if terms:
                 match = ("(position(lower(%s) in lower(subject_id||' '||predicate||' '"
                          "||coalesce(value::text,''))) > 0)")

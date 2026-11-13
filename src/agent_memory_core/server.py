@@ -54,7 +54,29 @@ def search_factory():
                 def neighbors(self, **kwargs):
                     raise RuntimeError("Apache AGE graph adapter is unavailable")
             graph = UnavailableGraph()
-    return HybridMemorySearch(db, graph=graph, channel_weights=weights)
+    aliases = None
+    # Keep domain vocabulary in the opt-in rule pack, not in the search core.
+    # Only safe packaged preset names are auto-loaded. Custom deployments can
+    # supply an explicit JSON object in MEMORY_SEARCH_ALIASES.
+    raw_aliases = os.getenv("MEMORY_SEARCH_ALIASES")
+    if raw_aliases:
+        try:
+            aliases = json.loads(raw_aliases)
+        except ValueError as exc:
+            raise RuntimeError("MEMORY_SEARCH_ALIASES must be valid JSON") from exc
+        if not isinstance(aliases, dict):
+            raise RuntimeError("MEMORY_SEARCH_ALIASES must be a JSON object")
+    elif extractor_provider() == "rule":
+        preset = os.getenv("MEMORY_RULE_PATTERNS", "")
+        if preset and "/" not in preset and "\\\\" not in preset and not preset.endswith(".json"):
+            from importlib.resources import files
+            if not __import__("re").fullmatch(r"[a-zA-Z0-9_-]{1,64}", preset):
+                raise RuntimeError("Invalid rule preset")
+            source = files("agent_memory_core").joinpath(f"resources/rules/{preset}.json")
+            if source.is_file():
+                aliases = json.loads(source.read_text(encoding="utf-8")).get("search_aliases")
+    return HybridMemorySearch(db, graph=graph, channel_weights=weights,
+                              query_aliases=aliases)
 
 
 def object_store_factory():

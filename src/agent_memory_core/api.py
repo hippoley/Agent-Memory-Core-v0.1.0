@@ -192,6 +192,7 @@ class ProcessRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100000, description="Original text retained as processing context; source_id identifies its durable source.")
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
     candidates: list[dict] | None = Field(default=None, max_length=500, description="Optional structured facts. If omitted, a server-configured local extractor must be available.")
+    context_turns: list[str] = Field(default_factory=list, max_length=3, description="Optional recent prior utterances in chronological order (each <=2000 chars). Only explicitly configured contextual extractors use them; unsupported providers fail closed.")
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     observed_at: str | None = Field(
         default=None,
@@ -903,12 +904,24 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         from .processing import MemoryProcessor
         db = store_factory()
         try:
+            if any(not isinstance(turn, str) or not turn.strip() or len(turn) > 2000
+                   for turn in item.context_turns):
+                raise HTTPException(status_code=422, detail="context_turns must contain nonempty text of at most 2000 characters each")
             if item.candidates is not None:
+                if item.context_turns:
+                    raise HTTPException(status_code=422, detail="Context resolution cannot be combined with caller-supplied candidates")
                 extractor = lambda _text: item.candidates
             elif memory_extractor_factory is not None:
-                extractor = memory_extractor_factory(t)
-                if not callable(extractor):
+                provider_extractor = memory_extractor_factory(t)
+                if not callable(provider_extractor):
                     raise RuntimeError("Configured local memory extractor is unavailable")
+                if item.context_turns:
+                    contextual = getattr(provider_extractor, "extract_with_context", None)
+                    if not callable(contextual):
+                        raise HTTPException(status_code=422, detail="Configured extractor does not support explicit context resolution")
+                    extractor = lambda text: contextual(text, item.context_turns)
+                else:
+                    extractor = provider_extractor
             else:
                 raise HTTPException(
                     status_code=503,

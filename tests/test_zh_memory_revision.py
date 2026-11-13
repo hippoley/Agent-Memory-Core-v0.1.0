@@ -15,8 +15,8 @@ class ScopedFakeStore:
     def predicate_cardinality(self, *, tenant_id, predicate):
         return self.cardinality
 
-    def forget_many(self, *, tenant_id, subject_id, predicate):
-        self.forget_calls.append((tenant_id, subject_id, predicate))
+    def forget_many(self, *, tenant_id, subject_id, predicate, source_id=None):
+        self.forget_calls.append((tenant_id, subject_id, predicate, source_id))
         return ["prior-memory"]
 
 
@@ -40,7 +40,7 @@ def test_retract_is_scoped_by_tenant_room_and_predicate():
     report = MemoryProcessor(store).process(
         tenant_id="tenant-1", text="玄关不用静音",
         source_id="utterance:withdraw-1", extractor=ext)
-    assert store.forget_calls == [("tenant-1", "玄关", "noise_preference")]
+    assert store.forget_calls == [("tenant-1", "玄关", "noise_preference", "utterance:withdraw-1")]
     assert report.replaced == ["prior-memory"]
     assert report.created == []
     assert report.relations[0]["relation"] == "RETRACTED"

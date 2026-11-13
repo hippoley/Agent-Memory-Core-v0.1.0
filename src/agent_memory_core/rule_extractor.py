@@ -292,4 +292,5 @@ class RuleFactExtractor:
             return []
         return [{"subject_id": subject, "predicate": matches[0],
                  "value": {"reason": "contextual_withdrawal"},
+                 "expected_value": anchor["value"],
                  "confidence": 0.9, "operation": "RETRACT"}]

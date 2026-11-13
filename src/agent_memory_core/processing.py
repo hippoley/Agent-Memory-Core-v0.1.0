@@ -204,8 +204,11 @@ class MemoryProcessor:
                     report.rejected += 1
                     continue
                 try:
-                    withdrawn = forget(tenant_id=tenant_id, subject_id=subject,
-                                       predicate=predicate)
+                    kwargs = {"tenant_id": tenant_id, "subject_id": subject,
+                              "predicate": predicate}
+                    if "source_id" in inspect.signature(forget).parameters:
+                        kwargs["source_id"] = source_id
+                    withdrawn = forget(**kwargs)
                 except (TypeError, ValueError):
                     report.rejected += 1
                     continue

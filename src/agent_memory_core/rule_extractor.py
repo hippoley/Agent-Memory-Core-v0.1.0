@@ -158,7 +158,7 @@ def available_presets() -> list[str]:
     return sorted(path.stem for path in _RULES_DIR.glob("*.json"))
 
 
-def _load_rule_document(path: Path) -> tuple[list[dict], list[str]]:
+def _load_rule_document(path: Path) -> tuple[list[dict], list[str], list[dict]]:
     with open(path, encoding="utf-8") as handle:
         payload = json.load(handle)
     rules = payload.get("rules") if isinstance(payload, dict) else payload
@@ -168,7 +168,10 @@ def _load_rule_document(path: Path) -> tuple[list[dict], list[str]]:
     subjects = payload.get("subjects", []) if isinstance(payload, dict) else []
     if not isinstance(subjects, list) or any(not isinstance(s, str) or not s for s in subjects):
         raise RuleExtractorConfigError("'subjects' must be an array of non-empty strings")
-    return rules, list(subjects)
+    context_rules = payload.get("context_rules", []) if isinstance(payload, dict) else []
+    if not isinstance(context_rules, list):
+        raise RuleExtractorConfigError("'context_rules' must be an array")
+    return rules, list(subjects), context_rules
 
 
 class RuleFactExtractor:
@@ -177,6 +180,7 @@ class RuleFactExtractor:
     def __init__(self, *, rules: Iterable[dict] | None = None,
                  default_subject: str = "user", confidence: float = 0.7,
                  subject_words: Iterable[str] | None = None,
+                 context_rules: Iterable[dict] | None = None,
                  include_defaults: bool = True):
         if not isinstance(default_subject, str) or not default_subject.strip():
             raise ValueError("default_subject must be a non-empty string")
@@ -197,11 +201,27 @@ class RuleFactExtractor:
                 declared = {r.get("name") for r in supplied if isinstance(r, dict)}
                 source = supplied + [r for r in DEFAULT_RULES if r["name"] not in declared]
         self.rules = [_compile_rule(rule, i) for i, rule in enumerate(source)]
+        # An opt-in domain pack can declare narrow contextual retractions.
+        # Never infer a withdrawal from arbitrary prior chat text or from an
+        # untrusted model choosing a tenant/predicate by itself.
+        self.context_rules = []
+        for i, item in enumerate(context_rules or []):
+            if not isinstance(item, dict) or set(item) != {"current_regex", "anchor_predicate"}:
+                raise RuleExtractorConfigError(f"context rule #{i} requires current_regex and anchor_predicate")
+            predicate = item["anchor_predicate"]
+            if not isinstance(predicate, str) or not _PREDICATE.fullmatch(predicate):
+                raise RuleExtractorConfigError(f"context rule #{i} invalid anchor_predicate")
+            try:
+                pattern = re.compile(item["current_regex"])
+            except (TypeError, re.error) as exc:
+                raise RuleExtractorConfigError(f"context rule #{i} invalid current_regex") from exc
+            self.context_rules.append((pattern, predicate))
 
     @classmethod
     def from_file(cls, path: str, **kwargs) -> "RuleFactExtractor":
-        rules, subjects = _load_rule_document(Path(path))
+        rules, subjects, context_rules = _load_rule_document(Path(path))
         kwargs.setdefault("subject_words", subjects)
+        kwargs.setdefault("context_rules", context_rules)
         return cls(rules=rules, **kwargs)
 
     @classmethod
@@ -239,3 +259,37 @@ class RuleFactExtractor:
                 if key not in facts or facts[key]["confidence"] < confidence or (candidate.get("operation") == "RETRACT" and facts[key].get("operation") != "RETRACT"):
                     facts[key] = candidate
         return list(facts.values())
+
+    def extract_with_context(self, text: str, context_turns: list[str]) -> list[dict]:
+        """Conservatively resolve an explicitly scoped correction.
+
+        Only the *immediately preceding* utterance can supply an antecedent,
+        and only if the current text explicitly identifies one configured
+        subject, the preceding utterance has exactly one structured fact for
+        that same subject, and the domain's contextual regex matches the
+        remaining current utterance in full. Otherwise do not infer a change.
+        """
+        current = self(text)
+        if current or not self.context_rules or len(context_turns) != 1:
+            return current
+        prior = context_turns[0]
+        if not isinstance(prior, str) or not prior.strip() or len(prior) > 2000:
+            return []
+        subjects = [word for word in self.subject_words if word in text]
+        if len(subjects) != 1:
+            return []
+        subject = subjects[0]
+        remainder = text.replace(subject, "", 1).strip("，。！？； \t")
+        antecedents = self(prior)
+        if len(antecedents) != 1:
+            return []
+        anchor = antecedents[0]
+        if anchor.get("subject_id") != subject or anchor.get("operation") == "RETRACT":
+            return []
+        matches = [predicate for pattern, predicate in self.context_rules
+                   if pattern.fullmatch(remainder) and predicate == anchor.get("predicate")]
+        if len(matches) != 1:
+            return []
+        return [{"subject_id": subject, "predicate": matches[0],
+                 "value": {"reason": "contextual_withdrawal"},
+                 "confidence": 0.9, "operation": "RETRACT"}]

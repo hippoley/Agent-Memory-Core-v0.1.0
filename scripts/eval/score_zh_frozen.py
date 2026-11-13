@@ -68,7 +68,15 @@ def _fact_key(fact: dict, *, event: bool = False) -> str:
         raise ValueError("Fact value must be an object")
     payload = {k: fact[k] for k in required}
     if event:
-        payload["operation"] = fact.get("operation", "UPSERT")
+        operation = fact.get("operation", "UPSERT")
+        if operation not in ("UPSERT", "RETRACT"):
+            raise ValueError("Unknown memory operation")
+        payload["operation"] = operation
+        # A retraction is scored as an operation targeting a specific fact
+        # identity, not as equality between arbitrary marker values. The
+        # original claim's prior value is validated by the revision stage.
+        if operation == "RETRACT":
+            payload.pop("value", None)
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 

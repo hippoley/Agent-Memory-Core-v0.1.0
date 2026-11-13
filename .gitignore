@@ -12,3 +12,7 @@ __pycache__/
 data/eval/locomo10.json
 data/eval/longmemeval_oracle.json
 .gh_cred/
+
+# Local deployment secrets and machine-specific benchmark output
+.env.local
+benchmark-results/

@@ -1,0 +1,522 @@
+{
+ "summary": {
+  "benchmark": "LongMemEval (oracle haystack)",
+  "questions": 24,
+  "correct": 13,
+  "accuracy": 0.5416666666666666,
+  "by_type": {
+   "single-session-assistant": {
+    "n": 4,
+    "correct": 1,
+    "recall": 119,
+    "accuracy": 0.25,
+    "avg_recalled": 29.75
+   },
+   "knowledge-update": {
+    "n": 4,
+    "correct": 3,
+    "recall": 331,
+    "accuracy": 0.75,
+    "avg_recalled": 82.75
+   },
+   "multi-session": {
+    "n": 4,
+    "correct": 2,
+    "recall": 400,
+    "accuracy": 0.5,
+    "avg_recalled": 100.0
+   },
+   "single-session-user": {
+    "n": 4,
+    "correct": 3,
+    "recall": 222,
+    "accuracy": 0.75,
+    "avg_recalled": 55.5
+   },
+   "single-session-preference": {
+    "n": 4,
+    "correct": 3,
+    "recall": 213,
+    "accuracy": 0.75,
+    "avg_recalled": 53.25
+   },
+   "temporal-reasoning": {
+    "n": 4,
+    "correct": 1,
+    "recall": 270,
+    "accuracy": 0.25,
+    "avg_recalled": 67.5
+   }
+  },
+  "turns_ingested": 522,
+  "claims_created": 2076,
+  "ingest_errors": 0,
+  "seconds": 3709.6,
+  "llm_model": "qwen-plus",
+  "judge_model": "qwen-plus",
+  "question_set": "longmemeval_oracle.json",
+  "pinned_subset": "longmemeval_24.json",
+  "search_limit": 100,
+  "include_assistant": true,
+  "context_turns": 2,
+  "generated_at": "2026-11-12T16:28:49+00:00"
+ },
+ "results": [
+  {
+   "question_id": "7161e7e2",
+   "question_type": "single-session-assistant",
+   "question": "I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?",
+   "gold": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer contradicts reference which states Admon's Sunday shift.",
+   "recalled": 49,
+   "ingest": {
+    "turns": 14,
+    "created": 49,
+    "duplicates": 11,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 97.3
+  },
+  {
+   "question_id": "6a1eabeb",
+   "question_type": "knowledge-update",
+   "question": "What was my personal best time in the charity 5K run?",
+   "gold": "25 minutes and 50 seconds (or 25:50)",
+   "answer": "27:12",
+   "correct": false,
+   "reason": "Answer 27:12 differs from reference 25:50.",
+   "recalled": 89,
+   "ingest": {
+    "turns": 24,
+    "created": 89,
+    "duplicates": 17,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 156.9
+  },
+  {
+   "question_id": "0a995998",
+   "question_type": "multi-session",
+   "question": "How many items of clothing do I need to pick up or return from a store?",
+   "gold": 3,
+   "answer": "2",
+   "correct": false,
+   "reason": "Answer (2) contradicts reference (3).",
+   "recalled": 100,
+   "ingest": {
+    "turns": 34,
+    "created": 133,
+    "duplicates": 17,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 232.9
+  },
+  {
+   "question_id": "e47becba",
+   "question_type": "single-session-user",
+   "question": "What degree did I graduate with?",
+   "gold": "Business Administration",
+   "answer": "Business Administration",
+   "correct": true,
+   "reason": "Answer matches reference exactly.",
+   "recalled": 56,
+   "ingest": {
+    "turns": 12,
+    "created": 56,
+    "duplicates": 4,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 90.5
+  },
+  {
+   "question_id": "8a2466db",
+   "question_type": "single-session-preference",
+   "question": "Can you recommend some resources where I can learn more about video editing?",
+   "gold": "The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.",
+   "answer": "Premiere Bro, Video Copilot, r/premierepro, Adobe Premiere Pro forum, official documentation, YouTube tutorials, online courses, and community forums.",
+   "correct": true,
+   "reason": "All listed resources focus on Adobe Premiere Pro, matching the user's preference.",
+   "recalled": 39,
+   "ingest": {
+    "turns": 18,
+    "created": 39,
+    "duplicates": 6,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 72.4
+  },
+  {
+   "question_id": "6aeb4375",
+   "question_type": "knowledge-update",
+   "question": "How many Korean restaurants have I tried in my city?",
+   "gold": "four",
+   "answer": "4",
+   "correct": true,
+   "reason": "Both 'four' and '4' convey the same numerical value.",
+   "recalled": 74,
+   "ingest": {
+    "turns": 24,
+    "created": 74,
+    "duplicates": 13,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 132.7
+  },
+  {
+   "question_id": "gpt4_2655b836",
+   "question_type": "temporal-reasoning",
+   "question": "What was the first issue I had with my new car after its first service?",
+   "gold": "GPS system not functioning correctly",
+   "answer": "GPS malfunction.",
+   "correct": true,
+   "reason": "Both refer to the GPS system not working properly.",
+   "recalled": 100,
+   "ingest": {
+    "turns": 36,
+    "created": 159,
+    "duplicates": 27,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 286.2
+  },
+  {
+   "question_id": "6d550036",
+   "question_type": "multi-session",
+   "question": "How many projects have I led or am currently leading?",
+   "gold": 2,
+   "answer": "2",
+   "correct": true,
+   "reason": "Answer matches reference count of 2.",
+   "recalled": 100,
+   "ingest": {
+    "turns": 44,
+    "created": 132,
+    "duplicates": 9,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 227.5
+  },
+  {
+   "question_id": "c4f10528",
+   "question_type": "single-session-assistant",
+   "question": "I'm planning to visit Bandung again and I was wondering if you could remind me of the name of that restaurant in Cihampelas Walk that serves a great Nasi Goreng?",
+   "gold": "Miss Bee Providore",
+   "answer": "Miss Bee Providore",
+   "correct": true,
+   "reason": "Matches the reference answer exactly.",
+   "recalled": 42,
+   "ingest": {
+    "turns": 14,
+    "created": 42,
+    "duplicates": 2,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 72.0
+  },
+  {
+   "question_id": "06878be2",
+   "question_type": "single-session-preference",
+   "question": "Can you suggest some accessories that would complement my current photography setup?",
+   "gold": "The user would prefer suggestions of Sony-compatible accessories or high-quality photography gear that can enhance their photography experience. They may not prefer suggestions of other brands' equipment or low-quality gear.",
+   "answer": "Flash protection accessories (cases and pouches), camera bags for Sony cameras, external battery packs for on-the-go charging, and a Gitzo GT3543LS tripod.",
+   "correct": true,
+   "reason": "All suggested accessories are Sony-compatible or high-quality gear.",
+   "recalled": 71,
+   "ingest": {
+    "turns": 16,
+    "created": 71,
+    "duplicates": 18,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 133.8
+  },
+  {
+   "question_id": "118b2229",
+   "question_type": "single-session-user",
+   "question": "How long is my daily commute to work?",
+   "gold": "45 minutes each way",
+   "answer": "45 minutes each way.",
+   "correct": true,
+   "reason": "Matches reference answer exactly.",
+   "recalled": 37,
+   "ingest": {
+    "turns": 12,
+    "created": 37,
+    "duplicates": 3,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 67.3
+  },
+  {
+   "question_id": "gpt4_2487a7cb",
+   "question_type": "temporal-reasoning",
+   "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+   "gold": "'Data Analysis using Python' webinar",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer claims no memory, but reference states 'Data Analysis using Python' webinar was first.",
+   "recalled": 0,
+   "ingest": {
+    "turns": 24,
+    "created": 80,
+    "duplicates": 4,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 129.3
+  },
+  {
+   "question_id": "89527b6b",
+   "question_type": "single-session-assistant",
+   "question": "I'm going back to our previous conversation about the children's book on dinosaurs. Can you remind me what color was the scaly body of the Plesiosaur in the image?",
+   "gold": "The Plesiosaur had a blue scaly body.",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer contradicts reference; reference states blue scaly body.",
+   "recalled": 0,
+   "ingest": {
+    "turns": 2,
+    "created": 0,
+    "duplicates": 0,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 5.3
+  },
+  {
+   "question_id": "830ce83f",
+   "question_type": "knowledge-update",
+   "question": "Where did Rachel move to after her recent relocation?",
+   "gold": "the suburbs",
+   "answer": "suburbs",
+   "correct": true,
+   "reason": "Matches reference 'the suburbs' without article.",
+   "recalled": 68,
+   "ingest": {
+    "turns": 24,
+    "created": 68,
+    "duplicates": 16,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 137.4
+  },
+  {
+   "question_id": "75832dbd",
+   "question_type": "single-session-preference",
+   "question": "Can you recommend some recent publications or conferences that I might find interesting?",
+   "gold": "The user would prefer suggestions related to recent research papers, articles, or conferences that focus on artificial intelligence in healthcare, particularly those that involve deep learning for medical image analysis. They would not be interested in general AI topics or those unrelated to healthcare.",
+   "answer": "Recent publications or conferences on medical image segmentation datasets, deep learning for medical image analysis, transfer learning, explainable AI, domain adaptation, and multi-modal image fusion in medical imaging.",
+   "correct": true,
+   "reason": "Matches user's preference for AI in healthcare and deep learning for medical image analysis.",
+   "recalled": 16,
+   "ingest": {
+    "turns": 12,
+    "created": 16,
+    "duplicates": 4,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 38.9
+  },
+  {
+   "question_id": "51a45a95",
+   "question_type": "single-session-user",
+   "question": "Where did I redeem a $5 coupon on coffee creamer?",
+   "gold": "Target",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer contradicts reference answer 'Target'.",
+   "recalled": 72,
+   "ingest": {
+    "turns": 12,
+    "created": 72,
+    "duplicates": 1,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 110.5
+  },
+  {
+   "question_id": "gpt4_59c863d7",
+   "question_type": "multi-session",
+   "question": "How many model kits have I worked on or bought?",
+   "gold": "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro.",
+   "answer": "10",
+   "correct": false,
+   "reason": "Answer says 10, but reference states five model kits.",
+   "recalled": 100,
+   "ingest": {
+    "turns": 46,
+    "created": 214,
+    "duplicates": 15,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 367.9
+  },
+  {
+   "question_id": "gpt4_76048e76",
+   "question_type": "temporal-reasoning",
+   "question": "Which vehicle did I take care of first in February, the bike or the car?",
+   "gold": "bike",
+   "answer": "The car was taken care of first in February, as the car wash occurred on 2023-02-27, and there is no record of bike maintenance in February—only a repair completed on 2024-02-15.",
+   "correct": false,
+   "reason": "Contradicts reference: says car first, but reference says bike.",
+   "recalled": 100,
+   "ingest": {
+    "turns": 24,
+    "created": 158,
+    "duplicates": 9,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 265.2
+  },
+  {
+   "question_id": "852ce960",
+   "question_type": "knowledge-update",
+   "question": "What was the amount I was pre-approved for when I got my mortgage from Wells Fargo?",
+   "gold": "$400,000",
+   "answer": "$400000",
+   "correct": true,
+   "reason": "Same amount, different formatting.",
+   "recalled": 100,
+   "ingest": {
+    "turns": 24,
+    "created": 121,
+    "duplicates": 17,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 220.6
+  },
+  {
+   "question_id": "e9327a54",
+   "question_type": "single-session-assistant",
+   "question": "I'm planning to revisit Orlando. I was wondering if you could remind me of that unique dessert shop with the giant milkshakes we talked about last time?",
+   "gold": "The Sugar Factory at Icon Park.",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer contradicts reference; reference names The Sugar Factory.",
+   "recalled": 28,
+   "ingest": {
+    "turns": 14,
+    "created": 28,
+    "duplicates": 5,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 56.4
+  },
+  {
+   "question_id": "b5ef892d",
+   "question_type": "multi-session",
+   "question": "How many days did I spend on camping trips in the United States this year?",
+   "gold": "8 days.",
+   "answer": "The user completed a 5-day camping trip in Yellowstone National Park last month and a 3-day camping trip in Big Sur in early April. Both locations are in the United States, and both trips occurred this year (as “last month” and “early April” relative to the memory date of 2023-04-29). So total camping days = 5 + 3 = 8.  \n8",
+   "correct": true,
+   "reason": "Answer correctly calculates and states 8 days total.",
+   "recalled": 100,
+   "ingest": {
+    "turns": 36,
+    "created": 153,
+    "duplicates": 19,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 284.8
+  },
+  {
+   "question_id": "0edc2aef",
+   "question_type": "single-session-preference",
+   "question": "Can you suggest a hotel for my upcoming trip to Miami?",
+   "gold": "The user would prefer suggestions of hotels in Miami that offer great views, possibly of the ocean or the city skyline, and have unique features such as a rooftop pool or a hot tub on the balcony. They may not prefer suggestions of basic or budget hotels without these features.",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer admits lack of knowledge; reference expects tailored hotel suggestions.",
+   "recalled": 87,
+   "ingest": {
+    "turns": 20,
+    "created": 87,
+    "duplicates": 6,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 182.6
+  },
+  {
+   "question_id": "58bf7951",
+   "question_type": "single-session-user",
+   "question": "What play did I attend at the local community theater?",
+   "gold": "The Glass Menagerie",
+   "answer": "The Glass Menagerie",
+   "correct": true,
+   "reason": "Answer matches reference exactly.",
+   "recalled": 57,
+   "ingest": {
+    "turns": 12,
+    "created": 57,
+    "duplicates": 5,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 91.3
+  },
+  {
+   "question_id": "gpt4_2312f94c",
+   "question_type": "temporal-reasoning",
+   "question": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+   "gold": "Samsung Galaxy S22",
+   "answer": "Not in memory.",
+   "correct": false,
+   "reason": "Answer contradicts reference which states Samsung Galaxy S22.",
+   "recalled": 70,
+   "ingest": {
+    "turns": 24,
+    "created": 141,
+    "duplicates": 21,
+    "rejected": 0,
+    "replaced": 0,
+    "errors": 0
+   },
+   "seconds": 249.8
+  }
+ ]
+}

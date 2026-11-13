@@ -18,6 +18,7 @@ def test_exact_one_turn_context_proposes_retraction():
     assert result[0]["subject_id"] == "书房"
     assert result[0]["predicate"] == "noise_preference"
     assert result[0]["operation"] == "RETRACT"
+    assert result[0]["expected_value"] == {"level": "quiet"}
 
 
 @pytest.mark.parametrize("text,prior", [

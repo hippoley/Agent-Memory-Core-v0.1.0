@@ -1,0 +1,16 @@
+# Optional projection worker for the full local profile.
+# Temporal remains an independent opt-in integration, not a required sidecar.
+services:
+  memory-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    command: ["python", "-m", "agent_memory_core.projection_worker"]
+    depends_on:
+      memory-api:
+        condition: service_healthy
+    environment:
+      MEMORY_DSN: postgresql://memory:local-dev-only@memory-db:5432/memory
+      MEMORY_PROJECTION_POLL_SECONDS: "1"
+      MEMORY_PROJECTION_BATCH_SIZE: "20"
+    restart: unless-stopped

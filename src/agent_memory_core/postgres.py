@@ -451,18 +451,15 @@ class PostgresMemory:
                 return False
             subject_id,predicate=row
             if source_id is not None:
-                # The correction utterance is evidence of the *withdrawal*,
-                # not evidence that the original statement was true. Keep the
-                # source linked and expose it in the immutable event payload.
+                # Register evidence of the withdrawal independently. Do NOT
+                # link it to the original claim's supporting sources, because
+                # the user's retraction contradicts that original assertion.
+                # The immutable forgotten event carries the new source_id.
                 self.conn.execute(
                     """INSERT INTO memory_sources(tenant_id,source_id,source_type,trust_level)
                        VALUES (%s,%s,'external','unverified')
                        ON CONFLICT (tenant_id,source_id) DO NOTHING""",
                     (tenant_id,source_id))
-                self.conn.execute(
-                    """INSERT INTO memory_claim_sources(tenant_id,claim_id,source_id,confidence)
-                       VALUES (%s,%s::uuid,%s,1.0) ON CONFLICT DO NOTHING""",
-                    (tenant_id,memory_id,source_id))
             mutation_time=self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
             self.conn.execute(
                 "UPDATE memory_claims SET superseded_at=%s WHERE id=%s",

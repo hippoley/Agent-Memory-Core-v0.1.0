@@ -70,5 +70,11 @@
       },
       "confidence": 0.75
     }
+  ],
+  "context_rules": [
+    {
+      "current_regex": "正常模式(?:就行|就好|即可)",
+      "anchor_predicate": "noise_preference"
+    }
   ]
 }

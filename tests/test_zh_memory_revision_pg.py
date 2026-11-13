@@ -58,7 +58,8 @@ def test_zh_withdrawal_history_and_event_provenance():
     src = client.get(f"/v1/memories/{mid}/sources", headers=headers)
     assert src.status_code == 200, src.text
     source_ids = {s["source_id"] for s in src.json()["sources"]}
-    assert {"zh:before", "zh:withdrawal"} <= source_ids
+    assert "zh:before" in source_ids
+    assert "zh:withdrawal" not in source_ids  # withdrawal is event evidence, not support for the old belief
 
     db = PostgresMemory(dsn)
     try:

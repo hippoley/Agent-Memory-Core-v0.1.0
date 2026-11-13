@@ -482,7 +482,8 @@ class PostgresMemory:
 
     def forget_many(self, *, tenant_id: str, subject_id: str | None = None,
                     predicate: str | None = None,
-                    source_id: str | None = None) -> list[str]:
+                    source_id: str | None = None,
+                    expected_value: dict | None = None) -> list[str]:
         """Soft-forget every active claim matching the tenant-scoped filters.
 
         At least one filter must be supplied. Each forgotten claim emits its
@@ -498,6 +499,14 @@ class PostgresMemory:
                 sql+=" AND subject_id=%s"; params.append(subject_id)
             if predicate:
                 sql+=" AND predicate=%s"; params.append(predicate)
+            if expected_value is not None:
+                # Contextual withdrawals must not erase a newer claim whose
+                # value no longer matches the cited antecedent. Bound JSONB
+                # comparison; no string interpolation of user values.
+                if not isinstance(expected_value, dict) or not expected_value:
+                    raise ValueError("expected_value must be a nonempty object")
+                sql+=" AND value=%s::jsonb"
+                params.append(json.dumps(expected_value, ensure_ascii=False, sort_keys=True))
             sql+=" FOR UPDATE"
             ids=[row[0] for row in self.conn.execute(sql,params)]
         forgotten=[]

@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY pyproject.toml README.md ./
+COPY src/ src/
+RUN python -m pip install --no-cache-dir '.[postgres,api]'  && useradd --uid 10001 --create-home memory  && mkdir -p /app/data/objects  && chown -R memory:memory /app
+USER memory
+EXPOSE 8765
+CMD ["python", "-m", "agent_memory_core.local_entrypoint"]

@@ -1,0 +1,34 @@
+# Local-only API overlay: keeps the existing database-only compose.yaml unchanged.
+# Run with: python scripts/launch_local.py up --profile lite
+services:
+  memory-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    depends_on:
+      memory-db:
+        condition: service_healthy
+    environment:
+      MEMORY_DSN: postgresql://memory:local-dev-only@memory-db:5432/memory
+      MEMORY_API_KEY: ${MEMORY_API_KEY:?Set a strong local key using launch_local.py}
+      MEMORY_TENANT_ID: ${MEMORY_TENANT_ID:-demo-home}
+      MEMORY_ENABLE_VECTOR: ${MEMORY_ENABLE_VECTOR:-0}
+      MEMORY_ENABLE_AGE: ${MEMORY_ENABLE_AGE:-0}
+      MEMORY_EXTRACTOR_PROVIDER: ${MEMORY_EXTRACTOR_PROVIDER:-rule}
+      MEMORY_RULE_DEFAULT_SUBJECT: user
+      MEMORY_OBJECT_BACKEND: local
+      MEMORY_OBJECT_ROOT: /app/data/objects
+      MEMORY_DB_RLS_MODE: "0"
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - memory_local_objects:/app/data/objects
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/v1/health', timeout=4).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    restart: unless-stopped
+volumes:
+  memory_local_objects: {}

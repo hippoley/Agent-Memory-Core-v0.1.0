@@ -25,7 +25,7 @@ def test_home_zh_explicit_withdrawal_is_not_quiet_upsert():
     for text, subject in [
         ("次卧不用静音了，正常就好", "次卧"),
         ("玄关不用静音", "玄关"),
-        ("书房正常模式就行", "书房"),
+        ("书房取消静音", "书房"),
     ]:
         candidates = ext(text)
         noise = [c for c in candidates if c["predicate"] == "noise_preference"]
@@ -56,10 +56,10 @@ def test_retract_rejects_multi_valued_predicate():
     assert report.rejected == 1
 
 
-def test_never_interpret_unspecified_no_more_as_global_deletion():
+def test_never_interpret_ambiguous_mode_as_noise_retraction():
     store = ScopedFakeStore()
     report = MemoryProcessor(store).process(
-        tenant_id="tenant-1", text="不用了",
+        tenant_id="tenant-1", text="书房正常模式就行",
         source_id="utterance:ambiguous",
         extractor=RuleFactExtractor.from_preset("home-zh"))
     assert report.created == []

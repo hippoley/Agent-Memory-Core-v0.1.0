@@ -2,36 +2,72 @@
   "name": "home-zh",
   "description": "Example rule pack for a household / smart-home assistant. Opt-in only: nothing here is used unless MEMORY_RULE_PATTERNS=home-zh. Copy this file as a starting point for your own domain.",
   "subjects": [
-    "主卧", "次卧", "卧室", "客厅", "书房", "厨房",
-    "卫生间", "浴室", "阳台", "玄关", "儿童房"
+    "主卧",
+    "次卧",
+    "卧室",
+    "客厅",
+    "书房",
+    "厨房",
+    "卫生间",
+    "浴室",
+    "阳台",
+    "玄关",
+    "儿童房"
   ],
   "rules": [
+    {
+      "name": "temperature_corrected",
+      "regex": "(?:不要|别|不必|无需)[^，。！？；\\n]{0,14}?\\d{1,2}\\s*(?:度|℃)[，,]\\s*(?P<celsius>\\d{1,2})\\s*(?:度|℃)(?:就够了|就好|即可|就行|才对|吧)?",
+      "predicate": "temperature_preference",
+      "value": {
+        "celsius": "{celsius:int}"
+      },
+      "confidence": 0.9
+    },
+    {
+      "name": "noise_retract",
+      "regex": "[^。！？；\\n]{0,12}(?:不用静音(?:了)?|取消静音|撤销静音|不需要安静|不用保持安静)",
+      "predicate": "noise_preference",
+      "value": {
+        "reason": "explicit_withdrawal"
+      },
+      "confidence": 0.9,
+      "operation": "RETRACT"
+    },
     {
       "name": "noise_quiet",
       "regex": "[^。！？；\\n]{0,12}(?:保持安静|安静一点|安静些|安静|静音|小声|别吵|不要吵|太吵)",
       "predicate": "noise_preference",
-      "value": {"level": "quiet"},
+      "value": {
+        "level": "quiet"
+      },
       "confidence": 0.7
     },
     {
       "name": "light_dim",
-      "regex": "[^。！？；\\n]{0,8}(?:灯光|光线|照明|灯)[^。！？；\\n]{0,8}(?:调暗|暗一点|暗些|柔和|不要太亮|别太亮|刺眼|太亮|太强)",
+      "regex": "[^。！？；\\n]{0,8}(?:灯光|光线|照明|灯)[^。！？；\\n]{0,8}(?:调暗|暗一点|暗些|柔和|不要太亮|别太亮|不用那么亮|不要那么亮|别那么亮|不用太亮|刺眼|太亮|太强)",
       "predicate": "light_preference",
-      "value": {"level": "dim"},
+      "value": {
+        "level": "dim"
+      },
       "confidence": 0.7
     },
     {
       "name": "light_bright",
       "regex": "[^。！？；\\n]{0,8}(?:灯光|光线|照明|灯)[^。！？；\\n]{0,8}(?:调亮|亮一点|亮些|开灯|太暗)",
       "predicate": "light_preference",
-      "value": {"level": "bright"},
+      "value": {
+        "level": "bright"
+      },
       "confidence": 0.7
     },
     {
       "name": "temperature_celsius",
       "regex": "[^。！？；\\n]{0,8}(?:空调|温度|暖气|制冷|制热)[^\\d。！？；\\n]{0,6}(?P<celsius>\\d{1,2})\\s*(?:度|℃)",
       "predicate": "temperature_preference",
-      "value": {"celsius": "{celsius:int}"},
+      "value": {
+        "celsius": "{celsius:int}"
+      },
       "confidence": 0.75
     }
   ]

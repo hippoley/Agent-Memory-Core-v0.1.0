@@ -67,12 +67,15 @@ class RuleExtractorConfigError(ValueError):
 def _compile_rule(rule: dict, index: int) -> dict:
     if not isinstance(rule, dict):
         raise RuleExtractorConfigError(f"rule #{index} must be an object")
-    unknown = set(rule) - {"name", "regex", "predicate", "value", "confidence"}
+    unknown = set(rule) - {"name", "regex", "predicate", "value", "confidence", "operation"}
     if unknown:
         raise RuleExtractorConfigError(f"rule #{index} has unknown fields: {sorted(unknown)}")
     regex = rule.get("regex")
     predicate = rule.get("predicate")
     value = rule.get("value")
+    operation = rule.get("operation", "UPSERT")
+    if operation not in ("UPSERT", "RETRACT"):
+        raise RuleExtractorConfigError(f"rule #{index} invalid operation")
     confidence = rule.get("confidence", 0.6)
     if not isinstance(regex, str) or not regex:
         raise RuleExtractorConfigError(f"rule #{index} requires a regex")
@@ -96,7 +99,8 @@ def _compile_rule(rule: dict, index: int) -> dict:
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not 0 < confidence <= 1:
         raise RuleExtractorConfigError(f"rule #{index} confidence must be within (0,1]")
     return {"name": rule.get("name") or f"rule_{index}", "regex": compiled,
-            "predicate": predicate, "value": dict(value), "confidence": float(confidence)}
+            "predicate": predicate, "value": dict(value), "confidence": float(confidence),
+            "operation": operation}
 
 
 def _render_value(template: dict, match: re.Match) -> dict | None:
@@ -229,7 +233,9 @@ class RuleFactExtractor:
                 confidence = rule["confidence"] if subject != self.default_subject else min(rule["confidence"], 0.55)
                 candidate = {"subject_id": subject, "predicate": rule["predicate"],
                              "value": value, "confidence": confidence}
+                if rule["operation"] == "RETRACT":
+                    candidate["operation"] = "RETRACT"
                 key = (subject, rule["predicate"])
-                if key not in facts or facts[key]["confidence"] < confidence:
+                if key not in facts or facts[key]["confidence"] < confidence or (candidate.get("operation") == "RETRACT" and facts[key].get("operation") != "RETRACT"):
                     facts[key] = candidate
         return list(facts.values())

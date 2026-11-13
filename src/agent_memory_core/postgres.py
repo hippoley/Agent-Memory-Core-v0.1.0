@@ -429,7 +429,8 @@ class PostgresMemory:
                 "recorded_at","superseded_at","object_sha256")
         return [dict(zip(cols,row)) for row in self.conn.execute(sql, params)]
 
-    def forget(self, *, tenant_id: str, memory_id: str) -> bool:
+    def forget(self, *, tenant_id: str, memory_id: str,
+               source_id: str | None = None) -> bool:
         """Withdraw belief in one claim (soft forget; audit rows are retained).
 
         The claim is marked superseded at the current mutation time, so it
@@ -438,8 +439,8 @@ class PostgresMemory:
         and outbox record in the same transaction. Returns False when the
         claim does not exist for the tenant or is already forgotten.
         """
-        if not tenant_id or not memory_id:
-            raise ValueError("Tenant and memory id are required")
+        if not tenant_id or not memory_id or (source_id is not None and not source_id):
+            raise ValueError("Tenant, memory id and nonempty optional source required")
         with self.conn.transaction():
             row=self.conn.execute(
                 """SELECT subject_id,predicate FROM memory_claims
@@ -449,12 +450,23 @@ class PostgresMemory:
             if row is None:
                 return False
             subject_id,predicate=row
+            if source_id is not None:
+                # Register evidence of the withdrawal independently. Do NOT
+                # link it to the original claim's supporting sources, because
+                # the user's retraction contradicts that original assertion.
+                # The immutable forgotten event carries the new source_id.
+                self.conn.execute(
+                    """INSERT INTO memory_sources(tenant_id,source_id,source_type,trust_level)
+                       VALUES (%s,%s,'external','unverified')
+                       ON CONFLICT (tenant_id,source_id) DO NOTHING""",
+                    (tenant_id,source_id))
             mutation_time=self.conn.execute("SELECT clock_timestamp()").fetchone()[0]
             self.conn.execute(
                 "UPDATE memory_claims SET superseded_at=%s WHERE id=%s",
                 (mutation_time,memory_id))
             packed=json.dumps({"memory_id":str(memory_id),"subject_id":subject_id,
-                               "predicate":predicate,"reason":"explicit_forget"},
+                               "predicate":predicate,"reason":"explicit_forget",
+                               **({"source_id":source_id} if source_id is not None else {})},
                               ensure_ascii=False,sort_keys=True)
             event_id=str(uuid4())
             self.conn.execute(
@@ -469,7 +481,8 @@ class PostgresMemory:
             return True
 
     def forget_many(self, *, tenant_id: str, subject_id: str | None = None,
-                    predicate: str | None = None) -> list[str]:
+                    predicate: str | None = None,
+                    source_id: str | None = None) -> list[str]:
         """Soft-forget every active claim matching the tenant-scoped filters.
 
         At least one filter must be supplied. Each forgotten claim emits its
@@ -489,7 +502,7 @@ class PostgresMemory:
             ids=[row[0] for row in self.conn.execute(sql,params)]
         forgotten=[]
         for mid in ids:
-            if self.forget(tenant_id=tenant_id,memory_id=mid):
+            if self.forget(tenant_id=tenant_id,memory_id=mid,source_id=source_id):
                 forgotten.append(mid)
         return forgotten
 

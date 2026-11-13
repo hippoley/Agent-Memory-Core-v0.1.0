@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="850" viewBox="0 0 1320 850" role="img" aria-labelledby="title desc">
+<title id="title">Agent Memory Core — accurate runtime and authority boundaries</title>
+<desc id="desc">External agents and same-origin console call the FastAPI boundary. The processing engine commits claims, provenance, bitemporal metadata and outbox to one PostgreSQL canonical database. Full-text indexes, pgvector and Apache AGE operate inside that PostgreSQL environment. Local object storage, optional inference providers, optional projection workers and optional Temporal orchestrator sit outside that database. Solid arrows denote synchronous path; dashed arrows optional and asynchronous.</desc>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101b2c"/><stop offset=".6" stop-color="#0c1521"/><stop offset="1" stop-color="#101d24"/></linearGradient><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1L7 4L1 7" stroke="#87dfc1" stroke-width="1.5" fill="none"/></marker><marker id="opt" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1L7 4L1 7" stroke="#8da6cb" stroke-width="1.5" fill="none"/></marker><pattern id="dot" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#263c50"/></pattern></defs>
+<rect width="1320" height="850" rx="20" fill="url(#bg)"/><rect width="1320" height="850" rx="20" fill="url(#dot)" opacity=".47"/>
+<g font-family="Arial,Helvetica,sans-serif">
+<text x="48" y="52" font-size="27" font-weight="700" fill="#f2f7fb">01  /  A SYSTEM OF RECORD, NOT A SERVICE MAZE</text>
+<text x="48" y="79" font-size="14" fill="#9eb5c9">Runtime topology · physical process boundaries · canonical vs derived state</text>
+<g><rect x="50" y="112" width="300" height="102" rx="12" fill="#172b42" stroke="#486789"/><text x="70" y="145" font-size="11" fill="#85a7c6" letter-spacing="2">EXTERNAL CLIENTS</text><text x="70" y="173" font-size="20" fill="#f0f7fc">Agents / Python SDK</text><text x="70" y="195" font-size="12" fill="#a2b6c8">Third-party integrations</text></g>
+<g><rect x="400" y="112" width="301" height="102" rx="12" fill="#172b42" stroke="#486789"/><text x="420" y="145" font-size="11" fill="#85a7c6" letter-spacing="2">BROWSER CLIENT</text><text x="420" y="173" font-size="20" fill="#f0f7fc">Memory Console</text><text x="420" y="195" font-size="12" fill="#a2b6c8">Same-origin /dashboard/</text></g>
+<g><rect x="752" y="112" width="517" height="102" rx="12" fill="#173437" stroke="#62c9aa"/><text x="775" y="145" font-size="11" fill="#8ceac8" letter-spacing="2">APPLICATION PROCESS</text><text x="775" y="173" font-size="20" fill="#f0f7fc">FastAPI / HTTP Contract</text><text x="775" y="195" font-size="12" fill="#abcfc7">Key-bound tenant · OpenAPI · capabilities · route handlers</text></g>
+<path d="M200 214V232H738V188H744" stroke="#87dfc1" stroke-width="1.7" fill="none" marker-end="url(#arr)"/><path d="M701 164H744" stroke="#87dfc1" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+<text x="704" y="104" fill="#7f99ac" font-size="11">clients call API</text>
+<rect x="48" y="254" width="1224" height="452" rx="18" fill="#0f1926" stroke="#344d64"/>
+<text x="70" y="283" font-size="12" fill="#9bb6c9" letter-spacing="2">CORE SYSTEM BOUNDARY</text>
+<rect x="72" y="305" width="398" height="117" rx="12" fill="#18303c" stroke="#557f88"/><text x="96" y="337" font-size="12" fill="#93c1c4">MEMORY ENGINE</text><text x="96" y="366" font-size="19" fill="#eef8fb">Processing &amp; Revision</text><text x="96" y="390" font-size="13" fill="#a4bac6">Candidate validation · dedup · policy</text><text x="96" y="409" font-size="13" fill="#a4bac6">version replacement · evidence linking</text>
+<path d="M1010 215V241H271V300" stroke="#87dfc1" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+<rect x="518" y="303" width="728" height="364" rx="15" fill="#142e2e" stroke="#77d5ad" stroke-width="2"/>
+<text x="544" y="334" font-size="12" fill="#a7eacf" letter-spacing="2">ONE POSTGRESQL SERVER / DATABASE</text>
+<rect x="544" y="350" width="673" height="111" rx="10" fill="#1b4038" stroke="#83ebbf"/>
+<text x="564" y="380" font-size="21" font-weight="700" fill="#f1fff8">CANONICAL RECORD</text>
+<text x="564" y="405" font-size="14" fill="#c1e7d6">Claims · entities / SQL edges · provenance · bitemporal fields</text>
+<text x="564" y="429" font-size="14" fill="#c1e7d6">Observation rows · tenant policy · durable events / outbox</text>
+<path d="M471 366H534" stroke="#88e3c1" stroke-width="2.4" marker-end="url(#arr)"/>
+<text x="491" y="350" font-size="11" fill="#9fbaae">commit</text>
+<text x="543" y="496" fill="#96b9c2" font-size="11" letter-spacing="2">DERIVED QUERY VIEWS · NOT AUTHORITIES</text>
+<rect x="543" y="516" width="205" height="110" rx="10" fill="#1a2f44" stroke="#577ca7"/><text x="561" y="548" fill="#f1f7fd" font-size="18">SQL / FTS</text><text x="561" y="572" fill="#a8bed1" font-size="12">Exact / lexical</text><text x="561" y="590" fill="#a8bed1" font-size="12">candidate recall</text>
+<rect x="777" y="516" width="205" height="110" rx="10" fill="#242a46" stroke="#7777ba"/><text x="795" y="548" fill="#f1f7fd" font-size="18">pgvector</text><text x="795" y="572" fill="#b9bce0" font-size="12">Semantic candidate</text><text x="795" y="590" fill="#b9bce0" font-size="12">when configured</text>
+<rect x="1011" y="516" width="205" height="110" rx="10" fill="#272c44" stroke="#8c83c1"/><text x="1029" y="548" fill="#f1f7fd" font-size="18">Apache AGE</text><text x="1029" y="572" fill="#c3bee2" font-size="12">Graph projection</text><text x="1029" y="590" fill="#c3bee2" font-size="12">when enabled</text>
+<path d="M870 463V499" stroke="#8fbbc3" stroke-width="1.5" stroke-dasharray="5 6"/>
+<path d="M646 499H1116" stroke="#8fbbc3" stroke-width="1.5" stroke-dasharray="5 6"/>
+<path d="M646 499V512M879 499V512M1116 499V512" stroke="#8fbbc3" stroke-width="1.5" stroke-dasharray="5 6" marker-end="url(#opt)"/>
+<rect x="72" y="459" width="398" height="147" rx="12" fill="#172536" stroke="#476279"/><text x="96" y="490" font-size="11" fill="#a7c2d2" letter-spacing="1.5">RETRIEVAL CONTRACT</text><text x="96" y="519" font-size="18" fill="#eef7fb">Discover → Recheck → Return</text><text x="96" y="548" font-size="13" fill="#b3c4d1">Ranked candidates → canonical tenant,</text><text x="96" y="570" font-size="13" fill="#b3c4d1">time &amp; supersession conditions</text><text x="96" y="593" font-size="12" fill="#edc28e">Not a general authorization / truth oracle</text>
+<path d="M518 561H479" stroke="#87dfc1" stroke-width="2" marker-end="url(#arr)"/>
+<text x="48" y="746" font-size="12" fill="#91aabf" letter-spacing="1.8">OPTIONAL / EXTERNAL ADAPTERS</text>
+<g fill="#172638" stroke="#415b72"><rect x="49" y="758" width="288" height="58" rx="10"/><rect x="357" y="758" width="288" height="58" rx="10"/><rect x="665" y="758" width="288" height="58" rx="10"/><rect x="973" y="758" width="298" height="58" rx="10"/></g>
+<g font-size="14" fill="#e1ecf5"><text x="65" y="783">Local / S3 object bytes</text><text x="373" y="783">Optional extractor / embedder</text><text x="681" y="783">Outbox / webhook workers</text><text x="989" y="783">Optional Temporal runtime</text></g>
+<g font-size="11" fill="#8da8bc"><text x="65" y="802">SHA-256 evidence payloads</text><text x="373" y="802">Model / rules as adapters</text><text x="681" y="802">Asynchronous jobs</text><text x="989" y="802">Long-lived orchestration only</text></g>
+<text x="49" y="834" font-size="11" fill="#748ba0">Solid = primary call / commit; dashed = derived or optional. Diagram depicts logical responsibilities, not a production security certification.</text>
+</g></svg>

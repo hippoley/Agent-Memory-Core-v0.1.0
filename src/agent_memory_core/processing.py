@@ -183,6 +183,39 @@ class MemoryProcessor:
                 report.rejected += 1
                 continue
             confidence = candidate.get("confidence", 1.0)
+            operation = candidate.get("operation", "UPSERT")
+            if operation not in ("UPSERT", "RETRACT"):
+                report.rejected += 1
+                continue
+            if operation == "RETRACT":
+                # A withdrawal is not a new 'normal' preference: it explicitly
+                # retires the current fact and keeps bitemporal audit history.
+                # Only single-valued predicates may be retracted by subject
+                # and predicate. Never interpret a model-generated broad
+                # retraction as permission to delete all of a tenant's data.
+                forget = getattr(self.store, "forget_many", None)
+                if (not callable(forget) or cardinality != "one"
+                        or not isinstance(subject, str) or not subject.strip()
+                        or not isinstance(predicate, str) or not predicate.strip()
+                        or not isinstance(confidence, (int, float))
+                        or isinstance(confidence, bool) or not math.isfinite(confidence)
+                        or confidence < self.confidence_threshold
+                        or confidence > 1.0):
+                    report.rejected += 1
+                    continue
+                try:
+                    withdrawn = forget(tenant_id=tenant_id, subject_id=subject,
+                                       predicate=predicate)
+                except (TypeError, ValueError):
+                    report.rejected += 1
+                    continue
+                report.replaced.extend(withdrawn)
+                report.relations.append({
+                    "subject_id": subject, "predicate": predicate,
+                    "relation": "RETRACTED" if withdrawn else "NOOP",
+                    "memory_id": None, "withdrawn_ids": withdrawn, "merged": False,
+                })
+                continue
             merge_requested = candidate.get("merge") is True
             if (not isinstance(subject, str) or not subject.strip()
                     or not isinstance(predicate, str) or not predicate.strip()

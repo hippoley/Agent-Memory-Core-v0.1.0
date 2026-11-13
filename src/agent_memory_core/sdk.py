@@ -104,11 +104,14 @@ class MemoryClient:
         return self._request("GET",f"/v1/memories/{self._segment(subject_id)}",params=params)
 
     def process(self, *, text: str, source_id: str,
-                candidates: list[dict] | None = None, confidence_threshold: float = 0.65):
+                candidates: list[dict] | None = None, confidence_threshold: float = 0.65,
+                context_turns: list[str] | None = None):
         body={"text":text,"source_id":source_id,
               "confidence_threshold":confidence_threshold}
         if candidates is not None:
             body["candidates"]=candidates
+        if context_turns is not None:
+            body["context_turns"]=context_turns
         return self._request("POST","/v1/memories/process",json=body)
 
     def search(self, *, query: str, limit: int = 10,

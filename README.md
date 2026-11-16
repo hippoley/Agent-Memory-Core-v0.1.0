@@ -6,7 +6,7 @@
 
 ### Agents change their minds. Memory should keep the evidence.
 
-**A local-first, model-agnostic memory runtime for evolving agent beliefs — with evidence-grounded revisions, temporal knowledge graphs, and durable verification.**
+**A local-first, model-agnostic memory runtime for evolving agent beliefs — with evidence-grounded revisions, Apache AGE graph retrieval, and durable verification.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](pyproject.toml)
@@ -176,7 +176,7 @@ The best contributions are **reproducible failures with evidence**:
 - A benchmark comparing real embedding providers or token/latency costs on a frozen dataset.
 - A small compatible agent-framework adapter, or a clear API/documentation improvement.
 
-We prioritize bugs and tests that make other developers safer before adding feature count. See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), and [engineering roadmap](docs/AGE-TEMPORAL-STRATEGY.md).
+We prioritize bugs and tests that make other developers safer before adding feature count. See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [community launch kit](docs/COMMUNITY-LAUNCH.md), and [engineering roadmap](docs/AGE-TEMPORAL-STRATEGY.md).
 
 ### Project status
 

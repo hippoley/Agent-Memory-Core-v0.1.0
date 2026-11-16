@@ -66,6 +66,14 @@ def test_grounded_revision_uses_real_postgres_and_keeps_history():
         active=verify.recall(tenant_id=tenant,subject_id="supplier-7")
         assert len(active)==1
         assert active[0]["value"]=={"months":3}
+        # Even if a stale reference somehow has the NEW value, its OLD id
+        # cannot withdraw the newly created canonical claim.
+        stale=verify.forget_many(
+            tenant_id=tenant,subject_id="supplier-7",predicate="settlement_period",
+            expected_value={"months":3},expected_memory_id=new_id,
+            source_id="stale-revision")
+        assert stale==[]
+        assert verify.recall(tenant_id=tenant,subject_id="supplier-7")[0]["value"]=={"months":3}
         historical=verify.list_claims(tenant_id=tenant,
                            subject_id="supplier-7",include_superseded=True)
         assert any(x["id"]==new_id for x in historical)

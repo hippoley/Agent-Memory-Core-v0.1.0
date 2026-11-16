@@ -48,6 +48,7 @@ def test_capture_real_stages_from_separate_adapters():
     class Memory:
         def __init__(self):self.rows=[];self.writes=[]
         def current(self):return list(self.rows)
+        def history(self):return []
         def reset_active(self):self.rows=[]
         def call(self,method,path,**kw):
             if path=="/v1/memories/process":
@@ -73,3 +74,42 @@ def test_capture_real_stages_from_separate_adapters():
     assert records[0]["retrieved"][0]["subject_id"]=="书房"
     assert records[0]["answer"]=="25度"
     assert memory.current()==[]
+
+def test_empty_active_but_existing_history_is_rejected_without_mutation():
+    class Memory:
+        def current(self): return []
+        def history(self): return [{"id":"forgotten-previous-user-claim"}]
+        def reset_active(self): raise AssertionError("Must not modify tenant")
+    with pytest.raises(RuntimeError,match="historical claims"):
+        module.collect([{"id":"sample","turns":[],"query":"x"}],Memory(),None,None,
+                       context=False,prefix="test")
+
+
+def test_interrupted_model_capture_cleans_its_own_active_claims():
+    class Memory:
+        def __init__(self): self.rows=[];self.cleanups=0
+        def current(self): return list(self.rows)
+        def history(self): return []
+        def reset_active(self):
+            self.rows=[]
+            self.cleanups+=1
+        def call(self,method,path,**kwargs):
+            if path=="/v1/memories/process":
+                self.rows=[{"subject_id":"书房","predicate":"noise_preference",
+                            "value":{"level":"quiet"}}]
+                return {"created":["some-id"]}
+            raise AssertionError(path)
+    class Extractor:
+        def __init__(self):self.n=0
+        def __call__(self,text):
+            self.n+=1
+            if self.n==2:
+                raise RuntimeError("simulated local model outage")
+            return [{"subject_id":"书房","predicate":"noise_preference",
+                     "value":{"level":"quiet"}}]
+    memory=Memory()
+    with pytest.raises(RuntimeError,match="simulated local model outage"):
+        module.collect([{"id":"sample","turns":["书房保持安静","书房别太吵"],"query":"x"}],
+                       memory,None,Extractor(),context=False,prefix="test")
+    assert memory.current()==[]
+    assert memory.cleanups>=2

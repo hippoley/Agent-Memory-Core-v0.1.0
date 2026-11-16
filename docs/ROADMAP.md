@@ -4,20 +4,28 @@ The repository is a **working local research prototype**, NOT a secure productio
 
 | Gate | Work | Current evidence | Status |
 | --- | --- | --- | --- |
-| G0 | SQLite fact/time/object core | Unit tests in `test.yml` | ✅ Prototype verified |
+| G0 | Legacy SQLite fact/time/object prototype | Local unit tests exist, but it is **not** a fully compatible no-PostgreSQL Lite runtime | 🟡 Partial |
 | G1 | PostgreSQL fact tables + pgvector search | Real Postgres + vector write/query in `integration.yml` | ✅ Prototype verified |
 | G2 | AGE two-hop traversal, canonical edge projection | Real same-database graph test, idempotent replay | ✅ Prototype verified |
 | G3 | SQL + vector + graph hybrid recall | Real three-channel candidate merge and tenant test | ✅ Prototype verified |
 | G4 | Bitemporal interval correction, historical evidence semantics | Basic validity/as-of only, full interval revision missing | ◻ Incomplete |
-| G5 | Authentication, tenant RLS, encryption, erasure and recovery | Threat model and adversarial database tests absent | ◻ Not started |
+| G5 | Authentication, tenant RLS, encryption, erasure and recovery | Authenticated REST and opt-in principal-bound RLS tests exist; AGE stays disabled in restricted RLS mode; production threat assessment and erasure/recovery remain open | 🟡 Partial |
 | G6 | Graph deletion/reconciliation and rebuilding | Immutable-edge projection only | ◻ Incomplete |
-| G7 | Local embeddings, retrieval quality and latency benchmarks | Fixed 384-dim profile, no local encoder or Recall@k | ◻ Incomplete |
+| G7 | Local embeddings, retrieval quality and latency benchmarks | Local embedding adapters and evaluation runners exist; controlled real-model multi-industry retrieval quality and latency are not proven | 🟡 Partial |
 | G8 | Real sensor time-series partitioning and object lifecycle | Observation schema and SHA-256 store only | ◻ Incomplete |
 | G9 | Temporal / Restate / WindowPilot adapters | Temporal SDK Workflow + real local Worker/Activities + PostgreSQL idempotent receipt CI; Restate/WindowPilot not implemented | 🟡 Temporal prototype verified |
 | G11 | Mem0-inspired extraction and multi-signal retrieval | Structured candidate pipeline, confidence filter, exact dedupe, provenance and atomic per-key PostgreSQL processing implemented; real Chinese model evaluation pending | 🟡 Prototype verified |
 | G12 | Realtime outbox + change feed + snapshot query | Durable event log, cursor replay, SSE, signed Webhook subscriptions, delivery retry/DLQ/replay and transactional outbox recovery implemented; production fan-out/load pending | 🟡 Prototype verified |
 | G13 | Temporal durable orchestration adapter | Optional SDK adapter; real local Temporal dev service CI, no Temporal dependency in core | 🟡 Prototype verified |
 | G10 | Interop spec + external reproducer | Versioned MemoryPort + local REST contract, authenticated tenant-scoped API tests; external adopter absent | 🟡 Prototype verified |
+
+## Current architecture limitations (2026-11-16)
+
+- The model-neutral extractor accepts arbitrary-domain `UPSERT` and evidence-grounded `RETRACT`; `ground_with_memory` is opt-in and only safe when the configured model provider is appropriate for tenant data.
+- Current PostgreSQL withdrawal is claim-ID and expected-old-value constrained, but a compound `RETRACT + UPSERT` is **not yet one all-or-nothing transaction**.
+- Lite, Standard and Full currently rely on PostgreSQL, not a feature-complete SQLite-only backend.
+- The 94.34% 200-case Chinese score is **rule extraction only**, with 0/30 OOV exact coverage; it is not real-model, recall or answer quality.
+- AGE and Temporal are important optional extension paths. The separate Extended deployment work is tracked in [PR #29](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/29), not asserted as merged.
 
 ## Verified version profile
 

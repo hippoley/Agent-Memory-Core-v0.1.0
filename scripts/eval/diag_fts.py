@@ -1,36 +1,52 @@
-"""Compare FTS query semantics against one tenant's claims."""
-import sys
+"""Read-only PostgreSQL FTS query diagnostic; requires an explicit database."""
+from __future__ import annotations
+import argparse
+import os
 import psycopg
 from agent_memory_core.hybrid import query_terms
 
-DSN = "postgresql://memory:local-dev-only@127.0.0.1:55432/memory"
-tenant = sys.argv[1] if len(sys.argv) > 1 else "lme-eval"
-query = sys.argv[2] if len(sys.argv) > 2 else (
-    "How many days did I spend on camping trips in the United States this year?")
 
-conn = psycopg.connect(DSN, autocommit=True)
-print("claims", conn.execute("select count(*) from memory_claims where tenant_id=%s",
-                             (tenant,)).fetchone()[0])
-print("indexed", conn.execute("select count(*) from memory_claim_search where tenant_id=%s",
-                              (tenant,)).fetchone()[0])
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dsn", default=os.getenv("MEMORY_TEST_DSN"))
+    parser.add_argument("--tenant", required=True)
+    parser.add_argument("--query", required=True)
+    args = parser.parse_args(argv)
+    if not args.dsn:
+        parser.error("Supply --dsn or MEMORY_TEST_DSN; never guess a target database")
+    with psycopg.connect(args.dsn, autocommit=True) as conn:
+        tenant, query = args.tenant, args.query
+        total = conn.execute("SELECT count(*) FROM memory_claims WHERE tenant_id=%s",
+                             (tenant,)).fetchone()[0]
+        indexed = conn.execute("SELECT count(*) FROM memory_claim_search WHERE tenant_id=%s",
+                               (tenant,)).fetchone()[0]
+        print("claims", total, "indexed", indexed)
+        and_count = conn.execute(
+            "SELECT count(*) FROM memory_claim_search s WHERE s.tenant_id=%s "
+            "AND s.document @@ websearch_to_tsquery('simple',%s)",
+            (tenant, query)).fetchone()[0]
+        terms = query_terms(query)
+        print("fts AND", and_count, "terms", terms)
+        if not terms:
+            print("fts OR", 0)
+            return 0
+        expression = " | ".join(terms)
+        or_count = conn.execute(
+            "SELECT count(*) FROM memory_claim_search s WHERE s.tenant_id=%s "
+            "AND s.document @@ to_tsquery('simple',%s)",
+            (tenant, expression)).fetchone()[0]
+        print("fts OR", or_count)
+        rows = conn.execute(
+            "SELECT c.predicate, left(c.value::text,70), "
+            "ts_rank_cd(s.document, to_tsquery('simple',%s)) r "
+            "FROM memory_claim_search s JOIN memory_claims c ON c.id=s.memory_id "
+            "WHERE s.tenant_id=%s AND s.document @@ to_tsquery('simple',%s) "
+            "ORDER BY r DESC LIMIT 6",
+            (expression, tenant, expression)).fetchall()
+        for pred, value, score in rows:
+            print(f"{score:.4f} {pred[:32]} = {value}")
+    return 0
 
-and_n = conn.execute(
-    "select count(*) from memory_claim_search s where s.tenant_id=%s "
-    "and s.document @@ websearch_to_tsquery('simple',%s)", (tenant, query)).fetchone()[0]
-terms = query_terms(query)
-or_n = conn.execute(
-    "select count(*) from memory_claim_search s where s.tenant_id=%s "
-    "and s.document @@ to_tsquery('simple',%s)",
-    (tenant, " | ".join(terms))).fetchone()[0]
-print(f"terms({len(terms)}): {terms}")
-print(f"fts AND (websearch_to_tsquery): {and_n}")
-print(f"fts OR  (to_tsquery |):         {or_n}")
 
-rows = conn.execute(
-    "select c.predicate, left(c.value::text,70), "
-    "ts_rank_cd(s.document, to_tsquery('simple',%s)) r "
-    "from memory_claim_search s join memory_claims c on c.id=s.memory_id "
-    "where s.tenant_id=%s and s.document @@ to_tsquery('simple',%s) "
-    "order by r desc limit 6", (" | ".join(terms), tenant, " | ".join(terms))).fetchall()
-for predicate, value, rank in rows:
-    print(f"   {rank:.4f} {predicate[:32]:32} = {value}")
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -75,6 +75,7 @@ python -m pip install -e '.[temporal]'
 ### A real SDK call, not pseudocode
 
 ```python
+from datetime import datetime, timezone
 from agent_memory_core.sdk import MemoryClient
 
 with MemoryClient("http://127.0.0.1:8765", "YOUR_LOCAL_API_KEY") as memory:
@@ -83,6 +84,7 @@ with MemoryClient("http://127.0.0.1:8765", "YOUR_LOCAL_API_KEY") as memory:
         predicate="settlement_period",
         value={"months": 1},
         source_id="contract:version-1",
+        valid_from=datetime.now(timezone.utc).isoformat(),
         idempotency_key="contract-v1:settlement",
     )
     print(memory.recall("supplier-a"))
@@ -95,6 +97,10 @@ For structured correction and provenance, run [`examples/belief_revision.py`](ex
 ## Architecture
 
 ![Memory runtime topology — API, deterministic processor, canonical PostgreSQL, pgvector, Apache AGE and optional adapters](docs/assets/architecture.svg)
+
+![Memory lifecycle — proposal, canonical revisions, derived indexes and canonical recheck](docs/assets/memory-lifecycle.svg)
+
+**What this does not yet guarantee:** universal tenant authorization in every retrieval channel, independently verified evidence truth, production-grade reliability, or uniformly correct LLM interpretation. See the [architecture review](docs/ARCHITECTURE-REVIEW.md).
 
 ```text
 Any agent / SDK / REST

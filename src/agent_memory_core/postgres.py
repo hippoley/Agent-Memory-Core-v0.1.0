@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
 from .vector_validation import vector_literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 import json
 
 def aware(value: datetime) -> datetime:
@@ -483,7 +483,8 @@ class PostgresMemory:
     def forget_many(self, *, tenant_id: str, subject_id: str | None = None,
                     predicate: str | None = None,
                     source_id: str | None = None,
-                    expected_value: dict | None = None) -> list[str]:
+                    expected_value: dict | None = None,
+                    expected_memory_id: str | None = None) -> list[str]:
         """Soft-forget every active claim matching the tenant-scoped filters.
 
         At least one filter must be supplied. Each forgotten claim emits its
@@ -492,6 +493,13 @@ class PostgresMemory:
         if not tenant_id or (not subject_id and not predicate):
             raise ValueError("Provide subject_id and/or predicate to forget")
         with self.conn.transaction():
+            # The same lock ordering as apply_candidate prevents a concurrent
+            # upsert from racing between expected-value comparison and
+            # withdrawal. Nested forget() transactions are SAVEPOINTS and
+            # remain inside this outer atomic transaction.
+            if subject_id and predicate:
+                self._lock_predicate(tenant_id, predicate)
+                self._lock_fact(tenant_id, subject_id, predicate)
             sql="""SELECT id::text FROM memory_claims
                    WHERE tenant_id=%s AND superseded_at IS NULL"""
             params=[tenant_id]
@@ -499,6 +507,13 @@ class PostgresMemory:
                 sql+=" AND subject_id=%s"; params.append(subject_id)
             if predicate:
                 sql+=" AND predicate=%s"; params.append(predicate)
+            if expected_memory_id is not None:
+                try:
+                    canonical_id = str(UUID(expected_memory_id))
+                except (ValueError, TypeError, AttributeError) as exc:
+                    raise ValueError("Invalid expected memory ID") from exc
+                sql+=" AND id=%s::uuid"
+                params.append(canonical_id)
             if expected_value is not None:
                 # Contextual withdrawals must not erase a newer claim whose
                 # value no longer matches the cited antecedent. Bound JSONB
@@ -509,11 +524,11 @@ class PostgresMemory:
                 params.append(json.dumps(expected_value, ensure_ascii=False, sort_keys=True))
             sql+=" FOR UPDATE"
             ids=[row[0] for row in self.conn.execute(sql,params)]
-        forgotten=[]
-        for mid in ids:
-            if self.forget(tenant_id=tenant_id,memory_id=mid,source_id=source_id):
-                forgotten.append(mid)
-        return forgotten
+            forgotten=[]
+            for mid in ids:
+                if self.forget(tenant_id=tenant_id,memory_id=mid,source_id=source_id):
+                    forgotten.append(mid)
+            return forgotten
 
     @staticmethod
     def _embedding_table(dimension: int) -> str:

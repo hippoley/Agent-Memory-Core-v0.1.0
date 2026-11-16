@@ -220,6 +220,13 @@ class MemoryProcessor:
                             report.rejected += 1
                             continue
                         kwargs["expected_value"] = expected
+                    expected_id = candidate.get("expected_memory_id")
+                    if expected_id is not None:
+                        if (not isinstance(expected_id, str) or not expected_id.strip()
+                                or "expected_memory_id" not in inspect.signature(forget).parameters):
+                            report.rejected += 1
+                            continue
+                        kwargs["expected_memory_id"] = expected_id
                     withdrawn = forget(**kwargs)
                 except (TypeError, ValueError):
                     report.rejected += 1

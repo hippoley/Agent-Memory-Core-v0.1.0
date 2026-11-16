@@ -63,7 +63,20 @@ class OpenAICompatFactExtractor:
     def __call__(self, text: str) -> list[dict]:
         return self.extract_with_context(text, [])
 
+    def extract_with_evidence(self, text: str, context_turns: list[str],
+                              memory_evidence: list[dict]) -> list[dict]:
+        """Propose facts against tenant-scoped canonical evidence.
+
+        The caller must validate retraction proposals against evidence and
+        PostgreSQL must recheck the current value at execution.
+        """
+        return self._extract(text, context_turns, memory_evidence)
+
     def extract_with_context(self, text: str, context_turns: list[str]) -> list[dict]:
+        return self._extract(text, context_turns, None)
+
+    def _extract(self, text: str, context_turns: list[str],
+                 memory_evidence: list[dict] | None) -> list[dict]:
         """Domain-neutral LLM extraction with bounded untrusted prior turns.
 
         Context assists candidate generation, but does not authorize deletion:
@@ -74,7 +87,7 @@ class OpenAICompatFactExtractor:
             raise ValueError("Nonempty text up to 100000 characters required")
         messages = [
             {"role": "system", "content": EXTRACTOR_INSTRUCTION},
-            {"role": "user", "content": untrusted_user_payload(text, context_turns=context_turns)},
+            {"role": "user", "content": untrusted_user_payload(text, context_turns=context_turns, memory_evidence=memory_evidence)},
         ]
         # One corrective retry. Small models drift two ways: prose or a code
         # fence around the JSON, and a bare string where an object is required.

@@ -39,11 +39,24 @@ class OllamaFactExtractor:
     def __call__(self, text: str) -> list[dict]:
         return self.extract_with_context(text, [])
 
+    def extract_with_evidence(self, text: str, context_turns: list[str],
+                              memory_evidence: list[dict]) -> list[dict]:
+        """Propose facts against tenant-scoped canonical evidence.
+
+        The caller must validate retraction proposals against evidence and
+        PostgreSQL must recheck the current value at execution.
+        """
+        return self._extract(text, context_turns, memory_evidence)
+
     def extract_with_context(self, text: str, context_turns: list[str]) -> list[dict]:
+        return self._extract(text, context_turns, None)
+
+    def _extract(self, text: str, context_turns: list[str],
+                 memory_evidence: list[dict] | None) -> list[dict]:
         """Allow any domain's bounded prior dialogue as untrusted model input."""
         if not isinstance(text,str) or not text.strip() or len(text)>100000:
             raise ValueError("Nonempty text up to 100000 characters required")
-        payload=json.dumps({"model":self.model,"prompt":EXTRACTOR_INSTRUCTION+untrusted_user_payload(text,context_turns=context_turns),
+        payload=json.dumps({"model":self.model,"prompt":EXTRACTOR_INSTRUCTION+untrusted_user_payload(text,context_turns=context_turns,memory_evidence=memory_evidence),
             "stream":False,"format":"json",
             "options":{"temperature":0}},ensure_ascii=False).encode("utf-8")
         request=urllib.request.Request(self.endpoint,data=payload,

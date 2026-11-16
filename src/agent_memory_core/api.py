@@ -192,6 +192,17 @@ class ProcessRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100000, description="Original text retained as processing context; source_id identifies its durable source.")
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
     candidates: list[dict] | None = Field(default=None, max_length=500, description="Optional structured facts. If omitted, a server-configured local extractor must be available.")
+
+    atomic_batch: bool = Field(
+        default=False,
+        description=(
+            "Opt-in all-or-nothing PostgreSQL transaction for 1..500 canonical candidates. "
+            "Every candidate must have a stable subject_id and predicate. A rejected "
+            "candidate or unmatched RETRACT aborts the entire batch, including events "
+            "and outbox; the default non-atomic ingestion behavior is unchanged. "
+            "Embeddings are best-effort projections after canonical commit."
+        ),
+    )
     context_turns: list[str] = Field(default_factory=list, max_length=3, description="Optional recent prior utterances in chronological order (each <=2000 chars). Only explicitly configured contextual extractors use them; unsupported providers fail closed.")
     ground_with_memory: bool = Field(default=False, description="Opt in to retrieving tenant-scoped canonical memory as evidence for LLM revision planning; requires a supporting model extractor and a search adapter.")
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
@@ -1005,7 +1016,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 db,
                 confidence_threshold=item.confidence_threshold,
                 entity_resolver=_subject_resolver(db),
-                embedder=embedder if (embedder is not None and auto_embed) else None,
+                # External model/vector calls must not hold SQL locks. In strict
+                # batches, embed only AFTER the canonical transaction commits.
+                embedder=embedder if (embedder is not None and auto_embed
+                                      and not item.atomic_batch) else None,
             )
             observed_at = None
             if item.observed_at is not None:
@@ -1024,11 +1038,66 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     raise HTTPException(
                         status_code=422,
                         detail="observed_at cannot be in the future")
-            report = processor.process(
-                tenant_id=t, text=item.text, source_id=item.source_id,
-                extractor=extractor, observed_at=observed_at,
-            )
-            return {
+            if item.atomic_batch:
+                if observed_at is not None:
+                    # The current explicit-withdrawal path records knowledge
+                    # time at mutation, not a historical snapshot. Reject
+                    # backdated compound operations until the full bitemporal
+                    # transaction semantics are implemented.
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Atomic batch does not support historical observed_at",
+                    )
+                # Materialize model output exactly once outside the transaction.
+                # Reject unbounded outputs before acquiring any SQL locks.
+                from itertools import islice
+                atomic_context = getattr(db, "atomic_candidate_batch", None)
+                if not callable(atomic_context):
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Atomic batch requires the PostgreSQL canonical store",
+                    )
+                candidates = list(islice(iter(extractor(item.text)), 501))
+                if not 1 <= len(candidates) <= 500:
+                    raise HTTPException(
+                        status_code=422, detail="Atomic batch requires 1..500 candidates",
+                    )
+                with atomic_context(tenant_id=t, candidates=candidates):
+                    report = processor.process(
+                        tenant_id=t, text=item.text, source_id=item.source_id,
+                        extractor=lambda _text: candidates, observed_at=observed_at,
+                    )
+                    # The ordinary processor deliberately supports partial
+                    # acceptance. Strict mode must turn that into a rollback,
+                    # including old-claim withdrawals and their durable outbox.
+                    if (report.rejected or
+                            any(r.get("relation") == "NOOP" for r in report.relations)):
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Atomic batch rolled back: rejected candidate or unmet RETRACT precondition",
+                        )
+                # Semantic vectors are projections, not canonical claims.
+                # Never invoke an external embedding model while holding a
+                # multi-key database lock. Report best-effort failures honestly.
+                if embedder is not None and auto_embed:
+                    for candidate, relation in zip(candidates, report.relations):
+                        if relation.get("relation") in ("DUPLICATE", "RETRACTED", "NOOP"):
+                            continue
+                        memory_id = relation["memory_id"]
+                        try:
+                            model_id, vector = embedder(candidate)
+                            db.store_embedding(
+                                tenant_id=t, memory_id=memory_id,
+                                model_id=model_id, vector=vector,
+                            )
+                        except Exception:
+                            report.embedding_failures.append(memory_id)
+            else:
+                report = processor.process(
+                    tenant_id=t, text=item.text, source_id=item.source_id,
+                    extractor=extractor, observed_at=observed_at,
+                )
+            result = {
                 "tenant_id": t,
                 "created": report.created,
                 "duplicates": report.duplicates,
@@ -1037,6 +1106,9 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 "relations": report.relations,
                 "embedding_failures": report.embedding_failures,
             }
+            if item.atomic_batch:
+                result["atomic_batch"] = True
+            return result
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except RuntimeError as exc:

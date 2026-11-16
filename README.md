@@ -1,157 +1,194 @@
 <div align="center">
 
-<img src="docs/assets/hero-belief-lifecycle.svg" alt="Agent Memory Core — Agents change their minds. Memory should know how." width="100%" />
+<img src="docs/assets/hero-belief-lifecycle.svg" alt="Agent Memory Core — agents change their minds, memory should keep the evidence" width="100%" />
 
-<br />
+# Agent Memory Core
 
-**Belief revision · Evidence-bound recall · One canonical authority**
+### Agents change their minds. Memory should keep the evidence.
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-94dcc5?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-92a9bc?style=flat-square)](pyproject.toml)
-[![Status](https://img.shields.io/badge/status-research%20prototype-e6bd80?style=flat-square)](docs/USER-STORY-ACCEPTANCE.md)
-[![Tests](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
+**A local-first, model-agnostic memory runtime for evolving agent beliefs — with evidence-grounded revisions, Apache AGE graph retrieval, and durable verification.**
 
-[**Explore the interactive walkthrough**](docs/demo/index.html) · [**Architecture deep dive**](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](pyproject.toml)
+[![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
+[![Research prototype](https://img.shields.io/badge/status-research%20prototype-orange)](docs/USER-STORY-ACCEPTANCE.md)
+
+[**Get started**](#quickstart) · [**Explore the interactive Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
 
 </div>
 
 ---
 
-## The problem is not forgetting. It's believing the wrong thing.
+## Your agent remembered the correction. Why does it still recall the mistake?
 
-A vector store can retrieve yesterday's preference just as confidently as today's correction. An agent can remember *both* — and still act on the wrong one.
+An agent learns that a supplier is paid monthly. The contract changes to quarterly. A vector search can now retrieve **both statements** with equal confidence — including the one that should no longer drive an action.
 
-**Agent Memory Core is an experimental system of record for evolving agent beliefs.** It tracks what an agent was told, when the claim was valid, when the system learned it, what superseded it, and which evidence supports it. Retrieval must pass through canonical fact and time constraints; similarity alone never grants authority.
+The issue isn't storing more history. It's **knowing which belief is current, what evidence changed it, and what was known at a particular point in time**.
 
-**Change the belief. Keep the history.**
+**Agent Memory Core** experiments with a different primitive: a versioned, evidence-carrying belief. Language models *propose* changes; a deterministic memory layer checks identity, evidence, scope and current state before committing them. Text, vectors and graph edges help find candidates, but similarity alone never decides what is true.
 
-### The 20-second story
+> **Change the belief. Keep the history.**
 
-| At 10:00 | At 10:20 | Ask about 10:10 |
-| :--- | :--- | :--- |
-| “I prefer a quiet bedroom.” | “Actually, soft music is fine.” | “What did the agent believe then?” |
-| **Current:** quiet | **Current:** soft music; **past:** preserved | **Historical answer:** quiet |
+### One story, three questions
 
-This is an illustrative bitemporal scenario, not an assertion that the system automatically understands every natural-language correction. The canonical revision path is implemented; real multilingual model-quality evaluation remains an open gate.
+| Earlier | Later | What you should be able to ask |
+| --- | --- | --- |
+| “Supplier A settles monthly.” | “The contract now says quarterly.” | **Current:** What is the latest settlement rule? |
+| Source 1 supports the old claim | Source 2 supports the correction | **Why:** What evidence supports the new rule? |
+| The old claim was active yesterday | The new one is active today | **Then:** What did the agent know yesterday? |
 
-## What makes this different
+The story illustrates the intended semantics. The repository implements structured revision and an opt-in evidence-grounded extraction path; it has **not** established reliable natural-language understanding across every industry or model.
 
-| Mechanism | Why it matters | Where to verify |
-| :--- | :--- | :--- |
-| **Belief revision** | Corrections change current truth without rewriting historical knowledge | [Bitemporal design](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) |
-| **Recall with receipts** | Each fact carries provenance; retrieval must respect tenant, validity and source constraints | [Memory processing](docs/MEMORY-PROCESSING.md) |
-| **One authority, multiple views** | PostgreSQL commits canonical facts; FTS, pgvector and Apache AGE are derived retrieval views | [Architecture decision](docs/ADR-0004-lightweight-memory-platform.md) |
-| **Failure-aware writes** | Transactional outbox, retries and idempotency separate committed facts from recoverable projections | [Acceptance contract](docs/USER-STORY-ACCEPTANCE.md) |
-| **Small operational footprint by design** | Local object storage, optional model integration and Temporal; no required Redis/Kafka/Neo4j fleet | [Lightweight architecture](docs/ADR-0004-lightweight-memory-platform.md) |
-| **Bring your own agent** | Authenticated REST, Python SDK, OpenAPI and event subscriptions, independent of a single agent framework | [API reference](docs/API-REFERENCE.md) |
+## Why another memory project?
 
-## Architecture: one authority, clear boundaries
+| Most memory demos emphasize… | This project focuses on… |
+| --- | --- |
+| Save and search text | **Current canonical state + preserved historical versions** |
+| Top-k semantic matches | **Evidence-bound recall + tenant/time eligibility checks** |
+| Overwriting a stale fact | **Explicit UPSERT / RETRACT with expected claim ID and value** |
+| One provider or one application | **OpenAI-compatible / Ollama adapters and domain-neutral fact candidates** |
+| One retrieval index | **PostgreSQL FTS + pgvector + Apache AGE as complementary projections** |
+| Success-path examples | **Outbox, idempotency, Temporal verification activities and failure-focused tests** |
 
-The design makes one deliberate choice: **the database decides what is recorded; indexes only help find it**. Keeping this distinction visible is more important than decorating the diagram with technology logos.
+This is **not** a replacement for LangGraph, AgentScope, Temporal or the model you already use. It is an independent memory component an agent can call through a Python SDK or REST/OpenAPI.
 
-### 01 / Runtime topology — what actually runs where
+## Quickstart
 
-![Architecture with API, processing, canonical PostgreSQL, in-database FTS/pgvector/AGE and optional adapters](docs/assets/architecture.svg)
-
-The Console and third-party Agents are both clients of the FastAPI boundary. Processing, revision and provenance are logical application responsibilities; they do **not** require separate microservices. **PostgreSQL + pgvector + Apache AGE are one compatible database installation**, not three independent data servers.
-
-Outside that database: evidence bytes use a local SHA-256 object store by default; extraction/embedding providers, projection workers and Temporal workflows are optional adapters. A configured provider or feature flag does not prove that every channel is available on a particular deployment.
-
-### 02 / Data lifecycle — why the boundaries exist
-
-![Fact write, correction, asynchronous projections and canonical-filtered recall](docs/assets/memory-lifecycle.svg)
-
-1. **Propose:** an Agent supplies structured candidate facts or calls an explicitly configured model/rules extractor.
-2. **Decide:** the deterministic pipeline validates candidates, resolves trusted predicate cardinality, deduplicates or creates a versioned correction.
-3. **Commit:** PostgreSQL persists canonical claims, source links, record times and transactional outbox. **This is the persistence boundary.**
-4. **Project:** optional workers index FTS, vectors and graph edges; these views may lag or degrade independently.
-5. **Recall:** SQL/FTS/vector/graph generate candidates, then the hybrid path reapplies **tenant, effective-time, recorded-time and supersession filters** before returning eligible results. `source_id` is returned; `/v1/memories/{memory_id}/sources` exposes supporting provenance.
-
-**What this does not yet guarantee:** universal per-claim authorization, independent verification that sources are truthful, automatic correct natural-language contradiction handling or a completed production security audit. In RLS mode, the current server deliberately disables the AGE graph adapter rather than assuming graph queries are secure by default.
-
-For the design invariants, precise code mapping and unresolved risks, see the [architecture review](docs/ARCHITECTURE-REVIEW.md) and [architecture deep dive](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md).
-
-## Try it on your machine
-
-**Requirements:** Python 3.10+ and Docker Compose v2. The **unified integration branch** now contains the local runtime from PR #17. For a local-only database, API, Console and Swagger:
+**Prerequisites:** Python 3.10+, Docker Compose v2. These commands run a **local development stack**; they do not start a production SaaS deployment.
 
 ```bash
 git clone https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
 cd Agent-Memory-Core-v0.1.0
-git switch integrate/agent-memory-core-unified-20261113
 python scripts/launch_local.py up --profile lite
 ```
 
-Visit **[Memory Console](http://127.0.0.1:8765/dashboard/)**, **[offline API manual](http://127.0.0.1:8765/docs)** or **[Swagger UI](http://127.0.0.1:8765/docs/swagger)**. The launcher generates a random bearer key in ignored `.env.local`; do not share it. The existing PostgreSQL administrator credentials are strictly for local development.
-
-Switch to `--profile standard` for optional vector/graph query channels, or `--profile full` for an extra projection worker. No model server or Temporal cluster is automatically installed. The Lite profile still uses the combined PostgreSQL extension image — do not interpret it as an extension-free or production-hardened database.
+Explore [Console](http://127.0.0.1:8765/dashboard/), [Swagger](http://127.0.0.1:8765/docs/swagger), or [OpenAPI](http://127.0.0.1:8765/openapi.json). A random local API key is written to the ignored `.env.local`. **Never expose the development database/API directly to the Internet.**
 
 ```bash
-python scripts/benchmark_resources.py --requests 200 --concurrency 4
+# Base memory + API
+python -m pip install -e '.[api,postgres]'
+
+# Optional Temporal workflows; run a separate Temporal server when needed
+python -m pip install -e '.[temporal]'
 ```
 
-This records real Docker CPU/memory snapshots, local data volumes and read-only authenticated API latency. It **does not** prove peak RAM, write P95, inference latency or a general performance advantage. See [Lightweight Runtime](docs/LIGHTWEIGHT-RUNTIME.md) for precise measurement limitations.
-
-### Remember, then recall
+### A real SDK call, not pseudocode
 
 ```python
 from datetime import datetime, timezone
 from agent_memory_core.sdk import MemoryClient
 
 with MemoryClient("http://127.0.0.1:8765", "YOUR_LOCAL_API_KEY") as memory:
-    claim = memory.remember(
-        subject_id="bedroom",
-        predicate="night_preference",
-        value={"noise": "quiet"},
-        source_id="conversation:001",
+    memory.remember(
+        subject_id="supplier-a",
+        predicate="settlement_period",
+        value={"months": 1},
+        source_id="contract:version-1",
         valid_from=datetime.now(timezone.utc).isoformat(),
-        idempotency_key="conversation:001:night_preference",
+        idempotency_key="contract-v1:settlement",
     )
-    print(claim["id"])
-    print(memory.recall("bedroom"))
+    print(memory.recall("supplier-a"))
 ```
 
-Run the [real HTTP belief-revision example](examples/belief_revision.py) with `MEMORY_API_KEY` to write a claim, replace it and inspect provenance. Use the [real API reference](docs/API-REFERENCE.md) for historical reads, evidence and event subscriptions. The [public static walkthrough](docs/demo/index.html) uses synthetic examples; it never requests credentials and is not a hosted live API.
+For structured correction and provenance, run [`examples/belief_revision.py`](examples/belief_revision.py). For model-proposed corrections with **retrieved canonical evidence**, see [evidence-grounded revision](docs/EVIDENCE-GROUNDED-REVISION.md).
 
-## Latest main-line evaluation work
+**Important:** Lite currently still runs the combined PostgreSQL database image; it disables some retrieval channels but is **not** SQLite-only, extension-free or a measured low-RAM claim. [Exact profile limitations](docs/LIGHTWEIGHT-RUNTIME.md).
 
-The integration branch is based on the newer `main` commit `643b6de`, retaining the **weighted retrieval-channel fusion, OR-semantics FTS, backdated ingestion and LongMemEval-24 evaluation tooling**. The README design work does not overwrite those modules.
+## Architecture
 
-- [LongMemEval-24 dataset and run summary](data/eval/longmemeval_24.md)
-- [Cloud evaluation run artifacts](data/eval/longmemeval_cloud24_p012.json)
-- [Evaluation tooling](scripts/eval/run_longmemeval.py)
-- [Full latest-main engineering reference](docs/REFERENCE-README.md)
+![Memory runtime topology — API, deterministic processor, canonical PostgreSQL, pgvector, Apache AGE and optional adapters](docs/assets/architecture.svg)
 
-These are experiment artifacts, not evidence that all memory accuracy or production gates have passed.
+![Memory lifecycle — proposal, canonical revisions, derived indexes and canonical recheck](docs/assets/memory-lifecycle.svg)
 
-## From idea to evidence
+**What this does not yet guarantee:** universal tenant authorization in every retrieval channel, independently verified evidence truth, production-grade reliability, or uniformly correct LLM interpretation. See the [architecture review](docs/ARCHITECTURE-REVIEW.md).
+
+```text
+Any agent / SDK / REST
+         |
+   Model-adapter boundary  <---- OpenAI-compatible LLM / Ollama
+         |
+   Candidate extraction + evidence-grounded retrieval
+         |
+   Deterministic revision guard (claim ID, old value, tenant, time)
+         |
+   PostgreSQL — canonical claims, provenance, bitemporal history, outbox
+         |                         |                       |
+   FTS / pgvector             Apache AGE           Temporal adapter
+   lexical + semantic          graph projection    durable verification
+         \_________________________/
+                   |
+     Canonical-filtered hybrid recall
+                   |
+           Agent / context consumer
+```
+
+The core invariant: **one canonical authority, multiple retrieval views**. PostgreSQL owns committed claims and revision history. Vectors and graph edges can be rebuilt, and a high embedding score never overrides the currently eligible record.
+
+- **Write:** capture source → model/rule candidates → identity and revision checks → transactional canonical write → recoverable projections.
+- **Recall:** lexical/vector/graph candidates → fusion → canonical tenant/bitemporal filter → source-addressable results.
+- **Revision:** optional `ground_with_memory` retrieves up to eight current canonical claims and passes them to the configured model as evidence. RETRACT proposals must cite the matching claim ID and old value; PostgreSQL rechecks both.
+- **Execution:** outbox and workers handle repeatable downstream delivery; Temporal is available for durable, multi-step verification.
+
+[Architecture review](docs/ARCHITECTURE-REVIEW.md) · [Deep dive (中文)](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) · [Source → evidence → revision](docs/EVIDENCE-GROUNDED-REVISION.md)
+
+## First-class extensions: Apache AGE and Temporal
+
+**We deliberately keep both.** “Lightweight” here means **one coherent memory runtime and selectable deployment paths**, not abandoning temporal graph reasoning or durable execution.
+
+| Extension | What it adds | Current boundary |
+| --- | --- | --- |
+| **Apache AGE** | Entity/relationship projections and graph-neighborhood candidates; combined with SQL/FTS/vector retrieval | PostgreSQL extension with an optional graph channel; the current server **disables AGE under principal-bound RLS mode** pending security validation |
+| **Temporal** | Durable workflow history, Activities, retries and recoverable verification receipts | `VerifyMemoryWorkflow` plus PostgreSQL-backed Activities exists; **not** every ingestion or revision operation is a Temporal workflow |
+| **pgvector** | Semantic nearest-neighbor candidate retrieval | Requires an actual, compatible embedding provider and enabled vector retrieval |
+| **Outbox** | Projection and external delivery recovery | Core PostgreSQL event delivery; no Redis/Kafka requirement |
+
+**Extension architecture goals:** evidence-aware graph revisions, consistent source-to-edge lineage, durable reindex/reverification and fault-injection benchmarks. See [AGE + Temporal roadmap](docs/AGE-TEMPORAL-STRATEGY.md) for tested reality versus planned work.
+
+### Deployment profiles
+
+| Profile | Canonical store | Vector / AGE query flags | Projection worker | Temporal |
+| --- | --- | --- | --- | --- |
+| Lite | PostgreSQL | Off | No | Not started |
+| Standard | PostgreSQL | On (providers required) | No | Not started |
+| Full | PostgreSQL | On (providers required) | Yes | Separate optional service |
+
+Switch profiles with `python scripts/launch_local.py up --profile standard` or `--profile full`. Full **does not** automatically deploy Temporal. For the actual local setup and limitations see [the runtime guide](docs/LIGHTWEIGHT-RUNTIME.md).
+
+## Evidence, not inflated benchmarks
+
+The repo preserves [200 fixed Chinese extraction cases](data/eval/gold_home_zh.jsonl), [12 adversarial multi-turn stories](data/eval/zh_multiturn_frozen_v1.jsonl), and a [four-stage strict scorer](scripts/eval/score_zh_frozen.py).
+
+The latest [real 200-case rule-extractor replay](data/eval/ZH-200-RULE-REPLAY-20261116.md) measured **94.34% extraction F1** on its in-scope A/B/C examples — **not** memory revision F1, not real-model quality and not an end-to-end answer score. Out-of-vocabulary exact coverage was **0/30**. That weakness is one reason the model-agnostic, evidence-grounded path matters.
+
+**Still open:** genuine local-model cross-domain scoring, accurate compound retrieval on a frozen corpus, multi-operation all-or-nothing revision, hostile multi-tenant security assessment and measured Lite resource advantage.
 
 ```bash
 python -m pip install -e '.[dev,postgres,api]'
 pytest -q
-# With a running isolated PostgreSQL + pgvector + AGE stack:
+# With a disposable, real PostgreSQL / pgvector / AGE test stack:
 export MEMORY_TEST_DSN='postgresql://memory:local-dev-only@127.0.0.1:55432/memory'
 pytest -q -m integration
 ```
 
-| Already implemented / testable | **Not yet release-qualified** |
-| :--- | :--- |
-| Canonical claim writes, provenance and basic bitemporal revisions | Real-world Chinese extraction and retrieval quality on judged 200+ item corpora |
-| PostgreSQL + pgvector + AGE integration paths | Host-specific RAM/CPU/disk and measured end-to-end latency superiority |
-| Authenticated REST / SDK / console / Swagger | Public untrusted multi-customer SaaS deployment, full key lifecycle and security |
-| Durable events, bounded subscriptions and replay paths | Complete fault-injection, backup/restore and production reliability gates |
+See the [User Story acceptance matrix](docs/USER-STORY-ACCEPTANCE.md) for evidence and remaining release gates. CI green is not a substitute for model accuracy or production authorization.
 
-The repository is an **executable research prototype**. A passing unit or integration test does not prove model accuracy, deployment security or an SLA. See the [full acceptance matrix](docs/USER-STORY-ACCEPTANCE.md) and [capability audit](docs/CAPABILITY-ACCEPTANCE-AUDIT.md).
+## Help build the missing layer between RAG and reliable agents
 
-## Get involved
+The best contributions are **reproducible failures with evidence**:
 
-The best issues here are concrete failures of memory **correctness**, not new feature wish lists: an outdated claim that still gets recalled, an impossible historical interval, a replay that duplicates a fact, an incorrect tenant boundary, or a resource measurement others can reproduce. See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md) and the [branch consolidation audit](docs/BRANCH-CONSOLIDATION-20261113.md).\n\n## Explore the project\n
-| Start here | Deep dive | Build / verify |
-| :--- | :--- | :--- |
-| [Interactive Memory Atlas](docs/demo/index.html) | [Architecture deep dive · 中文](docs/ARCHITECTURE-DEEP-DIVE.zh-CN.md) | [Python SDK](docs/PYTHON-SDK.md) |
-| [中文快速导览](docs/START-HERE.zh-CN.md) | [Memory processing semantics](docs/MEMORY-PROCESSING.md) | [API reference](docs/API-REFERENCE.md) |
-| [What is actually implemented?](docs/CAPABILITY-ACCEPTANCE-AUDIT.md) | [Lightweight architecture ADR](docs/ADR-0004-lightweight-memory-platform.md) | [Release acceptance gates](docs/USER-STORY-ACCEPTANCE.md) |
-| [Public demo deployment](docs/PUBLIC-DEMO-DEPLOYMENT.md) | [Architecture review / correctness risks](docs/ARCHITECTURE-REVIEW.md) | [Branch consolidation audit](docs/BRANCH-CONSOLIDATION-20261113.md) |
+- A correction that leaves the wrong fact active; a stale or cross-tenant graph edge; an ambiguous model-generated retraction.
+- An AGE temporal-relationship or RLS safety test that fails, with a minimal dataset.
+- A Temporal crash/retry case that duplicates a receipt or loses progress.
+- A benchmark comparing real embedding providers or token/latency costs on a frozen dataset.
+- A small compatible agent-framework adapter, or a clear API/documentation improvement.
+
+We prioritize bugs and tests that make other developers safer before adding feature count. See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [community launch kit](docs/COMMUNITY-LAUNCH.md), and [engineering roadmap](docs/AGE-TEMPORAL-STRATEGY.md).
+
+### Project status
+
+**Apache-2.0 · Independent open-source research prototype · Python 3.10+**
+
+This project has real runnable code and PostgreSQL integration tests. It is **not yet** a validated zero-trust multi-tenant SaaS, a universal fact checker, or a guaranteed correct cross-industry LLM memory engine. Don't put production secrets or regulated data into its demo instance.
 
 ---
 
@@ -159,6 +196,6 @@ The best issues here are concrete failures of memory **correctness**, not new fe
 
 **Memory shouldn't just survive a session. It should survive being wrong.**
 
-Apache-2.0 · Open-source, local-first agent memory infrastructure
+[中文导览](docs/START-HERE.zh-CN.md) · [Interactive Atlas](docs/demo/index.html) · [API / Swagger guide](docs/SWAGGER_GUIDE.zh-CN.md) · [Report a reproducible issue](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues)
 
 </div>

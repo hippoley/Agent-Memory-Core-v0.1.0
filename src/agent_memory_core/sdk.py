@@ -105,13 +105,23 @@ class MemoryClient:
 
     def process(self, *, text: str, source_id: str,
                 candidates: list[dict] | None = None, confidence_threshold: float = 0.65,
-                context_turns: list[str] | None = None):
+                context_turns: list[str] | None = None,
+                ground_with_memory: bool = False):
+        """Process text; optionally ground model revisions in current tenant memory.
+
+        Grounding may send existing memory evidence to the configured LLM
+        provider. Enable only when its data-handling policy is appropriate.
+        """
+        if ground_with_memory and candidates is not None:
+            raise ValueError("ground_with_memory cannot be combined with candidates")
         body={"text":text,"source_id":source_id,
               "confidence_threshold":confidence_threshold}
         if candidates is not None:
             body["candidates"]=candidates
         if context_turns is not None:
             body["context_turns"]=context_turns
+        if ground_with_memory:
+            body["ground_with_memory"]=True
         return self._request("POST","/v1/memories/process",json=body)
 
     def search(self, *, query: str, limit: int = 10,

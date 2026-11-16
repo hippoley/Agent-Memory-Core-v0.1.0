@@ -1,62 +1,104 @@
 # Agent Memory Core · 中文导览
 
-> **Agents change their minds. Memory should know how.**  
-> Agent 的认知会改变；记忆基础设施应该知道如何处理这种改变。
+> **Agents change their minds. Memory should keep the evidence.**
+>
+> Agent 会改口；记忆不仅要跟上变化，还要留下证据。
 
-## 这不是另一套聊天记录或向量数据库
+**Agent Memory Core** 是一个面向任意行业 Agent 的开源、Local-first、模型无关、证据驱动的记忆运行时研究原型。
 
-一个能够长期行动的 Agent，往往同时面对三种互相冲突的东西：过去的观察、现在的纠正、多个不完全可信的来源。
+不是另一个聊天记录列表，也不是在向量数据库外面包一个 `remember()`。我们的核心问题是：**当 Agent 记住了旧事实，也接收了新纠正，谁来保证下一次行动依据的是有效、可追溯的版本？**
 
-如果系统只做 embedding 和 top-k 检索，它可能高分找回已经失效的事实。真正的问题不是“能否想起”，而是：**什么仍然成立？为什么成立？过去在某个时刻，我们又曾经相信什么？**
+## 20 秒理解一个真实问题
 
-Agent Memory Core 把这个问题收束成一种工程对象：**可修订、有证据、具有时间语义的结构化认知状态**。目前它是可执行的研究原型，而不是已经完成智能推理和多租户安全验收的商业 SaaS。
+某供应商原先按月结算，合同后来改成按季度结算。
 
-## 三个最容易记住的机制
+普通向量检索可能同时返回“月结”和“季结”；Agent 选择哪一个，取决于相似度、Prompt 和碰运气。我们要让系统能够区分：
 
-### 01 · Belief Revision — 改变当前认知，不改写历史
+- 当前应该生效的是哪个版本？
+- 旧结论来自什么证据？何时被替换？
+- 如果查询上个月，系统当时知道什么？
+- 另一个 Agent 是否可以在不复制整个聊天记录的前提下安全接续？
 
-一条偏好可以被后续声明取代，但历史事实及其来源仍可追溯。我们用 `valid_at` 表示现实有效时间，用 `known_at` 表示系统获知时间，两者解决不同问题。
+**核心原则：模型提出事实候选，Embedding 和 AGE 帮助找到相关证据，PostgreSQL 决定可用的当前状态；Temporal 负责需要持久执行的验证与恢复。**
 
-典型问题：用户上周说想开窗，今天说不想开。一个月后审计上周操作时，应该以**当时的知识状态**解释当时为什么作出判断，而不能拿今天的偏好伪装成上周已经知道的事实。
+## 为什么有 Apache AGE 和 Temporal？
 
-当前已有结构化写入、版本替换与基本双时间测试；自然语言否定、指代与复杂冲突裁决仍需真实模型和裁定语料测量。
+我们要做“轻量记忆框架”，但**绝不会因为轻量化而放弃图关系和可靠的长任务执行**。
 
-### 02 · Recall with Receipts — 找回记忆，也交出凭据
+| 组件 | 工程角色 | 是否所有请求必需 |
+| --- | --- | --- |
+| OpenAI-compatible LLM / 本地 Ollama | 跨行业事实抽取、指代与修订候选 | 可选，由调用者配置 |
+| Embedding + pgvector | 跨措辞语义候选发现 | 可选，需要真实模型 |
+| Apache AGE | 实体关系与图邻域候选，服务多跳召回 | 可选图通道；重要扩展能力 |
+| PostgreSQL | 权威事实、双时间版本、来源、事务及 Outbox | 当前所有部署档位必需 |
+| Temporal | 长周期核验、失败恢复、Activity/Workflow | 可选执行层；重要扩展能力 |
 
-检索向量、关键词、实体邻域，只是寻找可能相关的候选。查询的最后一步仍需回到 PostgreSQL 权威事实，检查租户、时间、来源和有效性。
+AGE 不是第二个事实权威，Temporal 也不是第二个记忆数据库。二者是**一等公民的扩展路径**，并非日常每条 `remember()` 都要经过的服务。
 
-它的价值不是让搜索结果看上去更像“正确答案”，而是把“我为什么回答这个”变成可以审查的工程问题。
+现状边界也要讲清：AGE 在特定 RLS 模式下主动禁用；仓库的 Temporal 已有验证工作流与 PostgreSQL 收据测试，却不是完整的批处理/人工审核引擎。见 [AGE + Temporal 发展路线](AGE-TEMPORAL-STRATEGY.md)。
 
-### 03 · One Authority, Multiple Views — 最小的认知基础设施
+## 先跑起来
 
-一套 PostgreSQL 保存事实、来源、历史与事件。全文索引、pgvector 和 Apache AGE 是派生视图，不是三套互相竞争的权威数据库。
+前提：Python 3.10+，Docker Compose v2。
 
-本地对象存储默认保存 SHA-256 寻址的证据，Temporal 只有在需要耐久编排时才接入。模型也可以放在独立 Provider 中。轻量是**架构决策**；低内存或高性能的定量优势还必须在同机工作负载上证明。
+```bash
+git clone https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+cd Agent-Memory-Core-v0.1.0
+python scripts/launch_local.py up --profile lite
+```
 
-## 五分钟认识源码
+- 控制台：<http://127.0.0.1:8765/dashboard/>
+- Swagger：<http://127.0.0.1:8765/docs/swagger>
+- OpenAPI：<http://127.0.0.1:8765/openapi.json>
 
-| 如果你关注…… | 先看这里 |
-|---|---|
-| 为什么存在这个项目 | [首页 README](../README.md) |
-| 实际可点击的记忆链路 | [Memory Atlas 演示](demo/index.html) |
-| 原子写入、双时间、图与向量的职责 | [架构原理](ARCHITECTURE-DEEP-DIVE.zh-CN.md) |
-| 数据如何加工、去重、纠正 | [Memory Processing](MEMORY-PROCESSING.md) |
-| 给自己的 Agent 接 API | [API Reference](API-REFERENCE.md)、[Python SDK](PYTHON-SDK.md) |
-| 什么功能已经做到，哪些只是目标 | [验收清单](USER-STORY-ACCEPTANCE.md) |
-| 最小进程与可选依赖的设计 | [Lightweight ADR](ADR-0004-lightweight-memory-platform.md) |
-| 最新一键启动与资源测量开发 | [PR #17](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/17) |
+命令会创建仅限本地的开发 API 与随机密钥。**不要把开发数据库和控制台直接暴露到公网。** 当前 Lite 依然使用 PostgreSQL 混合扩展镜像，不是 SQLite 单进程版；Standard/Full 可以启用向量、图查询开关，但不自动启动模型服务或 Temporal 集群。
 
-## 用三个问题判断这套系统是否值得用
+## 四个真正有价值的机制
 
-**Q：它能避免大模型幻觉吗？**  
-不能保证。它能对存储的事实施加来源、版本、时间和检索约束，降低“过时记忆被当成当前事实”等特定失误，但提取错误、错误证据或错误推理仍可能发生。
+**01 · Belief Revision — 保留历史，改变当前事实**
 
-**Q：它已经比 Mem0 快、便宜或准确吗？**  
-没有经过公平基准的证明。我们的主要设计差异是权威事实、双时间和证据校验边界；真实中文质量和资源成本必须通过可复现实验建立。
+旧事实不能简单被新的文本覆盖。模型的撤回建议必须引用具体旧记忆 ID 和预期旧值，数据库核对后才能执行。完整的 `RETRACT + UPSERT` 多操作原子性仍属于下一道验收关卡。
 
-**Q：为什么不是直接把所有数据放进向量数据库？**  
-因为相似度不是事实更新、版本管理、租户权限与历史查询的完整替代品。向量负责找候选，权威数据库负责判断哪些候选仍可被使用。
+**02 · Recall with Receipts — 不让相似度充当真理**
 
----
+SQL/FTS、Embedding/pgvector、AGE 可以共同发现候选，但最后必须回到权威 PostgreSQL 检查租户、时间和状态。来源 ID 能追溯依据，但不能证明原始来源一定真实。
 
-**最终技术主张：** 我们不是在保存更多关于世界的陈述，而是在为长期运行的 Agent 提供一套能够修订、追溯并检验其认知状态的基础设施。
+**03 · Bitemporal Memory — 同时回答“何时有效”和“何时得知”**
+
+使用 `valid_at` 与 `known_at` 区分现实世界生效时间和系统知识时间。未来的纠正不能篡改过去的认知历史。
+
+**04 · Durable Verification — 记忆校验可恢复**
+
+当证据核验、批量索引、人工批准或定期复验需要在多个进程与时间段中继续，就使用 Temporal。现有实现包括 `VerifyMemoryWorkflow` 和幂等核验收据；通用端到端工作流仍需扩展。
+
+## 现在已经做到哪里？
+
+| 已有代码和测试 | 仍需第三方验收 |
+| --- | --- |
+| 通用 OpenAI-compatible/Ollama 模型适配与记忆候选契约 | 不同真实模型的跨行业理解正确率 |
+| 结构化修订、双时间历史、来源和 Outbox | 完整多操作原子修订、生产级审计 |
+| PostgreSQL / pgvector / AGE 混合检索与集成测试 | AGE/RLS 安全一致性、真实多跳质量 |
+| Temporal 验证 Workflows 与 Activity 测试 | 批处理/审批/失败恢复的产品级流程 |
+| SDK、REST、Swagger、本地交互页 | 公网多租户生产部署验收 |
+
+原有 200 条中文规则测试的抽取 F1 94.34% **不能**被写成全链路记忆准确率；30 条词表外精确覆盖为零，说明规则路线不是最终的跨行业解决方案。
+
+## 从哪里进入项目？
+
+| 你想了解什么 | 入口 |
+| --- | --- |
+| 20 秒理解项目价值 | [README 首页](../README.md) |
+| 想直接看操作过程 | [交互式 Memory Atlas](demo/index.html) |
+| 了解全部真实边界 | [架构审计](ARCHITECTURE-REVIEW.md) |
+| 看证据驱动修订链路 | [Evidence-Grounded Revision](EVIDENCE-GROUNDED-REVISION.md) |
+| 看 AGE 与 Temporal 战略 | [专项路线与验收](AGE-TEMPORAL-STRATEGY.md) |
+| 看真实接口 | [API Reference](API-REFERENCE.md) |
+| 看哪些功能还没闭环 | [User Story 验收](USER-STORY-ACCEPTANCE.md) |
+
+## 我们希望社区贡献什么？
+
+不要求开发者写一篇宏大的架构提案。一个可以复现的错误就很有价值：旧事实误命中、跨租户图泄漏、Temporal 重试产生重复事件、模型撤回错误的旧记忆、相同数据集上的真实性能差异。
+
+**真正的定位：让任何 Agent 可以从对话走向长期行动，同时有能力解释、纠正和恢复自己的记忆。**
+
+Apache-2.0 · Research prototype · 欢迎以可复现 User Story、测试与真实 benchmark 参与建设。

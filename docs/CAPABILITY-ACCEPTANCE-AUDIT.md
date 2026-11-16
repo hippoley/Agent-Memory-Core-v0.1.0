@@ -199,4 +199,4 @@ tables or old SDK implementation.
   The 14-case smoke corpus is not the 200+ human-adjudicated release corpus.
 
 The branch-by-branch disposition is recorded in
-`docs/BRANCH-INTEGRATION-AUDIT.md`. Historical branches are retained.
+`docs/archive/BRANCH-INTEGRATION-AUDIT.md`. Historical branches are retained.

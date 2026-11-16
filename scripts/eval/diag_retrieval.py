@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import httpx
 import psycopg
 
 ROOT = Path(__file__).resolve().parents[2]
-DSN = "postgresql://memory:local-dev-only@127.0.0.1:55432/memory"
+# No implicit DB target: the evaluator forgets and reingests a tenant.
 
 
 def load_harness():
@@ -38,12 +39,19 @@ def load_harness():
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--report", required=True)
+    ap.add_argument("--dsn", default=os.getenv("MEMORY_TEST_DSN"))
+    ap.add_argument("--allow-reset", action="store_true",
+                    help="Explicitly permit resetting a disposable evaluation tenant")
     ap.add_argument("--base-url", default="http://127.0.0.1:8767")
     ap.add_argument("--key", required=True)
     ap.add_argument("--tenant", default="lme-eval")
     ap.add_argument("--picks", type=int, default=2)
     ap.add_argument("--types", default=None)
     args = ap.parse_args()
+    if not args.allow_reset:
+        ap.error("Destructive evaluator: pass --allow-reset only for a disposable tenant")
+    if not args.dsn:
+        ap.error("Supply --dsn or MEMORY_TEST_DSN; never guess the target database")
 
     harness = load_harness()
     report = json.loads(Path(args.report).read_text(encoding="utf-8"))
@@ -58,7 +66,7 @@ def main() -> int:
     picks = pool[:args.picks]
 
     api = harness.Api(args.base_url, args.key)
-    conn = psycopg.connect(DSN, autocommit=True)
+    conn = psycopg.connect(args.dsn, autocommit=True)
 
     def ask(sql, params):
         return conn.execute(sql, params).fetchall()
@@ -71,7 +79,7 @@ def main() -> int:
         print(f"GOLD : {row['gold']}")
         print(f"ANS  : {row['answer']}")
 
-        api.forget_tenant(DSN, args.tenant)
+        api.forget_tenant(args.dsn, args.tenant)
         stats = harness.ingest(api, item)
         print(f"ingest: turns={stats['turns']} claims={stats['created']} "
               f"dups={stats['duplicates']} rejected={stats['rejected']}")

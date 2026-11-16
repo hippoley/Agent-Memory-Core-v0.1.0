@@ -20,7 +20,7 @@ def test_readme_local_links_resolve():
 def test_hero_and_public_demo_are_local_and_credential_free():
     hero=(ROOT/"docs/assets/hero-belief-lifecycle.svg").read_text(encoding="utf-8")
     demo=(ROOT/"docs/demo/index.html").read_text(encoding="utf-8")
-    assert "<svg" in hero and "Memory should know how." in hero
+    assert "<svg" in hero and "Memory keeps" in hero
     assert "<script" in demo and "data-step" in demo
     assert "MEMORY_API_KEY" not in demo
     assert "YOUR_LOCAL_API_KEY" in README.read_text(encoding="utf-8")
@@ -46,3 +46,32 @@ def test_readme_mentions_both_diagrams_and_limitations():
     assert "docs/assets/memory-lifecycle.svg" in readme
     assert "not yet guarantee" in readme
     assert "docs/ARCHITECTURE-REVIEW.md" in readme
+
+def test_bsph_blue_svg_illustrations_follow_one_design_contract():
+    import xml.etree.ElementTree as ET
+
+    for path in ("docs/assets/hero-belief-lifecycle.svg",
+                 "docs/assets/architecture.svg",
+                 "docs/assets/memory-lifecycle.svg"):
+        source=(ROOT/path).read_text(encoding="utf-8")
+        root=ET.fromstring(source)
+        assert root.tag.endswith("svg")
+        assert root.attrib.get("viewBox")
+        assert root.find("{http://www.w3.org/2000/svg}title") is not None
+        assert root.find("{http://www.w3.org/2000/svg}desc") is not None
+        for color in ("#FBFCFF","#125CFF","#091C4D"):
+            assert color in source, (path,color)
+        assert "#101b2c" not in source and "#0e1b2d" not in source
+        assert "<script" not in source
+        assert "href=\"http" not in source
+    guide=(ROOT/"docs/DESIGN-SYSTEM.md").read_text(encoding="utf-8")
+    assert "Apache AGE" in guide and "Temporal" in guide
+    assert "must not" in guide and "real AGE edge" in guide
+
+
+def test_readme_observatory_previews_are_truthfully_labeled():
+    readme=README.read_text(encoding="utf-8")
+    assert "See memory, not just messages" in readme
+    assert "Draft PR #30" in readme
+    assert "not merged or publicly deployed" in readme
+    assert "docs/DESIGN-SYSTEM.md" in readme

@@ -16,6 +16,7 @@ PROFILES = {
     "lite": ("0", "0"),
     "standard": ("1", "1"),
     "full": ("1", "1"),
+    "extended": ("1", "1"),
 }
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -37,8 +38,10 @@ def save_env(settings: dict[str, str]) -> None:
 def compose_args(profile: str) -> list[str]:
     args = ["docker", "compose", "--env-file", str(ENV),
             "-f", "compose.yaml", "-f", "compose.app.yaml"]
-    if profile == "full":
+    if profile in ("full", "extended"):
         args.extend(["-f", "compose.worker.yaml"])
+    if profile == "extended":
+        args.extend(["-f", "compose.temporal.yaml"])
     return args
 
 def call(args: list[str], *, check: bool = True) -> int:
@@ -63,9 +66,16 @@ def main(argv: list[str] | None = None) -> int:
         settings["MEMORY_LOCAL_PROFILE"] = profile
         # Ensure full-profile worker is removed when switching away, without
         # deleting DB/objects volumes.
-        if old_profile == "full" and profile != "full":
-            call(compose_args("full") + ["stop", "memory-worker"])
-            call(compose_args("full") + ["rm", "-f", "memory-worker"])
+        if old_profile == "extended" and profile != "extended":
+            # Stop the optional local Temporal server and worker before
+            # removing the overlay; persistent dev data is not deleted.
+            call(compose_args("extended") + [
+                "stop", "memory-temporal-worker", "memory-temporal"])
+            call(compose_args("extended") + [
+                "rm", "-f", "memory-temporal-worker", "memory-temporal"])
+        if old_profile in ("full", "extended") and profile not in ("full", "extended"):
+            call(compose_args(old_profile) + ["stop", "memory-worker"])
+            call(compose_args(old_profile) + ["rm", "-f", "memory-worker"])
         save_env(settings)
         call(compose_args(profile) + ["up", "-d", "--build", "--wait", "--remove-orphans"])
         print("\nLocal services ready (loopback only):")
@@ -74,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
         print("  API manual:  http://127.0.0.1:8765/docs")
         print("  Key:         .env.local → MEMORY_API_KEY (keep private)")
         print(f"  Profile:     {profile} (not a benchmark qualification)")
+        if profile == "extended":
+            print("  Temporal UI: http://127.0.0.1:8233 (development only)")
+            print("  Temporal:    localhost:7233 (verification worker starts separately)")
         return 0
     if not ENV.exists():
         p.error(".env.local missing; run 'up' first")

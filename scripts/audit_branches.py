@@ -14,7 +14,7 @@ lacks, because the base moved on and reimplemented the same capability.
 "DRIFT" means a path was added on the branch relative to the merge base and does
 not exist at that path on the base. DRIFT is a question, not a verdict: the
 capability may live on the base under another name. Resolve it by reading code,
-then record the disposition in docs/BRANCH-INTEGRATION-AUDIT.md.
+then record the disposition in docs/archive/BRANCH-INTEGRATION-AUDIT.md.
 """
 from __future__ import annotations
 

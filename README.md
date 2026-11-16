@@ -1,19 +1,19 @@
 <div align="center">
 
-<img src="docs/assets/hero-belief-lifecycle.svg" alt="Agent Memory Core — agents change their minds, memory should keep the evidence" width="100%" />
+<img src="docs/assets/hero-belief-lifecycle.svg" alt="White and sapphire-blue editorial illustration: evidence-grounded belief revision with preserved memory history" width="100%" />
 
 # Agent Memory Core
 
-### Agents change their minds. Memory should keep the evidence.
+### Agents change their minds. Memory keeps the evidence.
 
-**A local-first, model-agnostic memory runtime for evolving agent beliefs — with evidence-grounded revisions, Apache AGE graph retrieval, and durable verification.**
+**A local-first, model-agnostic memory runtime that tracks what changed, why it changed, and what was known before — with Apache AGE graph retrieval and Temporal-backed verification.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](pyproject.toml)
 [![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
 [![Research prototype](https://img.shields.io/badge/status-research%20prototype-orange)](docs/USER-STORY-ACCEPTANCE.md)
 
-[**Memory Observatory**](#memory-observatory--see-how-an-agents-memory-evolves) · [**Get started**](#quickstart) · [**Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
+[**See the Observatory**](#see-memory-not-just-messages) · [**Get started**](#quickstart) · [**Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
 
 </div>
 
@@ -39,29 +39,22 @@ The issue isn't storing more history. It's **knowing which belief is current, wh
 
 The story illustrates the intended semantics. The repository implements structured revision and an opt-in evidence-grounded extraction path; it has **not** established reliable natural-language understanding across every industry or model.
 
-## Memory Observatory · see how an agent's memory evolves
+## See memory, not just messages
 
-**A new, read-only interface — Bsph Blue, computational-editorial visualization, and evidence inspection.** The Observatory is a visual lens onto canonical claims and events; it does not invent an additional memory database.
+The interface is part of the story: an agent's memory should be **inspectable**, not an invisible pile of retrieved vectors.
 
-| Experience | What is visible | Reality check |
+| Experience | Open | What is real |
 | --- | --- | --- |
-| **[Memory Observatory](src/agent_memory_core/resources/dashboard/observatory.html)** · preview | Filament-bundle domains, timeline slider, source inspector, local search, domain filters, snapshot export and five-step guided tour | Demo uses **clearly marked synthetic claims**; Live reads authorized same-origin API claims/events |
-| **[Classic Console](src/agent_memory_core/resources/dashboard/index.html)** | Existing memory ledger and controls | API-backed; authenticated actions |
-| **[Memory Atlas](docs/demo/index.html)** | Original architectural walkthrough | Browser-only synthetic data |
+| **Memory Observatory · Bsph Blue** | [View the UI source](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) | New white/blue visual system: claim-domain filaments, time filtering, evidence details, five-step synthetic Demo, authenticated read-only Live mode. **Draft PR #30, not merged or publicly deployed.** |
+| **Classic Memory Console** | [Launch locally](#quickstart) | Same-origin UI for existing memory APIs at `/dashboard/`; requires a key for data operations |
+| **Memory Atlas** | [Open static interactive tour](docs/demo/index.html) | Architecture-oriented walkthrough using clearly marked synthetic browser data |
 
-The filaments **do not represent Apache AGE graph edges, vector/embedding distances, causality, or confidence**. The slider filters recorded timestamps in the *loaded page*, not an authoritative PostgreSQL historical query. Local search does **not** invoke the hybrid retrieval engine. Live currently loads up to 500 claims and 100 events, not necessarily an entire tenant.
+The Observatory is **not** a fake knowledge graph: lines are visual groupings of classified loaded claims, **not** Apache AGE edges, vector similarities, or model confidence scores. Its local search and recorded-time slider do not replace canonical hybrid retrieval or SQL bitemporal queries.
 
-### Run it locally
 
-```bash
-python scripts/launch_local.py up --profile lite
-# After PR #30 is merged, open:
-# http://127.0.0.1:8765/dashboard/observatory.html
-```
+**Local preview in PR #30:** `python scripts/launch_local.py up --profile lite`, then open `http://127.0.0.1:8765/dashboard/observatory.html`. The Live API contract is covered by real PostgreSQL tests, not a full browser acceptance test.
 
-Demo mode requires no key. Live mode sends a tenant-scoped bearer token **only to your protected same-origin API**; never use production credentials on public GitHub Pages or in screenshots. The static showcase is a separate manually published workflow, **not a verified public URL**.
-
-**Release status:** the Observatory is in [Draft PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30), not merged to `main` as of this documentation update. Its frontend syntax and source-contract tests are not a substitute for a real-browser, accessibility and tenant-API acceptance pass. [Design semantics and release checklist](docs/memory-observatory-preview.md).
+**Visual direction:** a single white-paper / Bsph Blue language across the project hero, memory lifecycle, runtime architecture, and Observatory. Diagrams are native, editable SVGs — not screenshots. See [visual system and semantics](docs/DESIGN-SYSTEM.md). A real-browser-verified Observatory screenshot will be added only after that UI's visual acceptance.
 
 ## Why another memory project?
 
@@ -86,7 +79,7 @@ cd Agent-Memory-Core-v0.1.0
 python scripts/launch_local.py up --profile lite
 ```
 
-Explore [classic Console](http://127.0.0.1:8765/dashboard/), [Swagger](http://127.0.0.1:8765/docs/swagger), or [OpenAPI](http://127.0.0.1:8765/openapi.json). A random local API key is written to the ignored `.env.local`. **Never expose the development database/API directly to the Internet.**
+Explore [Console](http://127.0.0.1:8765/dashboard/), [Swagger](http://127.0.0.1:8765/docs/swagger), or [OpenAPI](http://127.0.0.1:8765/openapi.json). A random local API key is written to the ignored `.env.local`. **Never expose the development database/API directly to the Internet.**
 
 ```bash
 # Base memory + API
@@ -120,9 +113,9 @@ For structured correction and provenance, run [`examples/belief_revision.py`](ex
 
 ## Architecture
 
-![Memory runtime topology — API, deterministic processor, canonical PostgreSQL, pgvector, Apache AGE and optional adapters](docs/assets/architecture.svg)
+![Bsph Blue runtime topology: agents, deterministic processor, PostgreSQL authority, optional pgvector, Apache AGE and Temporal adapters](docs/assets/architecture.svg)
 
-![Memory lifecycle — proposal, canonical revisions, derived indexes and canonical recheck](docs/assets/memory-lifecycle.svg)
+![Bsph Blue lifecycle: source and candidate, canonical write, asynchronous projections, and verified recall](docs/assets/memory-lifecycle.svg)
 
 **What this does not yet guarantee:** universal tenant authorization in every retrieval channel, independently verified evidence truth, production-grade reliability, or uniformly correct LLM interpretation. See the [architecture review](docs/ARCHITECTURE-REVIEW.md).
 
@@ -157,7 +150,7 @@ The core invariant: **one canonical authority, multiple retrieval views**. Postg
 
 ## First-class extensions: Apache AGE and Temporal
 
-**We deliberately keep both.** “Lightweight” here means **one coherent memory runtime and selectable deployment paths**, not abandoning temporal graph reasoning or durable execution.
+**AGE and Temporal are deliberate parts of this architecture.** “Lightweight” means one coherent memory runtime and selectable deployment paths — not dropping graph reasoning or durable execution. Neither is required for every synchronous memory call.
 
 | Extension | What it adds | Current boundary |
 | --- | --- | --- |
@@ -174,9 +167,10 @@ The core invariant: **one canonical authority, multiple retrieval views**. Postg
 | --- | --- | --- | --- | --- |
 | Lite | PostgreSQL | Off | No | Not started |
 | Standard | PostgreSQL | On (providers required) | No | Not started |
-| Full | PostgreSQL | On (providers required) | Yes | Separate optional service |
+| Full | PostgreSQL | On (providers required) | Yes | Not started |
+| Extended | PostgreSQL | On (providers required) | Yes | Local dev server + verification worker (ephemeral history) |
 
-Switch profiles with `python scripts/launch_local.py up --profile standard` or `--profile full`. Full **does not** automatically deploy Temporal. For the actual local setup and limitations see [the runtime guide](docs/LIGHTWEIGHT-RUNTIME.md).
+Switch profiles with `python scripts/launch_local.py up --profile standard`, `--profile full`, or explicitly `--profile extended` to launch the local AGE + Temporal development stack and verification worker. Full **does not** automatically deploy Temporal. For the actual local setup and limitations see [the runtime guide](docs/LIGHTWEIGHT-RUNTIME.md).
 
 ## Evidence, not inflated benchmarks
 

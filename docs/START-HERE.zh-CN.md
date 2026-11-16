@@ -8,6 +8,19 @@
 
 不是另一个聊天记录列表，也不是在向量数据库外面包一个 `remember()`。我们的核心问题是：**当 Agent 记住了旧事实，也接收了新纠正，谁来保证下一次行动依据的是有效、可追溯的版本？**
 
+## 视觉系统：Bsph Blue
+
+现在 README 的三张 SVG 配图采用一致的视觉规范：**白底、宝蓝 `#125CFF`、深海军蓝字体、细网格、证据标注与版本线索**。这与实验性 **Memory Observatory** 的视觉方向一致；它不是独立的新记忆数据库。
+
+- [首屏记忆演化图](assets/hero-belief-lifecycle.svg)：用月结 → 季结这个**示意例子**表达“更新事实，但保留历史证据”。
+- [运行时架构图](assets/architecture.svg)：PostgreSQL 是唯一权威事实源，pgvector 和 AGE 是检索视图，Temporal 是可选持久执行适配器。
+- [记忆生命周期图](assets/memory-lifecycle.svg)：区分写入、派生投影与带规范事实复核的召回。
+- [Memory Observatory · Draft PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30)：新前端的蓝色动态细线束、时间筛选、来源检查、合成 Demo 与只读 Live 模式；**尚未合并，也未验证正式公网部署**。
+
+这里的蓝色装饰线并不表示 AGE 图边、Embedding 距离或真实验证结果；新版 Observatory 的 Live 读取有限页的认证事实，不代表整个租户数据。前端截图需要真实浏览器验收之后才能放入首页，不能用视觉效果代替测量。
+
+参见 [完整配色与视觉语义规范](DESIGN-SYSTEM.md)。
+
 ## 20 秒理解一个真实问题
 
 某供应商原先按月结算，合同后来改成按季度结算。

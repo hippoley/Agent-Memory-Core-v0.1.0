@@ -1,19 +1,19 @@
 <div align="center">
 
-<img src="docs/assets/hero-belief-lifecycle.svg" alt="Agent Memory Core — agents change their minds, memory should keep the evidence" width="100%" />
+<img src="docs/assets/hero-belief-lifecycle.svg" alt="White and sapphire-blue editorial illustration: evidence-grounded belief revision with preserved memory history" width="100%" />
 
 # Agent Memory Core
 
-### Agents change their minds. Memory should keep the evidence.
+### Agents change their minds. Memory keeps the evidence.
 
-**A local-first, model-agnostic memory runtime for evolving agent beliefs — with evidence-grounded revisions, Apache AGE graph retrieval, and durable verification.**
+**A local-first, model-agnostic memory runtime that tracks what changed, why it changed, and what was known before — with Apache AGE graph retrieval and Temporal-backed verification.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](pyproject.toml)
 [![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
 [![Research prototype](https://img.shields.io/badge/status-research%20prototype-orange)](docs/USER-STORY-ACCEPTANCE.md)
 
-[**Get started**](#quickstart) · [**Explore the interactive Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
+[**See the Observatory**](#see-memory-not-just-messages) · [**Get started**](#quickstart) · [**Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
 
 </div>
 
@@ -38,6 +38,20 @@ The issue isn't storing more history. It's **knowing which belief is current, wh
 | The old claim was active yesterday | The new one is active today | **Then:** What did the agent know yesterday? |
 
 The story illustrates the intended semantics. The repository implements structured revision and an opt-in evidence-grounded extraction path; it has **not** established reliable natural-language understanding across every industry or model.
+
+## See memory, not just messages
+
+The interface is part of the story: an agent's memory should be **inspectable**, not an invisible pile of retrieved vectors.
+
+| Experience | Open | What is real |
+| --- | --- | --- |
+| **Memory Observatory · Bsph Blue** | [Explore the draft UI source](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) | New white/blue visual system: claim-domain filaments, time filtering, evidence details, five-step synthetic Demo, authenticated read-only Live mode. **Draft PR #30, not merged or publicly deployed.** |
+| **Classic Memory Console** | [Launch locally](#quickstart) | Same-origin UI for existing memory APIs at `/dashboard/`; requires a key for data operations |
+| **Memory Atlas** | [Open static interactive tour](docs/demo/index.html) | Architecture-oriented walkthrough using clearly marked synthetic browser data |
+
+The Observatory is **not** a fake knowledge graph: lines are visual groupings of classified loaded claims, **not** Apache AGE edges, vector similarities, or model confidence scores. Its local search and recorded-time slider do not replace canonical hybrid retrieval or SQL bitemporal queries.
+
+**Visual direction:** a single white-paper / Bsph Blue language across the project hero, memory lifecycle, runtime architecture, and Observatory. Diagrams are native, editable SVGs — not screenshots. See [visual system and semantics](docs/DESIGN-SYSTEM.md). A real-browser-verified Observatory screenshot will be added only after that UI's visual acceptance.
 
 ## Why another memory project?
 
@@ -96,9 +110,9 @@ For structured correction and provenance, run [`examples/belief_revision.py`](ex
 
 ## Architecture
 
-![Memory runtime topology — API, deterministic processor, canonical PostgreSQL, pgvector, Apache AGE and optional adapters](docs/assets/architecture.svg)
+![Bsph Blue runtime topology: agents, deterministic processor, PostgreSQL authority, optional pgvector, Apache AGE and Temporal adapters](docs/assets/architecture.svg)
 
-![Memory lifecycle — proposal, canonical revisions, derived indexes and canonical recheck](docs/assets/memory-lifecycle.svg)
+![Bsph Blue lifecycle: source and candidate, canonical write, asynchronous projections, and verified recall](docs/assets/memory-lifecycle.svg)
 
 **What this does not yet guarantee:** universal tenant authorization in every retrieval channel, independently verified evidence truth, production-grade reliability, or uniformly correct LLM interpretation. See the [architecture review](docs/ARCHITECTURE-REVIEW.md).
 
@@ -133,7 +147,7 @@ The core invariant: **one canonical authority, multiple retrieval views**. Postg
 
 ## First-class extensions: Apache AGE and Temporal
 
-**We deliberately keep both.** “Lightweight” here means **one coherent memory runtime and selectable deployment paths**, not abandoning temporal graph reasoning or durable execution.
+**AGE and Temporal are deliberate parts of this architecture.** “Lightweight” means one coherent memory runtime and selectable deployment paths — not dropping graph reasoning or durable execution. Neither is required for every synchronous memory call.
 
 | Extension | What it adds | Current boundary |
 | --- | --- | --- |

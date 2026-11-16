@@ -1,15 +1,16 @@
 # Development-only Temporal extension, activated by --profile extended.
 # PostgreSQL remains canonical; Temporal has its own local dev history.
 # This is NOT a production Temporal deployment or authorization boundary.
+# The dev SQLite DB lives in the container writable layer; replacing the
+# container resets workflow history. Production must use durable Temporal storage.
+# A named volume under /var/lib/temporal failed in real CI due to UID permissions.
 services:
   memory-temporal:
     image: temporalio/temporal:1.10.1
-    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/var/lib/temporal/temporal.db"]
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/tmp/agent-memory-temporal-dev.db"]
     ports:
       - "127.0.0.1:7233:7233"
       - "127.0.0.1:8233:8233"
-    volumes:
-      - memory_temporal_dev_data:/var/lib/temporal
     restart: unless-stopped
 
   memory-temporal-worker:
@@ -30,6 +31,3 @@ services:
       MEMORY_TEMPORAL_NAMESPACE: default
       MEMORY_TEMPORAL_TASK_QUEUE: agent-memory-core
     restart: unless-stopped
-
-volumes:
-  memory_temporal_dev_data: {}

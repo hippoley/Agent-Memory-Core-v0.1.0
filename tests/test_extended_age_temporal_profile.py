@@ -27,7 +27,9 @@ def test_temporal_overlay_is_development_only_and_bound_to_localhost():
     assert "memory-db:" in config
     assert "service_healthy" in config
     assert "MEMORY_DSN:" in config
-    assert "memory_temporal_dev_data:" in config
+    assert "/tmp/agent-memory-temporal-dev.db" in config
+    assert "/var/lib/temporal" not in config
+    assert "memory_temporal_dev_data:" not in config
 
 
 def test_temporal_worker_installs_optional_adapter_not_app_http_runtime():

@@ -51,7 +51,7 @@ python scripts/launch_local.py down
 
 Standard enables vector/graph capability flags but does **not** provide an embedding model. Graph/index requests can degrade and must report capability; see `GET /v1/capabilities`.
 
-Full activates a projection worker, not a Temporal server. **Extended** explicitly adds the Temporal CLI **development** server (UI at `http://127.0.0.1:8233`) and `agent_memory_core.temporal_worker` using the packaged `VerifyMemoryWorkflow`. It also keeps PostgreSQL, AGE, pgvector and the projection worker. Temporal uses its own local development SQLite history; PostgreSQL remains canonical memory storage. This overlay is not a production Temporal deployment. The workflow worker may need a short startup retry while the dev server becomes available; inspect its logs before asserting it is ready. No model server or embedding service is installed by these profiles.
+Full activates a projection worker, not a Temporal server. **Extended** explicitly adds the Temporal CLI **development** server (UI at `http://127.0.0.1:8233`) and `agent_memory_core.temporal_worker` using the packaged `VerifyMemoryWorkflow`. It also keeps PostgreSQL, AGE, pgvector and the projection worker. Temporal uses a container-local writable SQLite file under `/tmp`; **workflow history is lost if the Temporal container is replaced or recreated**. PostgreSQL remains canonical memory storage and is not deleted by this. This overlay is not a production Temporal deployment and does **not** claim durable Temporal storage across recreation. The workflow worker may need a short startup retry while the dev server becomes available; inspect its logs before asserting it is ready. No model server or embedding service is installed by these profiles.
 
 ```bash
 python scripts/launch_local.py up --profile extended
@@ -61,7 +61,7 @@ docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml \
   -f compose.worker.yaml -f compose.temporal.yaml logs --tail=100 memory-temporal-worker
 ```
 
-To trigger an actual verification Workflow, use the authenticated API described in [API Reference](API-REFERENCE.md), referencing a real existing memory ID. **Starting the Temporal server does not itself verify every claim.**
+The existing verification workflow can be invoked using a Temporal client and the worker queue `agent-memory-core` (see `scripts/smoke_extended_temporal.py`). **Starting Temporal does not itself verify every claim; an authenticated REST trigger for that workflow is not yet provided.**
 
 ## Measure actual efficiency
 

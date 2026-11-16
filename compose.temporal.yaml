@@ -1,0 +1,35 @@
+# Development-only Temporal extension, activated by --profile extended.
+# PostgreSQL remains canonical; Temporal has its own local dev history.
+# This is NOT a production Temporal deployment or authorization boundary.
+services:
+  memory-temporal:
+    image: temporalio/temporal:1.10.1
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/var/lib/temporal/temporal.db"]
+    ports:
+      - "127.0.0.1:7233:7233"
+      - "127.0.0.1:8233:8233"
+    volumes:
+      - memory_temporal_dev_data:/var/lib/temporal
+    restart: unless-stopped
+
+  memory-temporal-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.temporal
+    command: ["python", "-m", "agent_memory_core.temporal_worker"]
+    depends_on:
+      memory-db:
+        condition: service_healthy
+      memory-api:
+        condition: service_healthy
+      memory-temporal:
+        condition: service_started
+    environment:
+      MEMORY_DSN: postgresql://memory:local-dev-only@memory-db:5432/memory
+      MEMORY_TEMPORAL_ADDRESS: memory-temporal:7233
+      MEMORY_TEMPORAL_NAMESPACE: default
+      MEMORY_TEMPORAL_TASK_QUEUE: agent-memory-core
+    restart: unless-stopped
+
+volumes:
+  memory_temporal_dev_data: {}

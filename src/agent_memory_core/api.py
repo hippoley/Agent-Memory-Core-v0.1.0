@@ -1039,6 +1039,15 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                         status_code=422,
                         detail="observed_at cannot be in the future")
             if item.atomic_batch:
+                if observed_at is not None:
+                    # The current explicit-withdrawal path records knowledge
+                    # time at mutation, not a historical snapshot. Reject
+                    # backdated compound operations until the full bitemporal
+                    # transaction semantics are implemented.
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Atomic batch does not support historical observed_at",
+                    )
                 # Materialize model output exactly once outside the transaction.
                 # Reject unbounded outputs before acquiring any SQL locks.
                 from itertools import islice

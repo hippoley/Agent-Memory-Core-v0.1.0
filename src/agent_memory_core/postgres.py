@@ -302,6 +302,14 @@ class PostgresMemory:
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 raise ValueError("Atomic batch contains a non-object candidate")
+            if (candidate.get("operation", "UPSERT") == "RETRACT"
+                    and candidate.get("expected_memory_id") is None
+                    and candidate.get("expected_value") is None):
+                # Unconditional batch withdrawals could erase a more recent
+                # claim silently. The normal non-atomic API keeps its old
+                # behavior; strict compound revisions require a guard.
+                raise ValueError(
+                    "Atomic RETRACT requires expected_memory_id or expected_value")
             subject, predicate = candidate.get("subject_id"), candidate.get("predicate")
             if (not isinstance(subject, str) or not subject.strip()
                     or not isinstance(predicate, str) or not predicate.strip()):

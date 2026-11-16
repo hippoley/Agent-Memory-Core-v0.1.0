@@ -110,7 +110,10 @@ The default `POST /v1/memories/process` behavior intentionally accepts valid
 candidates and reports rejected candidates separately. This is **not atomic
 across the request**. To atomically revise multiple independent facts, set
 `"atomic_batch": true` and provide 1–500 structured candidates with stable
-`subject_id` and `predicate` identifiers.
+`subject_id` and `predicate` identifiers. Strict `RETRACT` candidates must also
+provide `expected_memory_id` or `expected_value`; unconditional withdrawals
+are rejected rather than risking removal of a newer correction. Strict
+compound processing does not accept historical `observed_at` yet.
 
 Example: undo a previous preference and add two new assertions in one commit:
 

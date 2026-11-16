@@ -282,3 +282,61 @@ def test_post_sql_failure_after_claim_event_and_outbox_rolls_back_everything():
     assert response.status_code == 503, response.text
     assert snapshots(dsn, tenant) == before
     assert active(dsn, tenant, subject) == []
+
+
+def test_strict_retract_requires_an_explicit_expected_fact_guard():
+    client, headers, tenant, dsn = setup()
+    subject = "person-" + uuid4().hex
+    old_id = write(client, headers, subject, "alert_channel", {"channel": "push"})
+    before = snapshots(dsn, tenant)
+    response = apply(client, headers, [
+        {"operation": "RETRACT", "subject_id": subject,
+         "predicate": "alert_channel"},
+        {"operation": "UPSERT", "subject_id": subject,
+         "predicate": "display_brightness", "value": {"level": "dim"}},
+    ])
+    assert response.status_code == 422, response.text
+    assert snapshots(dsn, tenant) == before
+    assert active(dsn, tenant, subject) == [
+        ("alert_channel", {"channel": "push"}, old_id)
+    ]
+
+
+def test_strict_retract_never_consumes_foreign_tenant_evidence():
+    client, headers, tenant, dsn = setup()
+    from agent_memory_core.postgres import PostgresMemory
+    subject = "person-" + uuid4().hex
+    other_tenant = "foreign-" + uuid4().hex
+    foreign = PostgresMemory(dsn)
+    try:
+        foreign_id = foreign.remember(
+            tenant_id=other_tenant, subject_id=subject,
+            predicate="alert_channel", value={"channel": "push"},
+            source_id="foreign:claim",
+            valid_from=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        )
+    finally:
+        foreign.close()
+    before = snapshots(dsn, tenant)
+    response = apply(client, headers, [
+        {"operation": "UPSERT", "subject_id": subject,
+         "predicate": "display_brightness", "value": {"level": "dim"}},
+        {"operation": "RETRACT", "subject_id": subject,
+         "predicate": "alert_channel", "expected_memory_id": foreign_id},
+    ])
+    assert response.status_code == 409, response.text
+    assert snapshots(dsn, tenant) == before
+    assert active(dsn, tenant, subject) == []
+    assert active(dsn, other_tenant, subject)[0][2] == foreign_id
+
+
+def test_historical_atomic_batch_fails_closed_before_writing():
+    client, headers, tenant, dsn = setup()
+    before = snapshots(dsn, tenant)
+    response = client.post("/v1/memories/process", headers=headers, json={
+        "text": "backdated compound correction", "source_id": "s",
+        "observed_at": "2025-01-01T00:00:00Z", "atomic_batch": True,
+        "candidates": [{"subject_id": "s", "predicate": "p", "value": {"v": 1}}],
+    })
+    assert response.status_code == 422, response.text
+    assert snapshots(dsn, tenant) == before

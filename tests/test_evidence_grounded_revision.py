@@ -49,8 +49,11 @@ def test_new_domain_fact_can_be_created_without_existing_vocabulary():
 class DummyMemory:
     def __init__(self):self.forgotten=[]
     def predicate_cardinality(self,**kw):return "one"
-    def forget_many(self,**kw):
-        self.forgotten.append(kw)
+    def forget_many(self, *, tenant_id, subject_id=None, predicate=None,
+                    source_id=None, expected_value=None):
+        self.forgotten.append({"tenant_id":tenant_id,"subject_id":subject_id,
+                               "predicate":predicate,"source_id":source_id,
+                               "expected_value":expected_value})
         return ["mem-1"]
     def close(self):pass
 

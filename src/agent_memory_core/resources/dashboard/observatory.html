@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Memory Observatory — Agent Memory Core</title>
+<style>
+:root{--blue:#125cff;--deep:#091c4d;--ink:#182c4c;--muted:#8190aa;--line:#e5eaf4;--paper:#fbfcff;--font:Inter,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:var(--font);-webkit-font-smoothing:antialiased}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue);outline-offset:3px}button:disabled{opacity:.45;cursor:not-allowed}
+.shell{max-width:1820px;margin:auto;min-height:100vh;padding:30px 38px 28px}.top{display:grid;grid-template-columns:1fr auto;align-items:start;gap:20px;padding:12px 4px 25px;border-bottom:1px solid var(--line)}.wordmark{font-size:clamp(26px,2.4vw,40px);font-weight:300;letter-spacing:-.055em;line-height:1}.wordmark:before{content:"";display:inline-block;width:24px;height:1px;background:var(--blue);transform:rotate(-46deg);vertical-align:middle;margin-right:18px}.micro{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8e9bb3}.brand-meta{margin:14px 0 0 44px}.top-right{display:flex;align-items:center;gap:25px}.select{border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);padding:7px 20px 7px 5px;font-size:12px;max-width:190px}.connection{display:flex;align-items:center;gap:7px;font-size:11px;color:#6e7f99}.dot{height:6px;width:6px;border-radius:50%;background:#b9c4d5}.dot.live{background:var(--blue)}
+.main{display:grid;grid-template-columns:148px minmax(0,1fr) 260px;gap:24px;min-height:610px}.rail{padding-top:76px;border-right:1px solid var(--line)}.nav{width:100%;display:block;text-align:left;padding:14px 9px;border:0;background:transparent;color:#8591a7;font-size:12px}.nav.active{color:var(--deep);font-weight:600}.nav.active:before{content:"";display:inline-block;background:var(--blue);width:5px;height:5px;margin:0 10px 2px -9px}.stage{position:relative;min-width:0;min-height:610px}.stage-head{z-index:2;position:absolute;left:0;top:29px;pointer-events:none}.stage-head h1{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;margin:0}.stage-head p{max-width:280px;font-size:11px;line-height:1.6;color:var(--muted);margin:9px 0}.view{position:relative;height:635px;max-height:72vh;min-height:480px;border-bottom:1px solid var(--line);overflow:hidden;touch-action:pan-y}.view:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(22,69,145,.038) 1px,transparent 1px),linear-gradient(to bottom,rgba(22,69,145,.038) 1px,transparent 1px);background-size:86px 86px}.view canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}.legend{position:absolute;left:6px;bottom:22px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;pointer-events:none}.legend span{font-size:10px;color:#76849f}.legend i{display:inline-block;width:5px;height:5px;background:var(--blue);vertical-align:middle;margin-right:7px}.legend .muted-dot{background:#c4cedc}.controls{position:absolute;top:32px;right:8px;display:flex;gap:12px}.icon-btn{border:1px solid var(--line);background:#fff9;color:var(--deep);height:30px;min-width:34px;padding:0 10px}.icon-btn:hover{border-color:var(--blue)}.right{padding:36px 0 0 16px;border-left:1px solid var(--line)}.panel{border-bottom:1px solid var(--line);padding:0 0 25px;margin-bottom:27px}.panel h2{font-size:10px;text-transform:uppercase;letter-spacing:.15em;font-weight:600;margin:0 0 22px}.metric{font-size:47px;font-weight:300;letter-spacing:-.055em;line-height:1}.metric-sub{font-size:10px;margin-top:9px;color:var(--muted)}.small-stats{margin-top:22px}.kv{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0;gap:14px;font-size:11px}.kv span{color:var(--muted)}.kv strong{font-weight:500;font-variant-numeric:tabular-nums}.query{width:100%;border:0;border-bottom:1px solid var(--line);outline:0;background:transparent;padding:9px 0 12px;color:var(--ink);font-size:12px;line-height:1.5}.query:focus{border-bottom-color:var(--blue)}.primary{border:0;background:var(--blue);color:#fff;padding:9px 14px;font-size:11px;margin-top:13px}.primary:hover{background:#0042df}.result-note{margin-top:12px;font-size:11px;line-height:1.7;color:var(--muted)}.blue{color:var(--blue)}.lower{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;border-top:1px solid var(--line);padding-top:24px}.lower section:not(:last-child){border-right:1px solid var(--line);padding-right:20px}.lower h2{font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:500;margin:0 0 13px}.event{display:grid;grid-template-columns:55px 1fr;gap:13px;padding:8px 0;border-bottom:1px solid var(--line);font-size:11px}.event time{color:var(--muted)}.event span{overflow-wrap:anywhere}.mini{font-size:11px;color:var(--muted);line-height:1.75}.selection{font-size:12px;line-height:1.65;overflow-wrap:anywhere}.selection .field{font-size:10px;color:var(--muted);margin-top:13px}.selection strong{font-weight:550}.provenance{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;overflow-wrap:anywhere}.timeline{display:flex;gap:6px;height:64px;align-items:end;margin-top:17px}.timeline div{flex:1;background:linear-gradient(to top,#1459ff90,#1459ff09);min-height:2px}.timeline div.selected{background:var(--blue)}.range{width:100%;accent-color:var(--blue)}.time-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin:6px 0}.footer{display:flex;justify-content:space-between;padding-top:18px;color:#9ba8bb;font-size:10px;gap:16px}.auth{position:fixed;inset:0;background:rgba(238,244,255,.86);backdrop-filter:blur(10px);z-index:8;display:none;align-items:center;justify-content:center}.auth.open{display:flex}.auth-box{width:min(430px,calc(100vw - 32px));background:#fff;border:1px solid #dce4f2;padding:32px;box-shadow:0 22px 90px #20315e19}.auth-box h2{margin:0 0 10px;font-weight:400;font-size:23px}.auth-box p{font-size:12px;color:var(--muted);line-height:1.7}.auth-box input{width:100%;border:1px solid var(--line);padding:12px;margin-top:8px}.auth-actions{display:flex;gap:12px;margin-top:12px}.auth-actions button{flex:1}.secondary{background:#fff;border:1px solid var(--line);padding:9px 12px;font-size:11px;color:var(--ink)}.alert{color:#aa334b;font-size:11px;min-height:16px}.empty{font-size:12px;color:var(--muted)}.sr-only{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;overflow:hidden}
+@media(max-width:1150px){.main{grid-template-columns:112px minmax(0,1fr)}.right{grid-column:2;border-left:0;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;padding-top:24px}.view{height:570px}.panel{margin-bottom:0}.lower{grid-template-columns:1fr 1fr}.lower section:last-child{grid-column:1/-1}}
+@media(max-width:680px){.shell{padding:18px}.top{grid-template-columns:1fr}.top-right{justify-content:space-between;gap:10px}.main{display:block}.rail{display:flex;overflow:auto;border-right:0;border-bottom:1px solid var(--line);padding:7px 0}.nav{min-width:max-content;width:auto;padding:12px}.stage-head{top:17px}.view{height:500px;min-height:440px;max-height:none}.right{display:block;padding:25px 0}.lower{display:block}.lower section{border-right:0!important;border-bottom:1px solid var(--line);padding:15px 0!important}.footer{flex-direction:column}.wordmark{font-size:29px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+/* Observatory 0.2 — editorial refinement: no glass cards, no decorative gradients */
+:root{--blue:#1557f5;--deep:#101f3c;--ink:#162444;--muted:#7e8ba6;--line:#e9edf5;--paper:#fcfdff}
+html,body{background:#fcfdff}
+body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent 1px),linear-gradient(rgba(36,93,203,.013) 1px,transparent 1px);background-size:96px 96px}
+.shell{max-width:1920px;padding:32px clamp(22px,3.5vw,66px) 32px}
+.top{padding:21px 0 37px;border-color:#dce3ef;align-items:center}
+.wordmark{font-weight:300;letter-spacing:-.061em;font-size:clamp(28px,2.55vw,44px);color:#172342}
+.wordmark:before{width:20px;height:1.5px;background:#1557f5;margin-right:14px}
+.brand-meta{margin:17px 0 0 39px;font-size:9px;letter-spacing:.27em;color:#8b99b4}
+.top-right{align-self:center;gap:30px}
+.select{letter-spacing:.025em;font-size:11px}
+.connection{font-size:10px;letter-spacing:.06em}
+.main{grid-template-columns:157px minmax(0,1fr) 252px;gap:clamp(17px,2.2vw,41px);min-height:666px}
+.rail{padding-top:97px;border-color:#e9edf5}
+.nav{padding:16px 8px;font-size:11px;letter-spacing:.015em;transition:color .2s ease,transform .2s ease}
+.nav:hover{color:var(--blue);transform:translateX(3px)}
+.nav.active{font-weight:550;letter-spacing:.012em}
+.nav.active:before{width:5px;height:5px;margin-right:12px;box-shadow:0 0 0 3px rgba(21,87,245,.055)}
+.stage{min-height:650px}
+.stage-head{top:37px;left:12px}
+.stage-head h1{font-size:10px;color:#2b3f65;letter-spacing:.18em}
+.stage-head p{font-size:10px;line-height:1.85;max-width:262px;color:#8491a8}
+.view{height:min(69vw,690px);min-height:570px;max-height:75vh;border-bottom:0}
+.view:before{background-size:116px 116px;opacity:.6}
+.view:after{content:"";position:absolute;inset:46px 7px 46px 7px;border:1px solid rgba(79,115,186,.045);border-radius:50%;pointer-events:none;transform:scale(.95,.84)}
+.view canvas{z-index:1}
+.controls{z-index:3;right:12px;top:35px}
+.icon-btn{border-color:#e5eaf5;background:#ffffffb8;transition:background .2s,border-color .2s,transform .2s}
+.icon-btn:hover{background:#eef3ff;transform:translateY(-1px)}
+.legend{bottom:12px;left:12px;gap:19px;z-index:2}
+.legend span{font-size:9px;letter-spacing:.02em}
+.right{padding-top:48px;padding-left:23px;border-color:#e7ebf4}
+.panel{padding-bottom:30px;margin-bottom:31px}
+.panel h2{font-size:9px;letter-spacing:.19em;color:#8190aa;margin-bottom:25px}
+.metric{font-weight:300;font-size:62px;letter-spacing:-.068em;color:#102044}
+.metric-sub{font-size:10px;line-height:1.6}
+.kv{padding:11px 0;font-size:10px}
+.query{font-size:13px;padding-bottom:17px}
+.primary{background:var(--blue);font-size:10px;letter-spacing:.035em;padding:12px 17px}
+.primary:hover{background:#0b45d8}
+.result-note{font-size:10px;line-height:1.85}
+.lower{gap:32px;padding:33px 0 26px;margin-top:9px}
+.lower h2{font-size:9px;letter-spacing:.2em;color:#6d7c9a}
+.mini{font-size:10px;line-height:1.9}
+.event{font-size:10px;padding:11px 0}
+.selection{font-size:11px}
+.selection p{line-height:1.8}
+.timeline{height:73px;gap:4px}
+.timeline div{background:linear-gradient(to top,rgba(21,87,245,.44),rgba(21,87,245,.035))}
+.timeline div.selected{background:linear-gradient(to top,rgba(21,87,245,.8),rgba(21,87,245,.12))}
+.footer{border-top:1px solid #edf0f7;font-size:9px;letter-spacing:.06em;padding-top:20px}
+@media(max-width:1150px){.main{grid-template-columns:105px minmax(0,1fr)}.stage{min-height:500px}.view{height:580px;min-height:480px;max-height:none}.right{padding-top:25px}}
+@media(max-width:680px){.shell{padding:16px}.top{padding:9px 0 22px}.brand-meta{margin-left:36px;font-size:8px}.main{display:block}.rail{padding:6px 0}.nav{padding:12px}.stage-head{top:17px}.view{height:520px;min-height:450px}.view:after{inset:65px 8px 75px}.right{padding:21px 0}.metric{font-size:46px}.lower{padding-top:20px}.legend{gap:9px}.legend span{font-size:8px}}
+
+
+/* Guided investor demonstration, always labeled as synthetic */
+.tour-launch{border:1px solid #1557f5;background:#1557f5;color:#fff;font-size:10px;letter-spacing:.08em;padding:10px 14px;cursor:pointer}
+.tour-launch:hover{background:#003dd0}
+.tour-overlay{position:fixed;inset:0;z-index:9;background:rgba(12,29,71,.12);display:none;align-items:flex-end;justify-content:center;padding:28px;pointer-events:none}
+.tour-overlay.open{display:flex}
+.tour-card{width:min(600px,100%);background:rgba(255,255,255,.98);border:1px solid #dbe3f1;box-shadow:0 22px 90px #162d5c29;padding:25px 28px 22px;pointer-events:auto}
+.tour-kicker{color:#1557f5;font-size:9px;letter-spacing:.22em;text-transform:uppercase;margin-bottom:9px}
+.tour-heading{font-size:25px;font-weight:300;letter-spacing:-.045em;margin:0 0 9px}
+.tour-description{color:#677997;font-size:12px;line-height:1.8;min-height:44px}
+.tour-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px}
+.tour-counter{font-family:ui-monospace,monospace;font-size:10px;color:#8798b3}
+.tour-buttons{display:flex;gap:9px;align-items:center}
+.tour-buttons button{padding:10px 14px;font-size:10px;cursor:pointer}
+.tour-close{border:1px solid #e6ebf4;background:white;color:#506282}
+.tour-next{border:1px solid #1557f5;background:#1557f5;color:white}
+@media(max-width:680px){.tour-overlay{padding:10px}.tour-card{padding:20px}.tour-heading{font-size:22px}.top-right{flex-wrap:wrap}}
+
+ .claim-picker{display:block;width:100%;margin:8px 0 15px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:11px;padding:9px}
+.domain-readout{display:none}
+@media(max-width:680px){.domain-readout{display:block;font-size:11px;line-height:1.8;color:#607392;padding:9px 3px 13px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="top"><div><div class="wordmark">Agent Memory Observatory</div><div class="micro brand-meta">AGENT MEMORY CORE <span class="blue">/</span> COMPUTATIONAL INTERFACE 001</div></div><div class="top-right"><select id="scope" class="select" aria-label="记忆视图范围"><option value="all">All memory domains</option></select><div class="connection"><i id="statusDot" class="dot"></i><span id="statusText">Demo data</span></div><button id="tourLaunch" class="tour-launch" type="button">LIVE DEMO →</button><button id="connectBtn" class="icon-btn" type="button" title="连接真实 API">↗</button></div></header>
+<div class="main">
+<nav class="rail" aria-label="导航"><button class="nav active" data-view="topology">Memory Topology</button><button class="nav" data-view="trace">Retrieval Trace</button><button class="nav" data-view="temporal">Temporal Evolution</button><button class="nav" data-view="conflicts">Conflict & Revision</button><button class="nav" data-view="evaluation">Evaluation</button><a class="nav" href="/dashboard/">Classic Console ↗</a></nav>
+<main class="stage">
+<div class="stage-head"><h1 id="sectionTitle">01 / Memory topology</h1><p id="sectionDesc">A living structure assembled from facts, provenance and temporal events — not a decorative graph.</p></div>
+<div class="view" id="view" role="img" aria-label="交互式记忆曲线拓扑；点击区域查看对应记忆">
+<canvas id="art"></canvas><div class="controls"><button class="icon-btn" id="reset" title="重置视图" aria-label="重置">↺</button><button class="icon-btn" id="pause" title="暂停动画" aria-label="暂停动画">Ⅱ</button></div><div class="legend"><span><i></i>Selected / trace</span><span><i class="muted-dot"></i>Memory structure</span><span id="canvasNote">5 semantic domains · deterministic layout</span></div>
+</div><div id="domainReadout" class="domain-readout" aria-label="记忆领域与数量"></div>
+</main>
+<aside class="right">
+<section class="panel"><h2>Memory population <span id="pageMark" class="blue">/ DEMO</span></h2><div id="total" class="metric">—</div><div class="metric-sub" id="totalNote">Canonical claims in selected snapshot</div><div class="small-stats"><div class="kv"><span>Semantic domains</span><strong id="domains">—</strong></div><div class="kv"><span>Active claims</span><strong id="active">—</strong></div><div class="kv"><span>Superseded claims</span><strong id="old">—</strong></div><div class="kv"><span>Recorded events</span><strong id="eventsCount">—</strong></div></div></section>
+<section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="submit">Find related memories →</button></form><div id="searchNote" class="result-note">Search currently loaded claims. Highlighting is local; it is not a server-side hybrid retrieval score.</div></section>
+<section class="panel"><h2>Focus / Evidence</h2><label class="micro" for="claimPicker">SELECT VISIBLE MEMORY / KEYBOARD</label><select id="claimPicker" class="claim-picker" aria-label="选择记忆以查看证据"><option value="">Choose a visible claim</option></select><div class="selection" id="detail" aria-live="polite">Select a topology strand to inspect its supporting claims.</div></section>
+</aside></div>
+<div class="lower"><section><h2>Memory evolution / Time</h2><div class="mini">Snapshot evolution by recorded history. Drag the cursor to inspect previous states.</div><div class="timeline" id="histogram" aria-hidden="true"></div><input class="range" id="time" type="range" min="0" max="100" value="100" aria-label="历史快照位置"><div class="time-labels"><span id="startTime">Earlier</span><span id="currentTime">Latest</span></div></section><section><h2>Recent events / Provenance</h2><div id="eventList" class="mini">No events loaded.</div></section><section><h2>Data mapping / Transparency</h2><div class="mini">Each filament bundle = a stable semantic domain; strand count is a capped monotonic function of the number of claims in that domain; blue highlight = selected claim or locally matched evidence. Layout is deterministic per domain and record identity. Spatial distance and curve curvature are <strong>not</strong> similarity scores or causal relationships.</div><p class="mini">The API currently exposes claim browse and event replay. This first edition does not invent AGE topology edges, embeddings or model-quality metrics.</p><button id="export" class="secondary">Export current snapshot JSON ↓</button></section></div>
+<footer class="footer"><span>AGENT MEMORY CORE / OBSERVATORY / RESEARCH PREVIEW</span><span>Original data-driven visualization · Bsph Blue #125CFF · Demo never masquerades as production</span></footer>
+</div>
+<div class="tour-overlay" id="tour" role="dialog" aria-modal="true" aria-labelledby="tourHeading" aria-hidden="true"><div class="tour-card"><div class="tour-kicker">GUIDED DEMO / SYNTHETIC DATA</div><h2 class="tour-heading" id="tourHeading"></h2><div class="tour-description" id="tourDescription"></div><div class="tour-actions"><span class="tour-counter" id="tourCounter"></span><div class="tour-buttons"><button class="tour-close" id="tourClose" type="button">Exit</button><button class="tour-next" id="tourNext" type="button">Continue →</button></div></div></div></div>
+<div class="auth" id="auth" role="dialog" aria-modal="true" aria-labelledby="authTitle" aria-hidden="true"><div class="auth-box"><h2 id="authTitle">Connect Memory Runtime</h2><p>Read-only connection to the same-origin FastAPI service. Enter a tenant-scoped bearer key; credentials are held only in this tab's memory and never included in URLs.</p><label class="micro" for="key">BEARER KEY</label><input id="key" type="password" autocomplete="off" placeholder="Paste API key"><div class="alert" id="authError"></div><div class="auth-actions"><button class="secondary" id="demoBtn">Use demo</button><button class="primary" id="liveBtn">Connect live →</button></div></div></div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const LABELS=["User preferences","Knowledge & facts","Session & events","Devices & environment","Execution & policy"];
+const demo=[
+{id:"d-01",subject_id:"user",predicate:"local_inference_preference",value:{text:"家庭 Agent 应优先使用本地推理模型"},source_id:"conversation:21",recorded_at:"2026-11-01T09:30:00Z"},
+{id:"d-02",subject_id:"home-agent",predicate:"capability",value:{text:"可编排多窗控制指令与状态回读"},source_id:"architecture:02",recorded_at:"2026-11-04T10:00:00Z"},
+{id:"d-03",subject_id:"window-01",predicate:"angle_steps",value:{degrees:[0,17.5,35,52.5,70]},source_id:"thing-model:01",recorded_at:"2026-11-06T08:00:00Z"},
+{id:"d-04",subject_id:"home",predicate:"air_quality_metrics",value:{metrics:["CO2","TVOC","PM2.5","HCHO","temperature","humidity"]},source_id:"model:air",recorded_at:"2026-11-07T08:00:00Z"},
+{id:"d-05",subject_id:"home-agent",predicate:"execution_policy",value:{text:"执行设备命令前验证租户权限和保护条件"},source_id:"policy:03",recorded_at:"2026-11-08T09:00:00Z"},
+{id:"d-06",subject_id:"session:alpha",predicate:"user_correction",value:{text:"将本地优先修正为家庭场景必须本地"},source_id:"conversation:23",recorded_at:"2026-11-09T10:00:00Z"},
+{id:"d-07",subject_id:"research",predicate:"semantic_memory",value:{text:"记忆应具有可追溯来源与冲突管理"},source_id:"document:core",recorded_at:"2026-11-10T11:00:00Z"},
+{id:"d-08",subject_id:"window-02",predicate:"device_state",value:{open_angle:35},source_id:"device:report",recorded_at:"2026-11-11T12:00:00Z"},
+{id:"d-09",subject_id:"user",predicate:"language_preference",value:{language:"zh-CN"},source_id:"conversation:25",recorded_at:"2026-11-13T10:00:00Z"},
+{id:"d-10",subject_id:"agent-run",predicate:"execution_trace",value:{text:"策略请求完成并读取设备最终状态"},source_id:"execution:run-2",recorded_at:"2026-11-15T15:00:00Z"}];
+let state={mode:"demo",key:"",items:demo,events:[],scope:"all",selection:null,view:"topology",running:true,phase:0,scale:1,position:100,query:"",lastError:""};
+function category(x){let s=[x.subject_id,x.predicate,x.source_id].join(" ").toLowerCase();if(/user|preference|language|偏好/.test(s))return 0;if(/session|conversation|event|correction/.test(s))return 2;if(/device|window|air|temperature|humidity/.test(s))return 3;if(/policy|execution|workflow|run|protect/.test(s))return 4;return 1}
+function stamp(x){return Date.parse(x.recorded_at||x.created_at||x.system_from||x.valid_from||"")||0}
+function valueText(x){try{return typeof x.value==="string"?x.value:JSON.stringify(x.value??"")}catch{return ""}}
+function html(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function visible(){let a=state.items.slice().sort((x,y)=>stamp(x)-stamp(y));if(!a.length)return [];let dates=a.map(stamp).filter(Boolean);if(!dates.length)return a;const min=Math.min(...dates),max=Math.max(...dates);const cut=min+(max-min)*state.position/100;return a.filter(x=>!stamp(x)||stamp(x)<=cut)}
+function subset(){return visible().filter(x=>state.scope==="all"||String(category(x))===state.scope)}
+function activeCount(a){return a.filter(x=>!x.superseded_at&&!x.forgotten_at).length}
+function render(){const a=subset(),all=visible(),groups=LABELS.map((name,i)=>({name,i,items:a.filter(x=>category(x)===i)}));$("total").textContent=a.length.toLocaleString();$("active").textContent=activeCount(a).toLocaleString();$("old").textContent=(a.length-activeCount(a)).toLocaleString();$("domains").textContent=groups.filter(x=>x.items.length).length;$("eventsCount").textContent=state.events.length.toLocaleString();$("pageMark").textContent=state.mode==="live"?"/ LIVE":"/ DEMO";$("statusText").textContent=state.mode==="live"?"Connected / live API":"Demo / synthetic records";$("statusDot").className="dot"+(state.mode==="live"?" live":"");$("totalNote").textContent=state.mode==="live"?"Loaded claim page — not lifetime totals":"10 synthetic example claims, not live metrics";$("canvasNote").textContent=groups.filter(x=>x.items.length).length+" populated domains · "+a.length+" visible claims";$("domainReadout").textContent=groups.filter(x=>x.items.length).map(x=>x.name+" ("+x.items.length+")").join(" · ");
+let dates=all.map(stamp).filter(Boolean);$("startTime").textContent=dates.length?new Date(Math.min(...dates)).toLocaleDateString():"Earlier";$("currentTime").textContent=state.position===100?"Latest":state.position+"% of loaded history";const hist=$("histogram");hist.replaceChildren();for(let i=0;i<24;i++){let bar=document.createElement("div");bar.style.height=(5+Math.max(0,all.filter(x=>{let t=stamp(x);return dates.length&&t>=Math.min(...dates)+(Math.max(...dates)-Math.min(...dates))*i/24&&t<Math.min(...dates)+(Math.max(...dates)-Math.min(...dates))*(i+1)/24}).length)*11)+"px";bar.className=i/24<=state.position/100?"selected":"";hist.append(bar)}
+let ev=state.events.slice(0,4);$("eventList").innerHTML=ev.length?ev.map(e=>'<div class="event"><time>'+html(String(e.recorded_at||"").slice(11,16)||"—")+'</time><span>'+html(e.event_type||"memory event")+'</span></div>').join(""):'<div class="mini">'+(state.mode==="demo"?"No real events in demo mode.":"No events in loaded page.")+'</div>';
+if(state.selection&&!a.some(x=>String(x.id||x.memory_id)===state.selection))state.selection=null;
+const picker=$("claimPicker");picker.replaceChildren();picker.add(new Option("Choose a visible claim",""));
+a.forEach(x=>{const id=String(x.id||x.memory_id||"");if(id)picker.add(new Option(String(x.subject_id||"")+" / "+String(x.predicate||"")+" ["+id.slice(0,8)+"]",id))});
+picker.value=state.selection||"";
+let selected=state.selection?a.find(x=>String(x.id||x.memory_id)===state.selection):null;
+$("detail").innerHTML=selected?'<div class="micro blue">'+html(LABELS[category(selected)])+'</div><p><strong>'+html(selected.subject_id)+" / "+html(selected.predicate)+'</strong></p><p>'+html(valueText(selected))+'</p><div class="field">MEMORY ID</div><div class="provenance">'+html(selected.id||selected.memory_id)+'</div><div class="field">PROVENANCE / SOURCE</div><div class="provenance">'+html(selected.source_id||"Not provided")+'</div><div class="field">RECORDED AT</div><div class="provenance">'+html(selected.recorded_at||selected.created_at||"Not provided")+'</div>':'Select a topology strand to inspect its supporting claims.';
+if(state.query){let n=a.filter(x=>[x.subject_id,x.predicate,x.source_id,valueText(x)].join(" ").toLowerCase().includes(state.query.toLowerCase())).length;$("searchNote").textContent=n+" local matching claims in current snapshot. No server-side retrieval or scoring performed."}else{$("searchNote").textContent="Search currently loaded claims. Highlighting is local; it is not a server-side hybrid retrieval score."}
+return groups}
+function options(){const select=$("scope");let keep=select.value;select.replaceChildren();let all=new Option("All memory domains","all");select.add(all);LABELS.forEach((n,i)=>select.add(new Option(n,String(i))));select.value=keep||"all"}
+const canvas=$("art"),ctx=canvas.getContext("2d");let w=0,h=0,dpr=1,positions=[];
+function resize(){const rect=canvas.getBoundingClientRect();dpr=Math.min(devicePixelRatio||1,2);w=rect.width;h=rect.height;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+new ResizeObserver(resize).observe(canvas);
+function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0)/4294967295}
+function pathFor(k,u,phase,rad){let a=u*Math.PI*2+k*.98+phase*.015;let rr=rad*(.65+.21*Math.sin(3*a+k*.8)+.055*Math.sin(7*a));let x=Math.cos(a)*rr*1.28+Math.cos(2*a+k)*rad*.19;let y=Math.sin(a)*rr*.65+Math.sin(3*a+k*.7)*rad*.20;let tilt=k*.36-.65;return {x:x*Math.cos(tilt)-y*Math.sin(tilt),y:x*Math.sin(tilt)+y*Math.cos(tilt)}}
+
+// Looped volumetric ribbon sculpture. All populated domains are individually
+// traceable by stable category index, with bounded line counts from real claim count.
+// The geometry is a deterministic editorial encoding, never a graph similarity plot.
+function draw(){
+  if(!w||!h)return;
+  ctx.clearRect(0,0,w,h);
+  const groups=LABELS.map((name,i)=>({name,i,items:subset().filter(x=>category(x)===i)})).filter(x=>x.items.length);
+  positions=[];
+  const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const motion=state.running&&!reduced;
+  if(motion)state.phase+=.16;
+  const t=state.phase*.0015;
+  const cx=w*(w<660?.51:.515),cy=h*.535,rad=Math.min(w*.38,h*.37)*state.scale;
+  const pi=Math.PI, TAU=pi*2;
+  // Fine perimeter rings evoke a laboratory instrument, not a dashboard decoration.
+  ctx.save();ctx.translate(cx,cy);
+  ctx.lineWidth=.6;ctx.strokeStyle="rgba(54,99,179,.075)";
+  for(const scale of [.91,1.19,1.32]){
+    ctx.beginPath();ctx.ellipse(0,0,rad*1.42*scale,rad*.88*scale,-.18,0,TAU);ctx.stroke();
+  }
+  for(let j=0;j<70;j++){
+    const a=j*TAU/70;
+    const x=Math.cos(a)*rad*1.83,y=Math.sin(a)*rad*1.10;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x*1.011,y*1.011);
+    ctx.strokeStyle=j%5===0?"rgba(21,87,245,.22)":"rgba(21,87,245,.07)";ctx.stroke();
+  }
+  if(!groups.length){
+    ctx.fillStyle="#8494b1";ctx.font="12px Arial";ctx.textAlign="center";
+    ctx.fillText("No claims in this snapshot",0,0);ctx.restore();return;
+  }
+  groups.forEach((g,gi)=>{
+    const n=g.items.length;
+    const strands=Math.min(86,Math.max(24,Math.round(Math.sqrt(n)*22)));
+    const chosen=state.selection&&g.items.some(x=>String(x.id||x.memory_id)===state.selection);
+    const matched=state.query&&g.items.some(x=>
+      [x.subject_id,x.predicate,x.source_id,valueText(x)].join(" ").toLowerCase().includes(state.query.toLowerCase()));
+    const emphasized=chosen||matched;
+    // Domain geometry uses only category ID and claim count. These are visual
+    // orientation coordinates, not embeddings or fabricated AGE edges.
+    let domainAngle=g.i*TAU/5-.57;
+    let anchor=null;
+    const twists=2.2+g.i*.18,phase=t*.24;
+    for(let j=0;j<strands;j++){
+      const q=(j/(strands-1)-.5)*2;
+      const shift=(q*q-.25)*.10;
+      const alpha=emphasized?.19:.052;
+      ctx.beginPath();
+      const steps=156;
+      for(let s=0;s<=steps;s++){
+        const u=s/steps,ang=TAU*u;
+        const ring=.89+.13*Math.sin(3*ang+g.i*1.3);
+        const radial=rad*(ring+q*.30*Math.sin(ang*twists+g.i)+shift);
+        const helix=(q*rad*.50)*Math.sin(2*ang+g.i*.91);
+        const x=Math.cos(ang+domainAngle*.20)*radial*1.44 + helix*.38;
+        const y=Math.sin(ang+domainAngle*.20)*radial*.66 +
+          q*rad*.42*Math.cos(ang*1.5+domainAngle) +
+          rad*.11*Math.sin(ang*2+g.i*.6);
+        // An editorial projection of a continuous ribbon with a small
+        // deterministic phase rotation, never data-driven position drift.
+        const rot=domainAngle*.34+phase;
+        const px=x*Math.cos(rot)-y*Math.sin(rot),py=x*Math.sin(rot)+y*Math.cos(rot);
+        if(s===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+        if(j===Math.floor(strands*.52)&&s===Math.floor(steps*.20))anchor={x:px,y:py};
+      }
+      const focus=j%13===0;
+      ctx.strokeStyle=emphasized
+        ? "rgba(21,87,245,"+(alpha+(focus?.12:0))+")"
+        : "rgba("+(g.i%2?"35,84,188,":"28,96,231,")+(alpha+(focus?.045:0))+")";
+      ctx.lineWidth=emphasized?(focus?1.05:.72):(focus?.83:.55);
+      ctx.stroke();
+    }
+    if(!anchor)anchor={x:Math.cos(domainAngle)*rad,y:Math.sin(domainAngle)*rad*.5};
+    positions.push({x:anchor.x+cx,y:anchor.y+cy,group:g});
+    const left=anchor.x<0;
+    // Labels must remain within the canvas viewport at tablet/desktop widths.
+    // Smaller phones use the semantic DOM readout below the canvas instead.
+    if(w<500)return;
+    const labelWidth=120,edge=14;
+    const lx=left?Math.max(-(rad*1.64),labelWidth+edge-cx):Math.min(rad*1.66,w-labelWidth-edge-cx);
+    positions[positions.length-1].labelX=lx+cx;
+    // Keep annotations in the sculpture's coordinate system.
+    const ly=Math.max(-rad*.92,Math.min(rad*.88,anchor.y+(gi%2===0?-45:39)));
+    ctx.strokeStyle="rgba(21,87,245,.24)";ctx.lineWidth=.65;
+    ctx.beginPath();ctx.moveTo(anchor.x,anchor.y);
+    ctx.lineTo(lx+(left?7:-7),ly);ctx.stroke();
+    ctx.beginPath();ctx.arc(anchor.x,anchor.y,emphasized?3.2:2.2,0,TAU);
+    ctx.fillStyle=emphasized?"#1557f5":"#3e79ed";ctx.fill();
+    ctx.textAlign=left?"right":"left";
+    ctx.font="500 10px Arial";ctx.fillStyle="#273a60";
+    ctx.fillText(g.name,lx,ly-5);
+    ctx.font="9px Arial";ctx.fillStyle="#8a9ab6";
+    ctx.fillText(n+" memories",lx,ly+10);
+  });
+  // A restrained blue glint guides focus; never placed outside the sculpture.
+  ctx.restore();
+  }
+// One requestAnimationFrame loop only: user interactions redraw immediately
+// without spawning new render loops; cap animation to 30 fps on large datasets.
+function start(){
+  let last=0;
+  function loop(now){
+    if(state.running && now-last>=33 && !matchMedia("(prefers-reduced-motion: reduce)").matches){
+      last=now;draw();
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+function activate(view){state.view=view;document.querySelectorAll(".nav[data-view]").forEach(n=>n.classList.toggle("active",n.dataset.view===view));const names={topology:["01 / Memory topology","Stable visual mapping from canonical claims to spatial memory domains."],trace:["02 / Retrieval trace","Local text-match highlights only. No fabricated hybrid-search rankings."],temporal:["03 / Temporal evolution","Move the history slider to replay recorded claims."],conflicts:["04 / Conflict & revision","Inspect superseded claims and their audit provenance."],evaluation:["05 / Evaluation","A visual observatory is not an evaluation score. Benchmarks require measured data."]};$("sectionTitle").textContent=names[view][0];$("sectionDesc").textContent=names[view][1];if(view==="conflicts"){$("scope").value="all";state.scope="all";let superseded=state.items.find(x=>x.superseded_at);state.selection=superseded?String(superseded.id||superseded.memory_id):null}if(view==="temporal")$("time").focus();render();draw()}
+document.querySelectorAll(".nav[data-view]").forEach(b=>b.addEventListener("click",()=>activate(b.dataset.view)));
+$("scope").onchange=e=>{state.scope=e.target.value;state.selection=null;render();draw()};
+$("claimPicker").onchange=e=>{state.selection=e.target.value||null;render();draw()};
+$("time").oninput=e=>{state.position=Number(e.target.value);render();draw()};
+$("reset").onclick=()=>{state.phase=0;state.scale=1;state.position=100;$("time").value=100;state.selection=null;state.query="";$("query").value="";render();draw()};
+$("pause").onclick=()=>{state.running=!state.running;$("pause").textContent=state.running?"Ⅱ":"▶";if(state.running)draw()};
+$("searchForm").onsubmit=e=>{e.preventDefault();state.query=$("query").value.trim();state.selection=null;render();draw()};
+canvas.onclick=e=>{let r=canvas.getBoundingClientRect();let x=e.clientX-r.left,y=e.clientY-r.top;let closest=positions.map(p=>({...p,d:Math.hypot(x-p.x,y-p.y)})).sort((a,b)=>a.d-b.d)[0];if(!closest||closest.d>150)return;let items=closest.group.items;let matched=state.query?items.find(it=>[it.subject_id,it.predicate,it.source_id,valueText(it)].join(" ").toLowerCase().includes(state.query.toLowerCase())):null;let item=matched||items[0];state.selection=String(item.id||item.memory_id);render();draw()};
+canvas.onwheel=e=>{if(!e.ctrlKey)return;e.preventDefault();state.scale=Math.max(.62,Math.min(1.65,state.scale-e.deltaY*.001));draw()};
+$("export").onclick=()=>{let body=JSON.stringify({mode:state.mode,exported_at:new Date().toISOString(),claims:subset(),events:state.events},null,2);let blob=new Blob([body],{type:"application/json"}),url=URL.createObjectURL(blob);let a=document.createElement("a");a.href=url;a.download="memory-observatory-"+state.mode+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+const publicStaticHost=/(^|\.)(github\.io|raw\.githack\.com|cdn\.jsdelivr\.net)$/.test(location.hostname);
+if(publicStaticHost){
+  $("connectBtn").disabled=true;
+  $("connectBtn").title="Public demo is synthetic-only. Connect real data on the protected same-origin runtime.";
+  $("connectBtn").setAttribute("aria-label","Live API connection unavailable on public demo");
+}
+function closeAuth(){$("auth").classList.remove("open");$("auth").setAttribute("aria-hidden","true");$("key").value="";$("connectBtn").focus()}
+$("connectBtn").onclick=()=>{if(publicStaticHost)return;$("auth").classList.add("open");$("auth").setAttribute("aria-hidden","false");$("authError").textContent="";$("key").focus()};
+$("demoBtn").onclick=()=>{state={...state,mode:"demo",key:"",items:demo,events:[],selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";render();draw()};
+async function api(path,key){let ctl=new AbortController();let timer=setTimeout(()=>ctl.abort(),10000);try{let r=await fetch(path,{headers:{"Authorization":"Bearer "+key},signal:ctl.signal,cache:"no-store"});if(!r.ok)throw Error("API returned HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
+$("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key){$("authError").textContent="Enter the API key.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
+document.addEventListener("keydown",e=>{
+ const modal=$("tour").classList.contains("open")?$("tour"):($("auth").classList.contains("open")?$("auth"):null);
+ if(!modal)return;
+ if(e.key==="Escape"){e.preventDefault();if(modal===$("tour"))closeTour();else closeAuth();return}
+ if(e.key!=="Tab")return;
+ const controls=Array.from(modal.querySelectorAll("button:not([disabled]),input:not([disabled])")).filter(x=>x.getClientRects().length);
+ if(!controls.length)return;
+ const first=controls[0],last=controls[controls.length-1];
+ if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+ else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+});
+
+const tourSteps=[
+ {title:"01 / A memory becomes part of a system",description:"The synthetic home-agent dataset contains remembered preferences, facts, events, device states and policies. Every filament bundle is driven by claim counts.",action:()=>{state.position=100;state.scope="all";state.query="";state.selection=null;$("scope").value="all";$("time").value=100;$("query").value="";activate("topology")}},
+ {title:"02 / Memory is organized, not merely stored",description:"Filter to preferences. This changes the actual claims used to construct the visual geometry. The count and selected domain reflect the filtered dataset.",action:()=>{state.scope="0";$("scope").value="0";state.selection="d-01";render();draw()}},
+ {title:"03 / Ask why an Agent remembers something",description:"Local text matching highlights a relevant claim. Inspect the source identifier, subject, predicate and original recorded value on the right.",action:()=>{state.scope="all";$("scope").value="all";state.query="本地";$("query").value="本地";state.selection="d-01";activate("trace")}},
+ {title:"04 / Travel through memory time",description:"The history slider is a real filter over recorded timestamps. Older snapshots contain fewer synthetic claims. This is not a simulated database query.",action:()=>{state.scope="all";$("scope").value="all";state.query="";$("query").value="";state.selection=null;state.position=44;$("time").value=44;activate("temporal")}},
+ {title:"05 / Show the audit boundary",description:"This preview is grounded in canonical claim and event fields. It does not invent AGE edges, semantic distances or measured quality scores. A live, authenticated tenant can be connected separately.",action:()=>{state.position=100;$("time").value=100;activate("evaluation")}}
+];
+let tourIndex=0,tourBefore=null;
+function showTourStep(){
+ const s=tourSteps[tourIndex];s.action();$("tourHeading").textContent=s.title;$("tourDescription").textContent=s.description;
+ $("tourCounter").textContent=String(tourIndex+1).padStart(2,"0")+" / "+String(tourSteps.length).padStart(2,"0");
+ $("tourNext").textContent=tourIndex===tourSteps.length-1?"Finish ✓":"Continue →";
+}
+function closeTour(){
+ $("tour").classList.remove("open");$("tour").setAttribute("aria-hidden","true");
+ if(tourBefore&&tourBefore.mode==="live"){state={...state,...tourBefore};$("scope").value=state.scope;render();draw()}
+ tourBefore=null;$("tourLaunch").focus();
+}
+$("tourLaunch").onclick=()=>{
+ tourBefore={...state};state={...state,mode:"demo",key:"",items:demo,events:[],position:100,scope:"all",selection:null,query:""};
+ tourIndex=0;$("tour").classList.add("open");$("tour").setAttribute("aria-hidden","false");
+ showTourStep();$("tourNext").focus();
+};
+$("tourNext").onclick=()=>{if(tourIndex===tourSteps.length-1){closeTour();return}tourIndex++;showTourStep()};
+$("tourClose").onclick=closeTour;
+
+options();render();resize();start();
+</script></body></html>

@@ -29,4 +29,4 @@ agent_memory_core = ["resources/*.sql", "resources/dashboard/*.html", "resources
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-markers = ["integration: requires a running PostgreSQL pgvector AGE instance"]
+markers = ["integration: requires a running PostgreSQL pgvector AGE instance", "browser: opt-in real Chromium Observatory acceptance"]

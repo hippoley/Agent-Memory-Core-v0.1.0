@@ -56,10 +56,16 @@ def snapshots(dsn, tenant):
     try:
         counts = {}
         for table in ("memory_claims", "memory_sources", "memory_claim_sources",
-                      "memory_events", "memory_outbox", "memory_projection_tasks"):
+                      "memory_events", "memory_outbox"):
             counts[table] = db.conn.execute(
                 f"SELECT count(*) FROM {table} WHERE tenant_id=%s", (tenant,)
             ).fetchone()[0]
+        # Projection delivery rows are keyed by event_id, not tenant_id.
+        counts["memory_projection_deliveries"] = db.conn.execute(
+            "SELECT count(*) FROM memory_projection_deliveries p "
+            "JOIN memory_outbox o ON p.event_id=o.event_id "
+            "WHERE o.tenant_id=%s", (tenant,)
+        ).fetchone()[0]
         return counts
     finally:
         db.close()
@@ -110,6 +116,8 @@ def test_compound_commit_retract_and_two_upserts_with_outbox_consistency():
     assert after["memory_claims"] == before["memory_claims"] + 2
     assert after["memory_events"] == before["memory_events"] + 3
     assert after["memory_outbox"] == before["memory_outbox"] + 3
+    assert (after["memory_projection_deliveries"]
+            == before["memory_projection_deliveries"] + 6)
     from agent_memory_core.postgres import PostgresMemory
     db = PostgresMemory(dsn)
     try:
@@ -148,7 +156,7 @@ def test_rejected_late_candidate_rolls_back_retraction_sources_events_and_outbox
 def test_unmet_retraction_compare_and_withdraw_rolls_back_prior_upsert():
     client, headers, tenant, dsn = setup()
     subject = "person-" + uuid4().hex
-    write(client, headers, subject, "alert_channel", {"channel": "push"})
+    old_id = write(client, headers, subject, "alert_channel", {"channel": "push"})
     before = snapshots(dsn, tenant)
     response = apply(client, headers, [
         {"operation": "UPSERT", "subject_id": subject,
@@ -159,7 +167,7 @@ def test_unmet_retraction_compare_and_withdraw_rolls_back_prior_upsert():
     assert response.status_code == 409, response.text
     assert snapshots(dsn, tenant) == before
     assert active(dsn, tenant, subject) == [
-        ("alert_channel", {"channel": "push"}, active(dsn, tenant, subject)[0][2])
+        ("alert_channel", {"channel": "push"}, old_id)
     ]
 
 
@@ -241,3 +249,36 @@ def test_embedding_failure_happens_after_commit_and_is_reported():
     body = response.json()
     assert body["embedding_failures"] == body["created"]
     assert len(active(dsn, tenant, "s")) == 1
+
+
+def test_post_sql_failure_after_claim_event_and_outbox_rolls_back_everything():
+    dsn = os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("Requires real PostgreSQL")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    from agent_memory_core.postgres import PostgresMemory
+    tenant = "batch-post-sql-" + uuid4().hex
+
+    class InjectAfterDatabaseWrite(PostgresMemory):
+        def remember(self, **kwargs):
+            result = super().remember(**kwargs)
+            if kwargs["predicate"] == "break_after_insert":
+                raise RuntimeError("Injected failure AFTER canonical SQL+event+outbox INSERT")
+            return result
+
+    client = TestClient(create_app(
+        api_key="batch-postsql-test-api-key-long-enough",
+        tenant_id=tenant,
+        store_factory=lambda: InjectAfterDatabaseWrite(dsn),
+    ))
+    headers = {"Authorization": "Bearer batch-postsql-test-api-key-long-enough"}
+    subject = "person-" + uuid4().hex
+    before = snapshots(dsn, tenant)
+    response = apply(client, headers, [
+        {"subject_id": subject, "predicate": "first_key", "value": {"v": 1}},
+        {"subject_id": subject, "predicate": "break_after_insert", "value": {"v": 2}},
+    ])
+    assert response.status_code == 503, response.text
+    assert snapshots(dsn, tenant) == before
+    assert active(dsn, tenant, subject) == []

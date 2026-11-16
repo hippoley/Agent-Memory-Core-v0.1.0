@@ -130,3 +130,31 @@ def test_viewport_and_screenshot(ui,width,height):
     if screenshot_dir:
         root=Path(screenshot_dir);root.mkdir(parents=True,exist_ok=True)
         ui.screenshot(path=str(root/f"observatory-{width}x{height}.png"),full_page=True)
+
+def test_live_network_error_is_explicit_and_does_not_replace_demo(ui):
+    ui.route("**/v1/**",lambda route: route.abort("failed"))
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("integration-key")
+    ui.locator("#liveBtn").click()
+    assert ui.locator("#authError").inner_text().strip()
+    assert ui.locator("#pageMark").inner_text()=="/ DEMO"
+    assert ui.locator("#total").inner_text()=="10"
+
+def test_large_loaded_page_and_evidence_escape(ui):
+    import json
+    records=[{"id":"m-%03d"%i,"subject_id":"large-tenant","predicate":"memory_fact",
+              "value":{"text":"fact %03d"%i},"source_id":"source:fixture",
+              "recorded_at":"2026-11-16T09:00:00Z"} for i in range(500)]
+    records[0]["value"]={"text":"<img src=x onerror=alert(1)>"}
+    def respond(route):
+        data={"items":records} if "/v1/memories?" in route.request.url else {"items":[]}
+        route.fulfill(status=200,content_type="application/json",body=json.dumps(data))
+    ui.route("**/v1/**",respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("tenant-key")
+    ui.locator("#liveBtn").click()
+    assert ui.locator("#total").inner_text()=="500"
+    assert ui.locator("#claimPicker option").count()==501
+    ui.locator("#claimPicker").select_option("m-000")
+    assert "<img src=x onerror=alert(1)>" in ui.locator("#detail").inner_text()
+    assert ui.locator("#detail img").count()==0

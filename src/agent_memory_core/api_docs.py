@@ -156,6 +156,16 @@ STORIES: dict[tuple[str, str], Story] = {
                "能力是部署态，不是租户态；多租户共享同一份。"),
         example=CURL + " $API/v1/capabilities",
     ),
+    ("GET", "/v1/evaluation/search-config"): Story(
+        persona="中文记忆质量评测工程师",
+        goal="在开始写入冻结测试集之前核实实例实际启用的检索别名",
+        value="消融实验的检索配置由运行中服务证明，不会被命令行开关误标为关闭",
+        steps=("必须带有效的 Bearer 凭据；租户由服务端授权决定。",
+               "响应包含 aliases_enabled、alias_count 与规范化映射的 SHA-256，不直接泄露映射内容。",
+               "搜索适配器不能证明有效映射时返回 409；未启用搜索时返回 503。",
+               "在同一实例上更换别名应产生不同哈希，评测报告必须保存该哈希。"),
+        example=CURL + " $API/v1/evaluation/search-config",
+    ),
     # ---------------------------------------------------------------- Memory
     ("POST", "/v1/memories"): Story(
         persona="设备网关开发者",

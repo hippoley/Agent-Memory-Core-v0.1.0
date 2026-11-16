@@ -126,6 +126,7 @@ def test_viewport_and_screenshot(ui,width,height):
     ui.set_viewport_size({"width":width,"height":height})
     ui.wait_for_timeout(80)
     assert not ui.evaluate("document.documentElement.scrollWidth>innerWidth+2"),f"Overflow at {width}"
+    if width==390: assert "User preferences" in ui.locator("#domainReadout").inner_text()
     screenshot_dir=os.getenv("MEMORY_OBSERVATORY_SCREENSHOT_DIR")
     if screenshot_dir:
         root=Path(screenshot_dir);root.mkdir(parents=True,exist_ok=True)
@@ -158,3 +159,12 @@ def test_large_loaded_page_and_evidence_escape(ui):
     ui.locator("#claimPicker").select_option("m-000")
     assert "<img src=x onerror=alert(1)>" in ui.locator("#detail").inner_text()
     assert ui.locator("#detail img").count()==0
+
+@pytest.mark.parametrize("width", [768,1440,1920])
+def test_canvas_domain_labels_have_safe_horizontal_margins(ui,width):
+    ui.set_viewport_size({"width":width,"height":1024})
+    ui.wait_for_timeout(100)
+    labels=ui.evaluate("positions.filter(p => p.labelX!==undefined).map(p => p.labelX)")
+    canvas_width=ui.locator("#art").evaluate("el => el.getBoundingClientRect().width")
+    assert labels, "Expected domain annotation positions"
+    assert all(120<=x<=canvas_width-120 for x in labels), (canvas_width,labels)

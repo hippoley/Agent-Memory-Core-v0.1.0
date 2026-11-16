@@ -86,6 +86,8 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 @media(max-width:680px){.tour-overlay{padding:10px}.tour-card{padding:20px}.tour-heading{font-size:22px}.top-right{flex-wrap:wrap}}
 
  .claim-picker{display:block;width:100%;margin:8px 0 15px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:11px;padding:9px}
+.domain-readout{display:none}
+@media(max-width:680px){.domain-readout{display:block;font-size:11px;line-height:1.8;color:#607392;padding:9px 3px 13px}}
 </style>
 </head>
 <body>
@@ -97,7 +99,7 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 <div class="stage-head"><h1 id="sectionTitle">01 / Memory topology</h1><p id="sectionDesc">A living structure assembled from facts, provenance and temporal events — not a decorative graph.</p></div>
 <div class="view" id="view" role="img" aria-label="交互式记忆曲线拓扑；点击区域查看对应记忆">
 <canvas id="art"></canvas><div class="controls"><button class="icon-btn" id="reset" title="重置视图" aria-label="重置">↺</button><button class="icon-btn" id="pause" title="暂停动画" aria-label="暂停动画">Ⅱ</button></div><div class="legend"><span><i></i>Selected / trace</span><span><i class="muted-dot"></i>Memory structure</span><span id="canvasNote">5 semantic domains · deterministic layout</span></div>
-</div>
+</div><div id="domainReadout" class="domain-readout" aria-label="记忆领域与数量"></div>
 </main>
 <aside class="right">
 <section class="panel"><h2>Memory population <span id="pageMark" class="blue">/ DEMO</span></h2><div id="total" class="metric">—</div><div class="metric-sub" id="totalNote">Canonical claims in selected snapshot</div><div class="small-stats"><div class="kv"><span>Semantic domains</span><strong id="domains">—</strong></div><div class="kv"><span>Active claims</span><strong id="active">—</strong></div><div class="kv"><span>Superseded claims</span><strong id="old">—</strong></div><div class="kv"><span>Recorded events</span><strong id="eventsCount">—</strong></div></div></section>
@@ -132,7 +134,7 @@ function html(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 function visible(){let a=state.items.slice().sort((x,y)=>stamp(x)-stamp(y));if(!a.length)return [];let dates=a.map(stamp).filter(Boolean);if(!dates.length)return a;const min=Math.min(...dates),max=Math.max(...dates);const cut=min+(max-min)*state.position/100;return a.filter(x=>!stamp(x)||stamp(x)<=cut)}
 function subset(){return visible().filter(x=>state.scope==="all"||String(category(x))===state.scope)}
 function activeCount(a){return a.filter(x=>!x.superseded_at&&!x.forgotten_at).length}
-function render(){const a=subset(),all=visible(),groups=LABELS.map((name,i)=>({name,i,items:a.filter(x=>category(x)===i)}));$("total").textContent=a.length.toLocaleString();$("active").textContent=activeCount(a).toLocaleString();$("old").textContent=(a.length-activeCount(a)).toLocaleString();$("domains").textContent=groups.filter(x=>x.items.length).length;$("eventsCount").textContent=state.events.length.toLocaleString();$("pageMark").textContent=state.mode==="live"?"/ LIVE":"/ DEMO";$("statusText").textContent=state.mode==="live"?"Connected / live API":"Demo / synthetic records";$("statusDot").className="dot"+(state.mode==="live"?" live":"");$("totalNote").textContent=state.mode==="live"?"Loaded claim page — not lifetime totals":"10 synthetic example claims, not live metrics";$("canvasNote").textContent=groups.filter(x=>x.items.length).length+" populated domains · "+a.length+" visible claims";
+function render(){const a=subset(),all=visible(),groups=LABELS.map((name,i)=>({name,i,items:a.filter(x=>category(x)===i)}));$("total").textContent=a.length.toLocaleString();$("active").textContent=activeCount(a).toLocaleString();$("old").textContent=(a.length-activeCount(a)).toLocaleString();$("domains").textContent=groups.filter(x=>x.items.length).length;$("eventsCount").textContent=state.events.length.toLocaleString();$("pageMark").textContent=state.mode==="live"?"/ LIVE":"/ DEMO";$("statusText").textContent=state.mode==="live"?"Connected / live API":"Demo / synthetic records";$("statusDot").className="dot"+(state.mode==="live"?" live":"");$("totalNote").textContent=state.mode==="live"?"Loaded claim page — not lifetime totals":"10 synthetic example claims, not live metrics";$("canvasNote").textContent=groups.filter(x=>x.items.length).length+" populated domains · "+a.length+" visible claims";$("domainReadout").textContent=groups.filter(x=>x.items.length).map(x=>x.name+" ("+x.items.length+")").join(" · ");
 let dates=all.map(stamp).filter(Boolean);$("startTime").textContent=dates.length?new Date(Math.min(...dates)).toLocaleDateString():"Earlier";$("currentTime").textContent=state.position===100?"Latest":state.position+"% of loaded history";const hist=$("histogram");hist.replaceChildren();for(let i=0;i<24;i++){let bar=document.createElement("div");bar.style.height=(5+Math.max(0,all.filter(x=>{let t=stamp(x);return dates.length&&t>=Math.min(...dates)+(Math.max(...dates)-Math.min(...dates))*i/24&&t<Math.min(...dates)+(Math.max(...dates)-Math.min(...dates))*(i+1)/24}).length)*11)+"px";bar.className=i/24<=state.position/100?"selected":"";hist.append(bar)}
 let ev=state.events.slice(0,4);$("eventList").innerHTML=ev.length?ev.map(e=>'<div class="event"><time>'+html(String(e.recorded_at||"").slice(11,16)||"—")+'</time><span>'+html(e.event_type||"memory event")+'</span></div>').join(""):'<div class="mini">'+(state.mode==="demo"?"No real events in demo mode.":"No events in loaded page.")+'</div>';
 if(state.selection&&!a.some(x=>String(x.id||x.memory_id)===state.selection))state.selection=null;
@@ -224,7 +226,12 @@ function draw(){
     if(!anchor)anchor={x:Math.cos(domainAngle)*rad,y:Math.sin(domainAngle)*rad*.5};
     positions.push({x:anchor.x+cx,y:anchor.y+cy,group:g});
     const left=anchor.x<0;
-    const lx=left?-(rad*1.64):rad*1.66;
+    // Labels must remain within the canvas viewport at tablet/desktop widths.
+    // Smaller phones use the semantic DOM readout below the canvas instead.
+    if(w<500)return;
+    const labelWidth=120,edge=14;
+    const lx=left?Math.max(-(rad*1.64),labelWidth+edge-cx):Math.min(rad*1.66,w-labelWidth-edge-cx);
+    positions[positions.length-1].labelX=lx+cx;
     // Keep annotations in the sculpture's coordinate system.
     const ly=Math.max(-rad*.92,Math.min(rad*.88,anchor.y+(gi%2===0?-45:39)));
     ctx.strokeStyle="rgba(21,87,245,.24)";ctx.lineWidth=.65;

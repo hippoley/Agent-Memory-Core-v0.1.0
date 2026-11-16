@@ -66,3 +66,28 @@ The second pass refines the frontend toward a computational-editorial, gallery-g
 - Annotation and claim semantics remain distinct: the filament bundle denotes a classified claim domain, not a real graph cluster; curves and crossings imply neither semantic similarity nor relationships.
 
 **Visual review limitation:** This change was syntax-checked against the committed HTML but not yet visually verified in a real browser session. Screenshots at 1440×900, 1920×1080 and narrow mobile viewport and manual controls testing remain pre-merge requirements. Do not claim visual acceptance based only on syntax validation.
+
+## Public presentation deployment (manual action only)
+
+The repository contains `.github/workflows/publish-memory-observatory-demo.yml`.
+It deliberately uses **workflow_dispatch only** to avoid repeated GitHub Actions consumption.
+
+1. Review and merge PR #30 after local/browser verification. GitHub Actions workflows are normally manually dispatchable from the default branch.
+2. In GitHub **Settings → Pages**, set **Build and deployment → Source → GitHub Actions**.
+3. Go to **Actions → Publish Memory Observatory Demo → Run workflow** and run it on `main`.
+4. Confirm a successful `github-pages` environment deployment and copy the **actual deployment URL from the job output**. Do not infer success merely from this document.
+5. Open the URL in an incognito browser and run the **LIVE DEMO** five-step story. The public static page is synthetic-only; the connect-live key entry is disabled there.
+
+Expected GitHub Pages URL pattern **if** Pages is configured and deployed: `https://hippoley.github.io/Agent-Memory-Core-v0.1.0/`.
+This is a prospective URL, **not verified online**.
+
+For real data, run the same frontend on the protected API origin at `/dashboard/observatory.html` and provide tenant-scoped credentials there only. **Do not deploy live tenant credentials to Pages.**
+
+### Presentation rehearsal checklist
+
+- Browser widths: 1920, 1440, 768, 390.
+- Demo explicitly displays SYNTHETIC DATA throughout guided mode.
+- Five navigation steps each change the relevant visible claim state.
+- Reset, pause, time-slider, domain filter, local search, selected evidence, JSON export work.
+- Browser console is clean; no extra animation loops.
+- The visual encoding is not represented as graph relationships or semantic similarity.

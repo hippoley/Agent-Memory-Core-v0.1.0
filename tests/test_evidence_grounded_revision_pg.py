@@ -41,7 +41,10 @@ def test_grounded_revision_uses_real_postgres_and_keeps_history():
                      "value":{"reason":"period_changed"},
                      "operation":"RETRACT","confidence":0.99,
                      "expected_memory_id":old["memory_id"],
-                     "expected_value":old["value"]}]
+                     "expected_value":old["value"]},
+                    {"subject_id":old["subject_id"],"predicate":old["predicate"],
+                     "value":{"months":3},"operation":"UPSERT",
+                     "confidence":0.99}]
     model=LLM()
     app=create_app(
         api_key=token,tenant_id=tenant,
@@ -60,7 +63,9 @@ def test_grounded_revision_uses_real_postgres_and_keeps_history():
 
     verify=PostgresMemory(dsn)
     try:
-        assert verify.recall(tenant_id=tenant,subject_id="supplier-7")==[]
+        active=verify.recall(tenant_id=tenant,subject_id="supplier-7")
+        assert len(active)==1
+        assert active[0]["value"]=={"months":3}
         historical=verify.list_claims(tenant_id=tenant,
                            subject_id="supplier-7",include_superseded=True)
         assert any(x["id"]==new_id for x in historical)

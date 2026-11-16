@@ -104,3 +104,19 @@ MEMORY_OBSERVATORY_BROWSER=1 MEMORY_OBSERVATORY_SCREENSHOT_DIR=artifacts/screens
 ```
 
 When using system Chromium instead of the Playwright-managed browser, set `MEMORY_CHROMIUM_PATH` to its executable. Browser tests are **opt-in** and skipped in ordinary pytest/CI runs to avoid repeated browser downloads and Action expenditure. API responses are intercepted in browser tests to exercise UI states; `tests/test_observatory_live_postgres.py` separately verifies actual PostgreSQL read behavior and tenancy. Passing the browser suite is not evidence of a public Pages deployment or production security readiness.
+
+## Actual Uvicorn + PostgreSQL + Chromium gate
+
+The opt-in test `tests/test_observatory_browser_live_postgres.py` makes a real listening Uvicorn server, writes and corrects claims via HTTP into the combined PostgreSQL database, confirms the rows independently through SQL, and drives the Observatory Live UI using Chromium **without intercepted API routes**. It checks old/new provenance, events, tenant isolation, bad/missing bearer keys, browser reload persistence, and an **explicitly injected** database-connection failure.
+
+The Chromium GitHub workflow now brings up a temporary local combined PostgreSQL image, executes both mock-UI regression and this real-stack test, and removes the test database afterwards. Never point the suite at production. The injected connection failure is **not** a crash-and-restart or durability qualification. The single-tenant-key server remains a development/test runtime, not a production multi-tenant authorization implementation.
+
+Manual equivalent (local Docker + Chromium installed):
+
+```bash
+docker compose up -d --build --wait
+python -m pip install -e '.[dev,api,postgres]' playwright
+python -m playwright install chromium
+MEMORY_TEST_DSN=postgresql://memory:local-dev-only@127.0.0.1:55432/memory MEMORY_OBSERVATORY_LIVE_BROWSER=1 python -m pytest -q tests/test_observatory_browser_live_postgres.py
+docker compose down -v
+```

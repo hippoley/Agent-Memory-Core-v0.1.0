@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/agent_memory_core/resources/dashboard/observatory.html'
       - 'tests/test_memory_observatory_browser.py'
+      - 'tests/test_observatory_browser_live_postgres.py'
       - '.github/workflows/observatory-browser-acceptance.yml'
   workflow_dispatch:
 
@@ -18,21 +19,25 @@ concurrency:
 jobs:
   chromium:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install browser test tools
-        run: python -m pip install pytest 'playwright>=1.45'
+      - name: Start actual PostgreSQL pgvector AGE database
+        run: docker compose up -d --build --wait
+      - name: Install actual API, PostgreSQL driver and Chromium tools
+        run: python -m pip install -e '.[dev,api,postgres]' 'playwright>=1.45'
       - name: Install Chromium and operating system dependencies
         run: python -m playwright install --with-deps chromium
       - name: Real browser acceptance and viewport screenshots
         env:
           MEMORY_OBSERVATORY_BROWSER: '1'
+          MEMORY_OBSERVATORY_LIVE_BROWSER: '1'
+          MEMORY_TEST_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
           MEMORY_OBSERVATORY_SCREENSHOT_DIR: artifacts/observatory
-        run: python -m pytest -q tests/test_memory_observatory_browser.py
+        run: python -m pytest -q tests/test_memory_observatory_browser.py tests/test_observatory_browser_live_postgres.py
       - name: Upload visual evidence, including failing cases
         if: always()
         uses: actions/upload-artifact@v4
@@ -40,3 +45,9 @@ jobs:
           name: observatory-chromium-screenshots
           path: artifacts/observatory/
           if-no-files-found: ignore
+      - name: Database logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Shut down isolated test database
+        if: always()
+        run: docker compose down -v

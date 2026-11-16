@@ -79,6 +79,25 @@ class MemoryHTTP:
             if offset > 10000:
                 raise RuntimeError("Evaluation tenant contains >10000 active claims")
 
+    def history(self) -> list[dict]:
+        """Discover prior soft-forgotten claims before allowing evaluation.
+
+        An empty active set is NOT evidence of an unused tenant. Old events
+        and claims must not silently be accepted as a clean experiment.
+        """
+        result = []
+        offset = 0
+        while True:
+            rows = self.call("GET", "/v1/memories",
+                             params={"limit":100, "offset":offset,
+                                     "include_superseded":"true"})["items"]
+            result.extend(rows)
+            if len(rows) < 100:
+                return result
+            offset += len(rows)
+            if offset > 10000:
+                raise RuntimeError("Evaluation tenant has too much historical data")
+
     def reset_active(self) -> None:
         # Soft-forget all subjects for the *isolated* test tenant. Retains audit
         # history; never offered as a general-purpose production cleanup tool.
@@ -155,28 +174,35 @@ def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
             extractor, *, context: bool, prefix: str) -> list[dict]:
     if memory.current():
         raise RuntimeError("Tenant is not empty. Use a fresh disposable tenant; refusing destructive run.")
+    # A previously-used tenant can have zero ACTIVE claims yet retain a full
+    # audit history. Reusing it risks accidental edits and non-reproducible
+    # experiments; require a tenant with no historical claims at all.
+    if memory.history():
+        raise RuntimeError("Tenant contains historical claims. Use a new disposable tenant.")
     output=[]
     for case in gold:
-        # Active facts are wiped before *and* after every story. Background
-        # events may remain but canonical search only reads active claims.
+        # Preflight was empty; erase only facts created by this harness. Always
+        # attempt cleanup, including model errors or HTTP failures mid-story.
         memory.reset_active()
-        raw_events=[]
-        for i,utterance in enumerate(case["turns"]):
-            prior=case["turns"][i-1] if i else None
-            candidates=extract(extractor,utterance,prior,context=context)
-            raw_events.extend(_candidate_event(x,i) for x in candidates)
-            memory.call("POST", "/v1/memories/process", json={
-                "text":utterance,
-                "source_id":f"eval:{prefix}:{case['id']}:{i}",
-                "candidates":candidates})
-        active=[_fact(x) for x in memory.current()]
-        hits=memory.call("POST","/v1/search",
-                         json={"query":case["query"],"limit":5})["items"]
-        ranked=[_fact(x) for x in hits]
-        answer=answerer.answer(case["query"],hits)
-        output.append({"id":case["id"],"extracted":raw_events,
-                       "current":active,"retrieved":ranked,"answer":answer})
-        memory.reset_active()
+        try:
+            raw_events=[]
+            for i,utterance in enumerate(case["turns"]):
+                prior=case["turns"][i-1] if i else None
+                candidates=extract(extractor,utterance,prior,context=context)
+                raw_events.extend(_candidate_event(x,i) for x in candidates)
+                memory.call("POST", "/v1/memories/process", json={
+                    "text":utterance,
+                    "source_id":f"eval:{prefix}:{case['id']}:{i}",
+                    "candidates":candidates})
+            active=[_fact(x) for x in memory.current()]
+            hits=memory.call("POST","/v1/search",
+                             json={"query":case["query"],"limit":5})["items"]
+            ranked=[_fact(x) for x in hits]
+            answer=answerer.answer(case["query"],hits)
+            output.append({"id":case["id"],"extracted":raw_events,
+                           "current":active,"retrieved":ranked,"answer":answer})
+        finally:
+            memory.reset_active()
     return output
 
 

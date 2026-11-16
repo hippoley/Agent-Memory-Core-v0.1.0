@@ -83,3 +83,19 @@ These versions are proposed milestones, **not released versions or delivery comm
 > If you've seen an agent retrieve a stale memory and make the wrong decision, we'd love a reproducible example.
 
 This is a proposed announcement, not evidence that any announcement was posted.
+
+## Pre-release checklist (consolidated from the former LAUNCH-KIT)
+
+The following checks are *not* evidence of a completed public release.
+
+- [ ] Re-clone without local environment files and run Quickstart from `main`.
+- [ ] Verify an authenticated remember → revision → recall scenario using Swagger and SDK.
+- [ ] Check README relative links, architecture SVGs in light/dark mode, and actual GitHub-hosted demo URLs.
+- [ ] Export a social-preview PNG from `docs/assets/hero-belief-lifecycle.svg`; do not present a synthetic demo as a real recorded run.
+- [ ] Check demo files and screenshots for tokens, passwords and private memory records.
+- [ ] Publish exact commit SHA, hardware, dataset and reproducible commands with any benchmark claims.
+- [ ] Update GitHub About / Topics / social preview manually after verifying their public URLs.
+- [ ] Tag a prerelease only after its specific User Story gates pass.
+- [ ] Enable Discussions only if maintainers can realistically respond.
+
+Prefer reproducible counterexamples over hollow Star counts.

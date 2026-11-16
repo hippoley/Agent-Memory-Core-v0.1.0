@@ -91,3 +91,16 @@ For real data, run the same frontend on the protected API origin at `/dashboard/
 - Reset, pause, time-slider, domain filter, local search, selected evidence, JSON export work.
 - Browser console is clean; no extra animation loops.
 - The visual encoding is not represented as graph relationships or semantic similarity.
+
+## Opt-in real Chromium acceptance
+
+The repository includes `tests/test_memory_observatory_browser.py`, which serves the **actual committed HTML** on loopback and drives Chromium through the five-step tour, keyboard evidence selection, local search, temporal replay, JSON download, API success/401/empty response, Escape/focus restore and four viewport sizes. An optional screenshot directory captures 390, 768, 1440 and 1920-pixel layouts.
+
+```bash
+python -m pip install -e '.[dev,api]' playwright
+python -m playwright install chromium
+MEMORY_OBSERVATORY_BROWSER=1 pytest -q tests/test_memory_observatory_browser.py
+MEMORY_OBSERVATORY_BROWSER=1 MEMORY_OBSERVATORY_SCREENSHOT_DIR=artifacts/screenshots pytest -q tests/test_memory_observatory_browser.py
+```
+
+When using system Chromium instead of the Playwright-managed browser, set `MEMORY_CHROMIUM_PATH` to its executable. Browser tests are **opt-in** and skipped in ordinary pytest/CI runs to avoid repeated browser downloads and Action expenditure. API responses are intercepted in browser tests to exercise UI states; `tests/test_observatory_live_postgres.py` separately verifies actual PostgreSQL read behavior and tenancy. Passing the browser suite is not evidence of a public Pages deployment or production security readiness.

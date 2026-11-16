@@ -66,8 +66,7 @@ def test_demo_evidence_search_and_replay(ui):
     assert "local matching claims" in ui.locator("#searchNote").inner_text()
     ui.locator("#reset").click()
     assert "Search currently loaded claims" in ui.locator("#searchNote").inner_text()
-    ui.locator("#time").fill("30")
-    ui.locator("#time").dispatch_event("input")
+    ui.locator("#time").evaluate("el => { el.value = '30'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
     assert int(ui.locator("#total").inner_text())<10
     assert ui.locator("#claimPicker").input_value()==""
     ui.locator("#scope").select_option("3")

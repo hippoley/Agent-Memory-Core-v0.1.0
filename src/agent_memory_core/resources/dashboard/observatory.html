@@ -255,7 +255,7 @@ function start(){
 }
 function activate(view){state.view=view;document.querySelectorAll(".nav[data-view]").forEach(n=>n.classList.toggle("active",n.dataset.view===view));const names={topology:["01 / Memory topology","Stable visual mapping from canonical claims to spatial memory domains."],trace:["02 / Retrieval trace","Local text-match highlights only. No fabricated hybrid-search rankings."],temporal:["03 / Temporal evolution","Move the history slider to replay recorded claims."],conflicts:["04 / Conflict & revision","Inspect superseded claims and their audit provenance."],evaluation:["05 / Evaluation","A visual observatory is not an evaluation score. Benchmarks require measured data."]};$("sectionTitle").textContent=names[view][0];$("sectionDesc").textContent=names[view][1];if(view==="conflicts"){$("scope").value="all";state.scope="all";let superseded=state.items.find(x=>x.superseded_at);state.selection=superseded?String(superseded.id||superseded.memory_id):null}if(view==="temporal")$("time").focus();render();draw()}
 document.querySelectorAll(".nav[data-view]").forEach(b=>b.addEventListener("click",()=>activate(b.dataset.view)));
-$("+"scope").onchange=e=>{state.scope=e.target.value;state.selection=null;render();draw()};
+$("scope").onchange=e=>{state.scope=e.target.value;state.selection=null;render();draw()};
 $("claimPicker").onchange=e=>{state.selection=e.target.value||null;render();draw()};
 $("time").oninput=e=>{state.position=Number(e.target.value);render();draw()};
 $("reset").onclick=()=>{state.phase=0;state.scale=1;state.position=100;$("time").value=100;state.selection=null;state.query="";$("query").value="";render();draw()};

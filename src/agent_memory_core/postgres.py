@@ -4,6 +4,7 @@ This module does NOT call a hosted memory or embedding API.
 AGE graph projection deliberately remains a separate, explicitly optional step.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
@@ -280,6 +281,43 @@ class PostgresMemory:
                    VALUES (%s,%s,%s,%s::jsonb)""",
                 (tenant_id,idempotency_key,digest,json.dumps({"id":mid})))
             return mid
+
+    @contextmanager
+    def atomic_candidate_batch(self, *, tenant_id: str, candidates: list[dict]):
+        """Run a strict compound correction inside one canonical SQL transaction.
+
+        Pre-acquire all predicate and fact advisory locks in deterministic order
+        to avoid opposite-order cross-key batches deadlocking each other.
+        The caller MUST raise before leaving the context if any candidate is
+        invalid or a retraction precondition was not met. The nested remember,
+        forget, source, event, projection and outbox writes then all roll back.
+        This is deliberately unavailable on non-PostgreSQL reference stores.
+        """
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("Atomic batch requires a tenant")
+        if not isinstance(candidates, list) or not 1 <= len(candidates) <= 500:
+            raise ValueError("Atomic batch requires 1..500 candidates")
+        keys = set()
+        predicates = set()
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise ValueError("Atomic batch contains a non-object candidate")
+            subject, predicate = candidate.get("subject_id"), candidate.get("predicate")
+            if (not isinstance(subject, str) or not subject.strip()
+                    or not isinstance(predicate, str) or not predicate.strip()):
+                # Subject-name lookup is intentionally not a lock identifier:
+                # callers must supply a stable, canonical subject_id.
+                raise ValueError("Atomic batch requires canonical subject_id and predicate")
+            keys.add((predicate, subject))
+            predicates.add(predicate)
+        with self.conn.transaction():
+            # Lock ALL predicate policies before any fact lock, matching the
+            # existing policy -> fact lock hierarchy; sorted across batches.
+            for predicate in sorted(predicates):
+                self._lock_predicate(tenant_id, predicate)
+            for predicate, subject in sorted(keys):
+                self._lock_fact(tenant_id, subject, predicate)
+            yield
 
     def apply_candidate(self, *, tenant_id: str, subject_id: str, predicate: str,
                         value: dict, source_id: str, confidence: float = 1.0,

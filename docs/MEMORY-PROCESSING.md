@@ -102,3 +102,55 @@ db.set_predicate_cardinality(
 Do not use `many` merely because an extractor emits multiple candidates.
 It is a domain rule: for example, `HAS_WINDOW` may be many, while a
 single-valued current setting should remain one.
+
+
+## Strict compound corrections (opt-in)
+
+The default \`POST /v1/memories/process\` behavior intentionally accepts valid
+candidates and reports rejected candidates separately. This is **not atomic
+across the request**. To atomically revise multiple independent facts, set
+\`"atomic_batch": true\` and provide 1–500 structured candidates with stable
+\`subject_id\` and \`predicate\` identifiers.
+
+Example: undo a previous preference and add two new assertions in one commit:
+
+\`\`\`json
+{
+  "text": "No longer prefer night alerts; switch to email and keep the display dim.",
+  "source_id": "conversation:revision-42",
+  "atomic_batch": true,
+  "candidates": [
+    {"operation": "RETRACT", "subject_id": "user",
+     "predicate": "alert_channel",
+     "expected_value": {"channel": "push"}},
+    {"operation": "UPSERT", "subject_id": "user",
+     "predicate": "alert_channel", "value": {"channel": "email"}},
+    {"operation": "UPSERT", "subject_id": "user",
+     "predicate": "display_brightness", "value": {"level": "dim"}}
+  ]
+}
+\`\`\`
+
+The server extracts/normalizes the candidate list once, requires stable
+canonical subject IDs, obtains **all predicate-policy locks then all fact
+locks in sorted order**, and invokes the existing \`RETRACT\`/\`UPSERT\`
+processor inside **one PostgreSQL transaction**. If any candidate is rejected
+or a RETRACT no longer matches a current claim, it returns HTTP 409 and the
+database transaction rolls back **every claim, source, audit event, projection
+task and Outbox entry** in that request. Missing/invalid canonical lock keys
+return HTTP 422. An unsupported store returns HTTP 503 rather than silently
+falling back to partial writes.
+
+The semantic embedder runs only **after** the canonical commit: embedding
+failures are reported as \`embedding_failures\`, while durable projection tasks
+already recorded by \`remember\` remain available for retry. A successful
+response includes \`"atomic_batch": true\`; the default path and its report
+shape remain backwards compatible.
+
+**Boundaries:** This is an *all-or-nothing database transaction*, not
+whole-request idempotency, a distributed transaction with an external vector
+model, or proof of physical PostgreSQL crash recovery. The order of operations
+within a batch is significant. Set \`expected_value\` or
+\`expected_memory_id\` on contextual RETRACTs to avoid retracting a later
+correction, and use the strict batch only when all candidates are trusted
+enough to commit together. Model output cannot change cardinality policy.

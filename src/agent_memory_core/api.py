@@ -308,6 +308,43 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             "capabilities": capabilities(**(capability_flags or {})),
         }
 
+    @app.get(
+        "/v1/evaluation/search-config", tags=["System"],
+        summary="Attest effective search aliases for isolated evaluation",
+        description=(
+            "Authenticated, read-only inspection of the live search adapter. "
+            "Evaluation runners must verify this before comparing alias ablations. "
+            "A search implementation that cannot expose its effective alias mapping "
+            "returns 409 rather than inventing a disabled configuration."
+        ),
+    )
+    def get_evaluation_search_config(t: str = Depends(auth)):
+        if search_factory is None:
+            raise HTTPException(status_code=503, detail="Search adapter is unavailable")
+        service = search_factory()
+        try:
+            mapping = getattr(service, "query_aliases", None)
+            if not isinstance(mapping, dict) or not all(
+                isinstance(k, str) and isinstance(v, str)
+                for k, v in mapping.items()
+            ):
+                raise HTTPException(
+                    status_code=409, detail="Search adapter cannot attest effective aliases"
+                )
+            encoded = json.dumps(
+                mapping, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            return {
+                "tenant_id": t,
+                "aliases_enabled": bool(mapping),
+                "alias_count": len(mapping),
+                "alias_sha256": hashlib.sha256(encoded).hexdigest(),
+            }
+        finally:
+            close = getattr(service, "close", None)
+            if callable(close):
+                close()
+
     @app.post(
         "/v1/memories", status_code=201, tags=["Memory"], summary="Store a memory claim",
         response_model=MemoryWriteResponse,

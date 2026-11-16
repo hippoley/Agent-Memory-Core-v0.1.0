@@ -9,6 +9,7 @@ EXPECTED={
     "/v1/health":{"get"},
     "/v1/ready":{"get"},
     "/v1/capabilities":{"get"},
+    "/v1/evaluation/search-config":{"get"},
     "/v1/memories":{"get","post","delete"},
     "/v1/predicate-policies":{"get"},
     "/v1/predicate-policies/{predicate}":{"put"},

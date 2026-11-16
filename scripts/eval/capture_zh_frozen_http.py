@@ -221,13 +221,30 @@ def run(args):
         raise ValueError("Selected extractor cannot consume prior context")
 
     memory=MemoryHTTP(args.base_url,args.key)
-    answerer=LocalAnswer(args.answer_url,args.answer_model)
+    answerer=None
     run_id=uuid4().hex
     try:
+        # Never trust --aliases as self-reported experiment metadata. Ask the
+        # actual authenticated search adapter and stop before modifying data
+        # when its effective configuration differs from the intended ablation.
+        attestation=memory.call("GET", "/v1/evaluation/search-config")
+        if (not isinstance(attestation, dict)
+                or not isinstance(attestation.get("aliases_enabled"), bool)
+                or not isinstance(attestation.get("alias_count"), int)
+                or not isinstance(attestation.get("alias_sha256"), str)
+                or len(attestation["alias_sha256"]) != 64):
+            raise RuntimeError("Search configuration attestation is unavailable")
+        if attestation["aliases_enabled"] != bool(args.aliases):
+            raise RuntimeError(
+                "Live search aliases do not match --aliases; refusing misleading benchmark"
+            )
+        answerer=LocalAnswer(args.answer_url,args.answer_model)
         captured=collect(gold,memory,answerer,extractor,
                          context=args.context,prefix=run_id)
     finally:
-        memory.close();answerer.close()
+        memory.close()
+        if answerer is not None:
+            answerer.close()
     # No gold values are used for capture. Exact score is computed *after* all
     # real outputs exist, and cannot be supplied or silently filled in.
     configuration={"name":args.name,"extractor":extractor_id,
@@ -235,6 +252,7 @@ def run(args):
                    "aliases_enabled":bool(args.aliases),
                    "answer_model":args.answer_model}
     artifact={"dataset_sha256":digest,"configuration":configuration,
+              "search_attestation":attestation,
               "run_id":run_id,"capture_type":"real_http_and_local_model",
               "cases":captured}
     scorer.validate_predictions(artifact,gold,digest)

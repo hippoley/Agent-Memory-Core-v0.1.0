@@ -945,6 +945,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             if any(not isinstance(turn, str) or not turn.strip() or len(turn) > 2000
                    for turn in item.context_turns):
                 raise HTTPException(status_code=422, detail="context_turns must contain nonempty text of at most 2000 characters each")
+            if item.ground_with_memory and item.observed_at is not None:
+                # Historical backfills require a historical evidence snapshot;
+                # current-state retrieval must never rewrite history by mistake.
+                raise HTTPException(status_code=422, detail="Evidence grounding supports live revisions only, not historical replay")
             if item.candidates is not None:
                 if item.context_turns or item.ground_with_memory:
                     raise HTTPException(status_code=422, detail="Cannot mix candidate facts with server-side context or grounding")

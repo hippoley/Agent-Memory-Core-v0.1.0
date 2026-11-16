@@ -164,9 +164,10 @@ The core invariant: **one canonical authority, multiple retrieval views**. Postg
 | --- | --- | --- | --- | --- |
 | Lite | PostgreSQL | Off | No | Not started |
 | Standard | PostgreSQL | On (providers required) | No | Not started |
-| Full | PostgreSQL | On (providers required) | Yes | Separate optional service |
+| Full | PostgreSQL | On (providers required) | Yes | Not started |
+| Extended | PostgreSQL | On (providers required) | Yes | Local dev server + verification worker (ephemeral history) |
 
-Switch profiles with `python scripts/launch_local.py up --profile standard` or `--profile full`. Full **does not** automatically deploy Temporal. For the actual local setup and limitations see [the runtime guide](docs/LIGHTWEIGHT-RUNTIME.md).
+Switch profiles with `python scripts/launch_local.py up --profile standard`, `--profile full`, or explicitly `--profile extended` to launch the local AGE + Temporal development stack and verification worker. Full **does not** automatically deploy Temporal. For the actual local setup and limitations see [the runtime guide](docs/LIGHTWEIGHT-RUNTIME.md).
 
 ## Evidence, not inflated benchmarks
 

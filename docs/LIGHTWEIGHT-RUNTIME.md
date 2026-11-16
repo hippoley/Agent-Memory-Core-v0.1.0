@@ -24,6 +24,8 @@ To switch profiles (without dropping volumes):
 ```bash
 python scripts/launch_local.py up --profile standard
 python scripts/launch_local.py up --profile full
+# Explicitly start the AGE + Temporal development extension:
+python scripts/launch_local.py up --profile extended
 python scripts/launch_local.py status
 python scripts/launch_local.py down
 ```
@@ -32,24 +34,34 @@ python scripts/launch_local.py down
 
 ## Profile comparison
 
-| Capability | Lite | Standard | Full |
+| Capability | Lite | Standard | Full | Extended |
 |---|---|---|---|
-| PostgreSQL canonical facts, provenance and history | Yes | Yes | Yes |
-| HTTP API, Console, Swagger | Yes | Yes | Yes |
-| Rule-based extraction (no LLM) | Yes | Yes | Yes |
-| Local content-addressed object storage | Yes | Yes | Yes |
-| pgvector retrieval flag | Off | On | On |
-| Apache AGE retrieval flag | Off | On | On |
-| Standalone projection worker | No | No | Yes |
-| Model provider / embedding inference | Not configured | Not configured | Not configured |
-| Temporal server | Not started | Not started | Not started |
-| Redis / Kafka / Neo4j / Elasticsearch | Not required | Not required | Not required |
+| PostgreSQL canonical facts, provenance and history | Yes | Yes | Yes | Yes |
+| HTTP API, Console, Swagger | Yes | Yes | Yes | Yes |
+| Rule-based extraction (no LLM) | Yes | Yes | Yes | Yes |
+| Local content-addressed object storage | Yes | Yes | Yes | Yes |
+| pgvector retrieval flag | Off | On | On | On |
+| Apache AGE retrieval flag | Off | On | On | On |
+| Standalone projection worker | No | No | Yes | Yes |
+| Model provider / embedding inference | Not configured | Not configured | Not configured | Not configured |
+| Temporal server | Not started | Not started | Not started | Local dev server + worker |
+| Redis / Kafka / Neo4j / Elasticsearch | Not required | Not required | Not required | Not required |
 
 **Important distinction:** Lite switches off query channels at application level, but the existing combined PostgreSQL image still includes pgvector and AGE binaries and the packaged schema still creates vector tables. **This is service/topology lightweighting, not yet a measured minimal database footprint or extension-free mode.** A truly extension-free PostgreSQL deployment requires separate, verified migrations and is not advertised here.
 
 Standard enables vector/graph capability flags but does **not** provide an embedding model. Graph/index requests can degrade and must report capability; see `GET /v1/capabilities`.
 
-Full activates a projection worker, not a Temporal server. It uses the existing PostgreSQL outbox and projection deliveries. Worker runtime may remain idle where no relevant events or model adapters are configured.
+Full activates a projection worker, not a Temporal server. **Extended** explicitly adds the Temporal CLI **development** server (UI at `http://127.0.0.1:8233`) and `agent_memory_core.temporal_worker` using the packaged `VerifyMemoryWorkflow`. It also keeps PostgreSQL, AGE, pgvector and the projection worker. Temporal uses a container-local writable SQLite file under `/tmp`; **workflow history is lost if the Temporal container is replaced or recreated**. PostgreSQL remains canonical memory storage and is not deleted by this. This overlay is not a production Temporal deployment and does **not** claim durable Temporal storage across recreation. The workflow worker may need a short startup retry while the dev server becomes available; inspect its logs before asserting it is ready. No model server or embedding service is installed by these profiles.
+
+```bash
+python scripts/launch_local.py up --profile extended
+python scripts/launch_local.py status
+# Debug if the workflow worker is not connected:
+docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml \
+  -f compose.worker.yaml -f compose.temporal.yaml logs --tail=100 memory-temporal-worker
+```
+
+The existing verification workflow can be invoked using a Temporal client and the worker queue `agent-memory-core` (see `scripts/smoke_extended_temporal.py`). **Starting Temporal does not itself verify every claim; an authenticated REST trigger for that workflow is not yet provided.**
 
 ## Measure actual efficiency
 

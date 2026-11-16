@@ -13,7 +13,7 @@ pytestmark=pytest.mark.browser
 if os.getenv("MEMORY_OBSERVATORY_BROWSER")!="1":
     pytest.skip("Opt-in Chromium suite",allow_module_level=True)
 pytest.importorskip("playwright.sync_api")
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 PAGE=Path(__file__).resolve().parents[1]/"src/agent_memory_core/resources/dashboard/observatory.html"
 
@@ -102,12 +102,12 @@ def test_live_unauthorized_empty_and_disconnect(ui):
     ui.locator("#connectBtn").click()
     ui.locator("#key").fill("wrong-key")
     ui.locator("#liveBtn").click()
-    assert "HTTP 401" in ui.locator("#authError").inner_text()
+    expect(ui.locator("#authError")).to_contain_text("HTTP 401")
     assert ui.locator("#pageMark").inner_text()=="/ DEMO"
     ui.locator("#key").fill("integration-key")
     ui.locator("#liveBtn").click()
-    assert ui.locator("#pageMark").inner_text()=="/ LIVE"
-    assert ui.locator("#total").inner_text()=="0"
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    expect(ui.locator("#total")).to_have_text("0")
     assert requests.count("Bearer integration-key")==2
     assert ui.locator("#auth").get_attribute("aria-hidden")=="true"
     ui.locator("#connectBtn").click()
@@ -136,7 +136,7 @@ def test_live_network_error_is_explicit_and_does_not_replace_demo(ui):
     ui.locator("#connectBtn").click()
     ui.locator("#key").fill("integration-key")
     ui.locator("#liveBtn").click()
-    assert ui.locator("#authError").inner_text().strip()
+    expect(ui.locator("#authError")).not_to_be_empty()
     assert ui.locator("#pageMark").inner_text()=="/ DEMO"
     assert ui.locator("#total").inner_text()=="10"
 
@@ -153,7 +153,7 @@ def test_large_loaded_page_and_evidence_escape(ui):
     ui.locator("#connectBtn").click()
     ui.locator("#key").fill("tenant-key")
     ui.locator("#liveBtn").click()
-    assert ui.locator("#total").inner_text()=="500"
+    expect(ui.locator("#total")).to_have_text("500")
     assert ui.locator("#claimPicker option").count()==501
     ui.locator("#claimPicker").select_option("m-000")
     assert "<img src=x onerror=alert(1)>" in ui.locator("#detail").inner_text()

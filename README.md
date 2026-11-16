@@ -13,7 +13,7 @@
 [![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
 [![Research prototype](https://img.shields.io/badge/status-research%20prototype-orange)](docs/USER-STORY-ACCEPTANCE.md)
 
-[**Get started**](#quickstart) · [**Explore the interactive Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
+[**Memory Observatory**](#memory-observatory--see-how-an-agents-memory-evolves) · [**Get started**](#quickstart) · [**Memory Atlas**](docs/demo/index.html) · [**Architecture**](#architecture) · [**AGE + Temporal**](#first-class-extensions-apache-age-and-temporal) · [**API reference**](docs/API-REFERENCE.md) · [**中文导览**](docs/START-HERE.zh-CN.md)
 
 </div>
 
@@ -39,6 +39,30 @@ The issue isn't storing more history. It's **knowing which belief is current, wh
 
 The story illustrates the intended semantics. The repository implements structured revision and an opt-in evidence-grounded extraction path; it has **not** established reliable natural-language understanding across every industry or model.
 
+## Memory Observatory · see how an agent's memory evolves
+
+**A new, read-only interface — Bsph Blue, computational-editorial visualization, and evidence inspection.** The Observatory is a visual lens onto canonical claims and events; it does not invent an additional memory database.
+
+| Experience | What is visible | Reality check |
+| --- | --- | --- |
+| **[Memory Observatory](src/agent_memory_core/resources/dashboard/observatory.html)** · preview | Filament-bundle domains, timeline slider, source inspector, local search, domain filters, snapshot export and five-step guided tour | Demo uses **clearly marked synthetic claims**; Live reads authorized same-origin API claims/events |
+| **[Classic Console](src/agent_memory_core/resources/dashboard/index.html)** | Existing memory ledger and controls | API-backed; authenticated actions |
+| **[Memory Atlas](docs/demo/index.html)** | Original architectural walkthrough | Browser-only synthetic data |
+
+The filaments **do not represent Apache AGE graph edges, vector/embedding distances, causality, or confidence**. The slider filters recorded timestamps in the *loaded page*, not an authoritative PostgreSQL historical query. Local search does **not** invoke the hybrid retrieval engine. Live currently loads up to 500 claims and 100 events, not necessarily an entire tenant.
+
+### Run it locally
+
+```bash
+python scripts/launch_local.py up --profile lite
+# After PR #30 is merged, open:
+# http://127.0.0.1:8765/dashboard/observatory.html
+```
+
+Demo mode requires no key. Live mode sends a tenant-scoped bearer token **only to your protected same-origin API**; never use production credentials on public GitHub Pages or in screenshots. The static showcase is a separate manually published workflow, **not a verified public URL**.
+
+**Release status:** the Observatory is in [Draft PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30), not merged to `main` as of this documentation update. Its frontend syntax and source-contract tests are not a substitute for a real-browser, accessibility and tenant-API acceptance pass. [Design semantics and release checklist](docs/memory-observatory-preview.md).
+
 ## Why another memory project?
 
 | Most memory demos emphasize… | This project focuses on… |
@@ -62,7 +86,7 @@ cd Agent-Memory-Core-v0.1.0
 python scripts/launch_local.py up --profile lite
 ```
 
-Explore [Console](http://127.0.0.1:8765/dashboard/), [Swagger](http://127.0.0.1:8765/docs/swagger), or [OpenAPI](http://127.0.0.1:8765/openapi.json). A random local API key is written to the ignored `.env.local`. **Never expose the development database/API directly to the Internet.**
+Explore [classic Console](http://127.0.0.1:8765/dashboard/), [Swagger](http://127.0.0.1:8765/docs/swagger), or [OpenAPI](http://127.0.0.1:8765/openapi.json). A random local API key is written to the ignored `.env.local`. **Never expose the development database/API directly to the Internet.**
 
 ```bash
 # Base memory + API

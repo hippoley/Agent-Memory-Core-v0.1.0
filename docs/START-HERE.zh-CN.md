@@ -21,6 +21,25 @@
 
 **核心原则：模型提出事实候选，Embedding 和 AGE 帮助找到相关证据，PostgreSQL 决定可用的当前状态；Temporal 负责需要持久执行的验证与恢复。**
 
+## 新版前端：Memory Observatory
+
+**Bsph Blue × 计算美学**。新版 Observatory 不是第二个记忆引擎，而是让访客看到已加载记忆的主题分布、记录时间、来源和事件。
+
+| 体验入口 | 可操作内容 | 数据边界 |
+| --- | --- | --- |
+| **[Memory Observatory](../src/agent_memory_core/resources/dashboard/observatory.html)** · 新预览 | 蓝色细线束、领域筛选、时间滑杆、来源检查、文本筛选、快照导出、五步演示 | Demo 为明确标示的合成数据；Live 使用经过认证的同源 API |
+| [经典 Memory Console](../src/agent_memory_core/resources/dashboard/index.html) | 原有记忆台账与管理交互 | 真实 API |
+| [Memory Atlas](demo/index.html) | 静态产品故事与架构导览 | 浏览器内合成数据 |
+
+**注意：** 蓝色曲线不代表 AGE 真实关系边、Embedding 距离、因果关系或置信度；时间滑杆仅过滤已加载的记录时间，搜索仅匹配浏览器内的文本，不能替代 PostgreSQL 的双时间查询与混合检索。Live 首次最多读取 500 条事实和 100 条事件，不等于全部数据。
+
+```bash
+python scripts/launch_local.py up --profile lite
+# PR #30 合并后访问 http://127.0.0.1:8765/dashboard/observatory.html
+```
+
+Demo 无需密钥；Live 只应连接受保护的同源 API。**新版仍处于 [Draft PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30)，尚未合并到 main，也没有经过完整浏览器与真实租户验收。** [查看更多设计与隐私说明](memory-observatory-preview.md)。
+
 ## 为什么有 Apache AGE 和 Temporal？
 
 我们要做“轻量记忆框架”，但**绝不会因为轻量化而放弃图关系和可靠的长任务执行**。
@@ -47,7 +66,8 @@ cd Agent-Memory-Core-v0.1.0
 python scripts/launch_local.py up --profile lite
 ```
 
-- 控制台：<http://127.0.0.1:8765/dashboard/>
+- 新版 Observatory（PR #30 合并后）：<http://127.0.0.1:8765/dashboard/observatory.html>
+- 经典控制台：<http://127.0.0.1:8765/dashboard/>
 - Swagger：<http://127.0.0.1:8765/docs/swagger>
 - OpenAPI：<http://127.0.0.1:8765/openapi.json>
 
@@ -88,7 +108,8 @@ SQL/FTS、Embedding/pgvector、AGE 可以共同发现候选，但最后必须回
 | 你想了解什么 | 入口 |
 | --- | --- |
 | 20 秒理解项目价值 | [README 首页](../README.md) |
-| 想直接看操作过程 | [交互式 Memory Atlas](demo/index.html) |
+| 想看新版前端 | [Memory Observatory](../src/agent_memory_core/resources/dashboard/observatory.html)（Draft PR #30） |
+| 想直接看产品故事 | [交互式 Memory Atlas](demo/index.html) |
 | 了解全部真实边界 | [架构审计](ARCHITECTURE-REVIEW.md) |
 | 看证据驱动修订链路 | [Evidence-Grounded Revision](EVIDENCE-GROUNDED-REVISION.md) |
 | 看 AGE 与 Temporal 战略 | [专项路线与验收](AGE-TEMPORAL-STRATEGY.md) |

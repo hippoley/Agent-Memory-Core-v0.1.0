@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from agent_memory_core.postgres import PostgresMemory
@@ -31,6 +32,7 @@ async def main():
             predicate="inspection_period",
             value={"days": 45},
             source_id="maintenance-bulletin-v2",
+            valid_from=datetime.now(timezone.utc),
         )
     finally:
         db.close()

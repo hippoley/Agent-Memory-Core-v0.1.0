@@ -61,11 +61,20 @@ class OpenAICompatFactExtractor:
             urllib.request.ProxyHandler({}), _NoRedirect())
 
     def __call__(self, text: str) -> list[dict]:
+        return self.extract_with_context(text, [])
+
+    def extract_with_context(self, text: str, context_turns: list[str]) -> list[dict]:
+        """Domain-neutral LLM extraction with bounded untrusted prior turns.
+
+        Context assists candidate generation, but does not authorize deletion:
+        the resulting RETRACT must contain an exact expected_value, which the
+        canonical PostgreSQL compare-and-withdraw path verifies atomically.
+        """
         if not isinstance(text, str) or not text.strip() or len(text) > 100000:
             raise ValueError("Nonempty text up to 100000 characters required")
         messages = [
             {"role": "system", "content": EXTRACTOR_INSTRUCTION},
-            {"role": "user", "content": untrusted_user_payload(text)},
+            {"role": "user", "content": untrusted_user_payload(text, context_turns=context_turns)},
         ]
         # One corrective retry. Small models drift two ways: prose or a code
         # fence around the JSON, and a bare string where an object is required.

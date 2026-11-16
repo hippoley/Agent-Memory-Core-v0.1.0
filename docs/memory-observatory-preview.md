@@ -54,3 +54,15 @@ Use the domain picker to filter claims. Click a marked curve segment/label regio
 - Secondary text: `#8190aa`
 
 Keep synthetic demo data labeled. Never present example metrics or visual curves as proof of retrieval correctness.
+
+## Visual refinement · 2026-11-16
+
+The second pass refines the frontend toward a computational-editorial, gallery-grade visual system:
+
+- Off-white paper, fine grid lines, restrained sapphire blue and ink typography.
+- Layered, volumetric *procedural filament bundles* instead of flat, single-wave graph curves.
+- Fine perimeter instrumentation, slender annotation leaders, lighter panels and increased whitespace.
+- A single throttled animation loop (approximately 30 FPS maximum), with reduced-motion support.
+- Annotation and claim semantics remain distinct: the filament bundle denotes a classified claim domain, not a real graph cluster; curves and crossings imply neither semantic similarity nor relationships.
+
+**Visual review limitation:** This change was syntax-checked against the committed HTML but not yet visually verified in a real browser session. Screenshots at 1440×900, 1920×1080 and narrow mobile viewport and manual controls testing remain pre-merge requirements. Do not claim visual acceptance based only on syntax validation.

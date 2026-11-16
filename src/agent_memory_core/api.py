@@ -193,6 +193,7 @@ class ProcessRequest(BaseModel):
     source_id: str = Field(min_length=1, max_length=255, description="Provenance identifier for this ingestion.")
     candidates: list[dict] | None = Field(default=None, max_length=500, description="Optional structured facts. If omitted, a server-configured local extractor must be available.")
     context_turns: list[str] = Field(default_factory=list, max_length=3, description="Optional recent prior utterances in chronological order (each <=2000 chars). Only explicitly configured contextual extractors use them; unsupported providers fail closed.")
+    ground_with_memory: bool = Field(default=False, description="Opt in to retrieving tenant-scoped canonical memory as evidence for LLM revision planning; requires a supporting model extractor and a search adapter.")
     confidence_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     observed_at: str | None = Field(
         default=None,
@@ -945,14 +946,46 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                    for turn in item.context_turns):
                 raise HTTPException(status_code=422, detail="context_turns must contain nonempty text of at most 2000 characters each")
             if item.candidates is not None:
-                if item.context_turns:
-                    raise HTTPException(status_code=422, detail="Context resolution cannot be combined with caller-supplied candidates")
+                if item.context_turns or item.ground_with_memory:
+                    raise HTTPException(status_code=422, detail="Cannot mix candidate facts with server-side context or grounding")
                 extractor = lambda _text: item.candidates
             elif memory_extractor_factory is not None:
                 provider_extractor = memory_extractor_factory(t)
                 if not callable(provider_extractor):
                     raise RuntimeError("Configured local memory extractor is unavailable")
-                if item.context_turns:
+                if item.ground_with_memory:
+                    from .evidence import evidence_from_hits, guard_retractions
+                    grounded = getattr(provider_extractor, "extract_with_evidence", None)
+                    if not callable(grounded):
+                        raise HTTPException(status_code=422, detail="Extractor does not support evidence-grounded revision")
+                    if search_factory is None:
+                        raise HTTPException(status_code=503, detail="Grounding requires a search adapter")
+                    query_embedding = None
+                    query_model = None
+                    if embedder is not None and auto_embed and (capability_flags or {}).get("semantic", False):
+                        try:
+                            query_embedding = embedder.embed_text(item.text)
+                            query_model = embedder.model_id
+                        except Exception:
+                            # Semantic provider unavailable: canonical SQL/FTS
+                            # may still retrieve evidence. No fabricated hits.
+                            pass
+                    search = search_factory()
+                    try:
+                        report = search.search_detailed(
+                            tenant_id=t, query=item.text,
+                            embedding=query_embedding, model_id=query_model,
+                            limit=8,
+                        )
+                        evidence = evidence_from_hits(report.hits)
+                    finally:
+                        close = getattr(search, "close", None)
+                        if callable(close):
+                            close()
+                    def extractor(text):
+                        proposed = grounded(text, item.context_turns, evidence)
+                        return guard_retractions(proposed, evidence)
+                elif item.context_turns:
                     contextual = getattr(provider_extractor, "extract_with_context", None)
                     if not callable(contextual):
                         raise HTTPException(status_code=422, detail="Configured extractor does not support explicit context resolution")

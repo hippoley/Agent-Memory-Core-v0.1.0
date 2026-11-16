@@ -67,11 +67,29 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 @media(max-width:1150px){.main{grid-template-columns:105px minmax(0,1fr)}.stage{min-height:500px}.view{height:580px;min-height:480px;max-height:none}.right{padding-top:25px}}
 @media(max-width:680px){.shell{padding:16px}.top{padding:9px 0 22px}.brand-meta{margin-left:36px;font-size:8px}.main{display:block}.rail{padding:6px 0}.nav{padding:12px}.stage-head{top:17px}.view{height:520px;min-height:450px}.view:after{inset:65px 8px 75px}.right{padding:21px 0}.metric{font-size:46px}.lower{padding-top:20px}.legend{gap:9px}.legend span{font-size:8px}}
 
+
+/* Guided investor demonstration, always labeled as synthetic */
+.tour-launch{border:1px solid #1557f5;background:#1557f5;color:#fff;font-size:10px;letter-spacing:.08em;padding:10px 14px;cursor:pointer}
+.tour-launch:hover{background:#003dd0}
+.tour-overlay{position:fixed;inset:0;z-index:9;background:rgba(12,29,71,.12);display:none;align-items:flex-end;justify-content:center;padding:28px;pointer-events:none}
+.tour-overlay.open{display:flex}
+.tour-card{width:min(600px,100%);background:rgba(255,255,255,.98);border:1px solid #dbe3f1;box-shadow:0 22px 90px #162d5c29;padding:25px 28px 22px;pointer-events:auto}
+.tour-kicker{color:#1557f5;font-size:9px;letter-spacing:.22em;text-transform:uppercase;margin-bottom:9px}
+.tour-heading{font-size:25px;font-weight:300;letter-spacing:-.045em;margin:0 0 9px}
+.tour-description{color:#677997;font-size:12px;line-height:1.8;min-height:44px}
+.tour-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px}
+.tour-counter{font-family:ui-monospace,monospace;font-size:10px;color:#8798b3}
+.tour-buttons{display:flex;gap:9px;align-items:center}
+.tour-buttons button{padding:10px 14px;font-size:10px;cursor:pointer}
+.tour-close{border:1px solid #e6ebf4;background:white;color:#506282}
+.tour-next{border:1px solid #1557f5;background:#1557f5;color:white}
+@media(max-width:680px){.tour-overlay{padding:10px}.tour-card{padding:20px}.tour-heading{font-size:22px}.top-right{flex-wrap:wrap}}
+
 </style>
 </head>
 <body>
 <div class="shell">
-<header class="top"><div><div class="wordmark">Agent Memory Observatory</div><div class="micro brand-meta">AGENT MEMORY CORE <span class="blue">/</span> COMPUTATIONAL INTERFACE 001</div></div><div class="top-right"><select id="scope" class="select" aria-label="记忆视图范围"><option value="all">All memory domains</option></select><div class="connection"><i id="statusDot" class="dot"></i><span id="statusText">Demo data</span></div><button id="connectBtn" class="icon-btn" type="button" title="连接真实 API">↗</button></div></header>
+<header class="top"><div><div class="wordmark">Agent Memory Observatory</div><div class="micro brand-meta">AGENT MEMORY CORE <span class="blue">/</span> COMPUTATIONAL INTERFACE 001</div></div><div class="top-right"><select id="scope" class="select" aria-label="记忆视图范围"><option value="all">All memory domains</option></select><div class="connection"><i id="statusDot" class="dot"></i><span id="statusText">Demo data</span></div><button id="tourLaunch" class="tour-launch" type="button">LIVE DEMO →</button><button id="connectBtn" class="icon-btn" type="button" title="连接真实 API">↗</button></div></header>
 <div class="main">
 <nav class="rail" aria-label="导航"><button class="nav active" data-view="topology">Memory Topology</button><button class="nav" data-view="trace">Retrieval Trace</button><button class="nav" data-view="temporal">Temporal Evolution</button><button class="nav" data-view="conflicts">Conflict & Revision</button><button class="nav" data-view="evaluation">Evaluation</button><a class="nav" href="/dashboard/">Classic Console ↗</a></nav>
 <main class="stage">
@@ -88,6 +106,7 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 <div class="lower"><section><h2>Memory evolution / Time</h2><div class="mini">Snapshot evolution by recorded history. Drag the cursor to inspect previous states.</div><div class="timeline" id="histogram" aria-hidden="true"></div><input class="range" id="time" type="range" min="0" max="100" value="100" aria-label="历史快照位置"><div class="time-labels"><span id="startTime">Earlier</span><span id="currentTime">Latest</span></div></section><section><h2>Recent events / Provenance</h2><div id="eventList" class="mini">No events loaded.</div></section><section><h2>Data mapping / Transparency</h2><div class="mini">Each filament bundle = a stable semantic domain; strand count is a capped monotonic function of the number of claims in that domain; blue highlight = selected claim or locally matched evidence. Layout is deterministic per domain and record identity. Spatial distance and curve curvature are <strong>not</strong> similarity scores or causal relationships.</div><p class="mini">The API currently exposes claim browse and event replay. This first edition does not invent AGE topology edges, embeddings or model-quality metrics.</p><button id="export" class="secondary">Export current snapshot JSON ↓</button></section></div>
 <footer class="footer"><span>AGENT MEMORY CORE / OBSERVATORY / RESEARCH PREVIEW</span><span>Original data-driven visualization · Bsph Blue #125CFF · Demo never masquerades as production</span></footer>
 </div>
+<div class="tour-overlay" id="tour" role="dialog" aria-modal="true" aria-labelledby="tourHeading" aria-hidden="true"><div class="tour-card"><div class="tour-kicker">GUIDED DEMO / SYNTHETIC DATA</div><h2 class="tour-heading" id="tourHeading"></h2><div class="tour-description" id="tourDescription"></div><div class="tour-actions"><span class="tour-counter" id="tourCounter"></span><div class="tour-buttons"><button class="tour-close" id="tourClose" type="button">Exit</button><button class="tour-next" id="tourNext" type="button">Continue →</button></div></div></div></div>
 <div class="auth" id="auth" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div class="auth-box"><h2 id="authTitle">Connect Memory Runtime</h2><p>Read-only connection to the same-origin FastAPI service. Enter a tenant-scoped bearer key; credentials are held only in this tab's memory and never included in URLs.</p><label class="micro" for="key">BEARER KEY</label><input id="key" type="password" autocomplete="off" placeholder="Paste API key"><div class="alert" id="authError"></div><div class="auth-actions"><button class="secondary" id="demoBtn">Use demo</button><button class="primary" id="liveBtn">Connect live →</button></div></div></div>
 <script>
 "use strict";
@@ -243,6 +262,33 @@ $("connectBtn").onclick=()=>{$("auth").classList.add("open");$("authError").text
 $("demoBtn").onclick=()=>{state={...state,mode:"demo",key:"",items:demo,events:[],selection:null,position:100,scope:"all"};$("auth").classList.remove("open");$("key").value="";$("scope").value="all";render();draw()};
 async function api(path,key){let ctl=new AbortController();let timer=setTimeout(()=>ctl.abort(),10000);try{let r=await fetch(path,{headers:{"Authorization":"Bearer "+key},signal:ctl.signal,cache:"no-store"});if(!r.ok)throw Error("API returned HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
 $("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key){$("authError").textContent="Enter the API key.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};$("key").value="";$("auth").classList.remove("open");$("scope").value="all";render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){$("auth").classList.remove("open")}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){$("auth").classList.remove("open");if($("tour").classList.contains("open"))closeTour()}});
+
+const tourSteps=[
+ {title:"01 / A memory becomes part of a system",description:"The synthetic home-agent dataset contains remembered preferences, facts, events, device states and policies. Every filament bundle is driven by claim counts.",action:()=>{state.position=100;state.scope="all";state.query="";state.selection=null;$("scope").value="all";$("time").value=100;$("query").value="";activate("topology")}},
+ {title:"02 / Memory is organized, not merely stored",description:"Filter to preferences. This changes the actual claims used to construct the visual geometry. The count and selected domain reflect the filtered dataset.",action:()=>{state.scope="0";$("scope").value="0";state.selection="d-01";render();draw()}},
+ {title:"03 / Ask why an Agent remembers something",description:"Local text matching highlights a relevant claim. Inspect the source identifier, subject, predicate and original recorded value on the right.",action:()=>{state.scope="all";$("scope").value="all";state.query="本地";$("query").value="本地";state.selection="d-01";activate("trace")}},
+ {title:"04 / Travel through memory time",description:"The history slider is a real filter over recorded timestamps. Older snapshots contain fewer synthetic claims. This is not a simulated database query.",action:()=>{state.scope="all";$("scope").value="all";state.query="";$("query").value="";state.selection=null;state.position=44;$("time").value=44;activate("temporal")}},
+ {title:"05 / Show the audit boundary",description:"This preview is grounded in canonical claim and event fields. It does not invent AGE edges, semantic distances or measured quality scores. A live, authenticated tenant can be connected separately.",action:()=>{state.position=100;$("time").value=100;activate("evaluation")}}
+];
+let tourIndex=0,tourBefore=null;
+function showTourStep(){
+ const s=tourSteps[tourIndex];s.action();$("tourHeading").textContent=s.title;$("tourDescription").textContent=s.description;
+ $("tourCounter").textContent=String(tourIndex+1).padStart(2,"0")+" / "+String(tourSteps.length).padStart(2,"0");
+ $("tourNext").textContent=tourIndex===tourSteps.length-1?"Finish ✓":"Continue →";
+}
+function closeTour(){
+ $("tour").classList.remove("open");$("tour").setAttribute("aria-hidden","true");
+ if(tourBefore&&tourBefore.mode==="live"){state={...state,...tourBefore};$("scope").value=state.scope;render();draw()}
+ tourBefore=null;$("tourLaunch").focus();
+}
+$("tourLaunch").onclick=()=>{
+ tourBefore={...state};state={...state,mode:"demo",key:"",items:demo,events:[],position:100,scope:"all",selection:null,query:""};
+ tourIndex=0;$("tour").classList.add("open");$("tour").setAttribute("aria-hidden","false");
+ showTourStep();$("tourNext").focus();
+};
+$("tourNext").onclick=()=>{if(tourIndex===tourSteps.length-1){closeTour();return}tourIndex++;showTourStep()};
+$("tourClose").onclick=closeTour;
+
 options();render();resize();start();
 </script></body></html>

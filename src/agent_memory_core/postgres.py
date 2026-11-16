@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
 from .vector_validation import vector_literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 import json
 
 def aware(value: datetime) -> datetime:

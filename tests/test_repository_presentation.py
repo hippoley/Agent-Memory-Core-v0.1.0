@@ -66,7 +66,7 @@ def test_bsph_blue_svg_illustrations_follow_one_design_contract():
         assert "href=\"http" not in source
     guide=(ROOT/"docs/DESIGN-SYSTEM.md").read_text(encoding="utf-8")
     assert "Apache AGE" in guide and "Temporal" in guide
-    assert "not a real AGE edge" in guide
+    assert "must not" in guide and "real AGE edge" in guide
 
 
 def test_readme_observatory_previews_are_truthfully_labeled():

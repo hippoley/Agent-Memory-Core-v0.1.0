@@ -12,6 +12,15 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e '.[dev,api]'
       - run: pytest -q
+      - name: Re-score unchanged Chinese 200-case corpus (rules only)
+        run: |
+          python scripts/eval/diagnose_zh_200_rules.py --json-out /tmp/zh_200_rules.json
+      - name: Retain per-case real rule extraction evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: zh-200-rule-extraction-${{ github.sha }}
+          path: /tmp/zh_200_rules.json
+          retention-days: 30
 
   build-wheel:
     runs-on: ubuntu-latest

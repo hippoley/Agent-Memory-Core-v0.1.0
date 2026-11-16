@@ -483,7 +483,8 @@ class PostgresMemory:
     def forget_many(self, *, tenant_id: str, subject_id: str | None = None,
                     predicate: str | None = None,
                     source_id: str | None = None,
-                    expected_value: dict | None = None) -> list[str]:
+                    expected_value: dict | None = None,
+                    expected_memory_id: str | None = None) -> list[str]:
         """Soft-forget every active claim matching the tenant-scoped filters.
 
         At least one filter must be supplied. Each forgotten claim emits its
@@ -506,6 +507,13 @@ class PostgresMemory:
                 sql+=" AND subject_id=%s"; params.append(subject_id)
             if predicate:
                 sql+=" AND predicate=%s"; params.append(predicate)
+            if expected_memory_id is not None:
+                try:
+                    canonical_id = str(UUID(expected_memory_id))
+                except (ValueError, TypeError, AttributeError) as exc:
+                    raise ValueError("Invalid expected memory ID") from exc
+                sql+=" AND id=%s::uuid"
+                params.append(canonical_id)
             if expected_value is not None:
                 # Contextual withdrawals must not erase a newer claim whose
                 # value no longer matches the cited antecedent. Bound JSONB

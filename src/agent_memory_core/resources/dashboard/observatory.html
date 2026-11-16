@@ -85,7 +85,7 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 <section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="submit">Find related memories →</button></form><div id="searchNote" class="result-note">Search currently loaded claims. Highlighting is local; it is not a server-side hybrid retrieval score.</div></section>
 <section class="panel"><h2>Focus / Evidence</h2><div class="selection" id="detail" aria-live="polite">Select a topology strand to inspect its supporting claims.</div></section>
 </aside></div>
-<div class="lower"><section><h2>Memory evolution / Time</h2><div class="mini">Snapshot evolution by recorded history. Drag the cursor to inspect previous states.</div><div class="timeline" id="histogram" aria-hidden="true"></div><input class="range" id="time" type="range" min="0" max="100" value="100" aria-label="历史快照位置"><div class="time-labels"><span id="startTime">Earlier</span><span id="currentTime">Latest</span></div></section><section><h2>Recent events / Provenance</h2><div id="eventList" class="mini">No events loaded.</div></section><section><h2>Data mapping / Transparency</h2><div class="mini">Each strand = a stable semantic domain; strand density = number of claims within that domain; blue highlight = selected claim or locally matched evidence. Layout is deterministic per domain and record identity. Spatial distance and curve curvature are <strong>not</strong> similarity scores or causal relationships.</div><p class="mini">The API currently exposes claim browse and event replay. This first edition does not invent AGE topology edges, embeddings or model-quality metrics.</p><button id="export" class="secondary">Export current snapshot JSON ↓</button></section></div>
+<div class="lower"><section><h2>Memory evolution / Time</h2><div class="mini">Snapshot evolution by recorded history. Drag the cursor to inspect previous states.</div><div class="timeline" id="histogram" aria-hidden="true"></div><input class="range" id="time" type="range" min="0" max="100" value="100" aria-label="历史快照位置"><div class="time-labels"><span id="startTime">Earlier</span><span id="currentTime">Latest</span></div></section><section><h2>Recent events / Provenance</h2><div id="eventList" class="mini">No events loaded.</div></section><section><h2>Data mapping / Transparency</h2><div class="mini">Each filament bundle = a stable semantic domain; strand count is a capped monotonic function of the number of claims in that domain; blue highlight = selected claim or locally matched evidence. Layout is deterministic per domain and record identity. Spatial distance and curve curvature are <strong>not</strong> similarity scores or causal relationships.</div><p class="mini">The API currently exposes claim browse and event replay. This first edition does not invent AGE topology edges, embeddings or model-quality metrics.</p><button id="export" class="secondary">Export current snapshot JSON ↓</button></section></div>
 <footer class="footer"><span>AGENT MEMORY CORE / OBSERVATORY / RESEARCH PREVIEW</span><span>Original data-driven visualization · Bsph Blue #125CFF · Demo never masquerades as production</span></footer>
 </div>
 <div class="auth" id="auth" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div class="auth-box"><h2 id="authTitle">Connect Memory Runtime</h2><p>Read-only connection to the same-origin FastAPI service. Enter a tenant-scoped bearer key; credentials are held only in this tab's memory and never included in URLs.</p><label class="micro" for="key">BEARER KEY</label><input id="key" type="password" autocomplete="off" placeholder="Paste API key"><div class="alert" id="authError"></div><div class="auth-actions"><button class="secondary" id="demoBtn">Use demo</button><button class="primary" id="liveBtn">Connect live →</button></div></div></div>
@@ -216,15 +216,25 @@ function draw(){
   });
   // A restrained blue glint guides focus; never placed outside the sculpture.
   ctx.restore();
-  if(motion)requestAnimationFrame(draw);
+  }
+// One requestAnimationFrame loop only: user interactions redraw immediately
+// without spawning new render loops; cap animation to 30 fps on large datasets.
+function start(){
+  let last=0;
+  function loop(now){
+    if(state.running && now-last>=33 && !matchMedia("(prefers-reduced-motion: reduce)").matches){
+      last=now;draw();
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
 }
-function start(){requestAnimationFrame(draw)}
 function activate(view){state.view=view;document.querySelectorAll(".nav[data-view]").forEach(n=>n.classList.toggle("active",n.dataset.view===view));const names={topology:["01 / Memory topology","Stable visual mapping from canonical claims to spatial memory domains."],trace:["02 / Retrieval trace","Local text-match highlights only. No fabricated hybrid-search rankings."],temporal:["03 / Temporal evolution","Move the history slider to replay recorded claims."],conflicts:["04 / Conflict & revision","Inspect superseded claims and their audit provenance."],evaluation:["05 / Evaluation","A visual observatory is not an evaluation score. Benchmarks require measured data."]};$("sectionTitle").textContent=names[view][0];$("sectionDesc").textContent=names[view][1];if(view==="conflicts"){$("scope").value="all";state.scope="all";let superseded=state.items.find(x=>x.superseded_at);state.selection=superseded?String(superseded.id||superseded.memory_id):null}if(view==="temporal")$("time").focus();render();draw()}
 document.querySelectorAll(".nav[data-view]").forEach(b=>b.addEventListener("click",()=>activate(b.dataset.view)));
 $("scope").onchange=e=>{state.scope=e.target.value;state.selection=null;render();draw()};
 $("time").oninput=e=>{state.position=Number(e.target.value);render();draw()};
 $("reset").onclick=()=>{state.phase=0;state.scale=1;state.position=100;$("time").value=100;state.selection=null;state.query="";$("query").value="";render();draw()};
-$("pause").onclick=()=>{state.running=!state.running;$("pause").textContent=state.running?"Ⅱ":"▶";if(state.running)start()};
+$("pause").onclick=()=>{state.running=!state.running;$("pause").textContent=state.running?"Ⅱ":"▶";if(state.running)draw()};
 $("searchForm").onsubmit=e=>{e.preventDefault();state.query=$("query").value.trim();state.selection=null;render();draw()};
 canvas.onclick=e=>{let r=canvas.getBoundingClientRect();let x=e.clientX-r.left,y=e.clientY-r.top;let closest=positions.map(p=>({...p,d:Math.hypot(x-p.x,y-p.y)})).sort((a,b)=>a.d-b.d)[0];if(!closest||closest.d>150)return;let items=closest.group.items;let matched=state.query?items.find(it=>[it.subject_id,it.predicate,it.source_id,valueText(it)].join(" ").toLowerCase().includes(state.query.toLowerCase())):null;let item=matched||items[0];state.selection=String(item.id||item.memory_id);render();draw()};
 canvas.onwheel=e=>{if(!e.ctrlKey)return;e.preventDefault();state.scale=Math.max(.62,Math.min(1.65,state.scale-e.deltaY*.001));draw()};

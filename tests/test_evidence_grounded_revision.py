@@ -126,3 +126,12 @@ def test_api_rejects_untrusted_candidates_combined_with_grounding():
         json={"text":"test","source_id":"s1","candidates":[],
               "ground_with_memory":True})
     assert response.status_code==422
+
+def test_history_replay_does_not_ground_against_current_database():
+    app=create_app(api_key=KEY,tenant_id="tenant-a",
+                   store_factory=DummyMemory)
+    response=TestClient(app).post("/v1/memories/process",headers=AUTH,
+        json={"text":"a historical correction","source_id":"archive:1",
+              "ground_with_memory":True,
+              "observed_at":"2026-01-01T00:00:00+00:00"})
+    assert response.status_code==422

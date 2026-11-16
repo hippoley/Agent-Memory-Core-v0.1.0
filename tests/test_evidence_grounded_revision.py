@@ -18,7 +18,7 @@ def test_evidence_references_are_exact_and_not_vocabulary_bound():
     ground=evidence_from_hits([SimpleNamespace(**HIT)])
     got=guard_retractions([CANDIDATE],ground)
     assert got[0]["operation"]=="RETRACT"
-    assert "expected_memory_id" not in got[0]
+    assert got[0]["expected_memory_id"]=="mem-1"
     assert got[0]["expected_value"]=={"months":1}
 
 
@@ -50,10 +50,11 @@ class DummyMemory:
     def __init__(self):self.forgotten=[]
     def predicate_cardinality(self,**kw):return "one"
     def forget_many(self, *, tenant_id, subject_id=None, predicate=None,
-                    source_id=None, expected_value=None):
+                    source_id=None, expected_value=None, expected_memory_id=None):
         self.forgotten.append({"tenant_id":tenant_id,"subject_id":subject_id,
                                "predicate":predicate,"source_id":source_id,
-                               "expected_value":expected_value})
+                               "expected_value":expected_value,
+                               "expected_memory_id":expected_memory_id})
         return ["mem-1"]
     def close(self):pass
 
@@ -101,6 +102,7 @@ def test_authenticated_api_retrieves_canonical_evidence_then_processes_withdrawa
     assert extractor.seen[2]==[HIT]
     assert memory.forgotten[0]["subject_id"]=="supplier-7"
     assert memory.forgotten[0]["expected_value"]=={"months":1}
+    assert memory.forgotten[0]["expected_memory_id"]=="mem-1"
 
 
 def test_api_fails_closed_without_verified_evidence():

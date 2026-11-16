@@ -492,6 +492,13 @@ class PostgresMemory:
         if not tenant_id or (not subject_id and not predicate):
             raise ValueError("Provide subject_id and/or predicate to forget")
         with self.conn.transaction():
+            # The same lock ordering as apply_candidate prevents a concurrent
+            # upsert from racing between expected-value comparison and
+            # withdrawal. Nested forget() transactions are SAVEPOINTS and
+            # remain inside this outer atomic transaction.
+            if subject_id and predicate:
+                self._lock_predicate(tenant_id, predicate)
+                self._lock_fact(tenant_id, subject_id, predicate)
             sql="""SELECT id::text FROM memory_claims
                    WHERE tenant_id=%s AND superseded_at IS NULL"""
             params=[tenant_id]
@@ -509,11 +516,11 @@ class PostgresMemory:
                 params.append(json.dumps(expected_value, ensure_ascii=False, sort_keys=True))
             sql+=" FOR UPDATE"
             ids=[row[0] for row in self.conn.execute(sql,params)]
-        forgotten=[]
-        for mid in ids:
-            if self.forget(tenant_id=tenant_id,memory_id=mid,source_id=source_id):
-                forgotten.append(mid)
-        return forgotten
+            forgotten=[]
+            for mid in ids:
+                if self.forget(tenant_id=tenant_id,memory_id=mid,source_id=source_id):
+                    forgotten.append(mid)
+            return forgotten
 
     @staticmethod
     def _embedding_table(dimension: int) -> str:

@@ -66,7 +66,7 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
                 or json.dumps(candidate.get("expected_value"), sort_keys=True, ensure_ascii=False)
                     != json.dumps(known["value"], sort_keys=True, ensure_ascii=False)):
             raise ValueError("Unverified memory withdrawal: candidate differs from evidence")
-        # The Processor understands exact expected_value; the memory ID is
-        # recorded by the grounded extractor but not trusted as deletion scope.
-        result.append({k: v for k, v in candidate.items() if k != "expected_memory_id"})
+        # Preserve the canonical claim ID as an additional database-level
+        # precondition; checking only value would allow stale same-value claims.
+        result.append(candidate)
     return result

@@ -138,6 +138,7 @@ def provider_settings(kind: str) -> dict | None:
             "json_mode": True,
             "dimensions": None,
             "batch_size": None,
+            "require_model_attestation": os.getenv("MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION", "0") == "1",
         }
 
     preset = PRESETS.get(provider)
@@ -167,6 +168,7 @@ def provider_settings(kind: str) -> dict | None:
         "json_mode": read("JSON_MODE", "1") == "1",
         "dimensions": None,
         "batch_size": None,
+        "require_model_attestation": os.getenv("MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION", "0") == "1",
     }
     if kind == "embedding":
         raw_dimensions = read("DIMENSIONS")
@@ -189,12 +191,14 @@ def build_extractor(tenant_id: str | None = None):
     if settings["provider"] == "ollama-native":
         from .local_extractor import OllamaFactExtractor
         return OllamaFactExtractor(model=settings["model"], endpoint=settings["base_url"],
-                                   timeout=settings["timeout"])
+                                   timeout=settings["timeout"],
+                                   require_model_attestation=settings["require_model_attestation"])
     from .openai_compat import OpenAICompatFactExtractor
     return OpenAICompatFactExtractor(
         model=settings["model"], base_url=settings["base_url"],
         api_key=settings["api_key"], timeout=settings["timeout"],
-        json_mode=settings["json_mode"])
+        json_mode=settings["json_mode"],
+        require_model_match=settings["require_model_attestation"])
 
 
 class ProviderEmbedder:

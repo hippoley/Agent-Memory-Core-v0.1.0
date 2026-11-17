@@ -139,7 +139,7 @@ def validate_predictions(payload: dict, cases: list[dict], digest: str) -> dict[
 
 def score(gold: list[dict], predictions: dict[str, dict], configuration: dict, digest: str) -> dict:
     extract_tp = extract_fp = extract_fn = 0
-    correct_state = correct_answer = 0
+    correct_state = correct_answer = exact_story = 0
     retrieve_tp = retrieve_fp = retrieve_fn = 0
     rr = 0.0
     positive_queries = clean_negative = negative_queries = 0
@@ -150,6 +150,7 @@ def score(gold: list[dict], predictions: dict[str, dict], configuration: dict, d
         prediction = predictions[case["id"]]
         tp, fp, fn = _counts(case["expected_events"], prediction["extracted"], event=True)
         extract_tp += tp; extract_fp += fp; extract_fn += fn
+        extraction_ok = (fp == 0 and fn == 0)
         state_ok = Counter(_fact_key(x) for x in case["expected_current"]) == Counter(
             _fact_key(x) for x in prediction["current"])
         correct_state += state_ok
@@ -169,6 +170,11 @@ def score(gold: list[dict], predictions: dict[str, dict], configuration: dict, d
             _normalize_answer(a) for a in case["accepted_answers"]
         }
         correct_answer += answer_ok
+        # A model must not pass an entire story by compensating one unsafe
+        # operation with a lucky final answer. Include clean negative queries.
+        retrieval_exact = set(gotret) == goldret and len(gotret) == len(goldret)
+        story_ok = extraction_ok and state_ok and retrieval_exact and answer_ok
+        exact_story += bool(story_ok)
         if case.get("expected_abstain", False):
             answer_abstain_total += 1
             answer_abstain_hits += answer_ok
@@ -180,7 +186,10 @@ def score(gold: list[dict], predictions: dict[str, dict], configuration: dict, d
                         "extraction":{"tp":tp,"fp":fp,"fn":fn},
                         "state_exact":bool(state_ok),
                         "retrieval_hits":hits, "retrieval_gold":len(goldret),
-                        "answer_exact":bool(answer_ok)})
+                        "answer_exact":bool(answer_ok),
+                        "extraction_exact":bool(extraction_ok),
+                        "retrieval_exact":bool(retrieval_exact),
+                        "story_exact":bool(story_ok)})
     n=len(gold)
     return {
         "dataset_sha256":digest,
@@ -198,6 +207,9 @@ def score(gold: list[dict], predictions: dict[str, dict], configuration: dict, d
                   "correct":correct_answer,"total":n,
                   "abstention_accuracy":round(answer_abstain_hits/answer_abstain_total,6) if answer_abstain_total else None,
                   "abstention_cases":answer_abstain_total},
+        "end_to_end":{"exact_story_accuracy":round(exact_story/n,6),
+                      "correct":exact_story,"total":n,
+                      "rule":"All four stages pass on the same case; no compensation across stages."},
         "by_category":dict(per_cat),
         "details":details,
         "grading_limitations":"Exact structured facts and predeclared normalized answer variants; not semantic model judging."

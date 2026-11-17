@@ -135,3 +135,24 @@ def test_ollama_attestation_requires_digest_and_version():
     call["model_digest"]=None
     assert not probe.assess_model_attestation(snapshot,model="qwen-local",
                                               provider="ollama")["model_runtime_verified"]
+
+
+def test_probe_writes_redacted_nonzero_failure_artifact(monkeypatch, tmp_path):
+    import json
+    import sys
+    def fail(_args):
+        raise RuntimeError("secret-token-should-never-leak")
+    report_path=tmp_path / "failure.json"
+    monkeypatch.setattr(probe,"run",fail)
+    monkeypatch.setattr(sys,"argv",[
+        "probe", "--base-url","http://127.0.0.1:8767",
+        "--key","a"*32,"--extractor-model","qwen-local",
+        "--provider","ollama","--ack-disposable","--report",str(report_path)])
+    assert probe.main()==1
+    raw=report_path.read_text(encoding="utf-8")
+    report=json.loads(raw)
+    assert report["passed"] is False
+    assert report["failure_stage"]=="exception"
+    assert report["failure_type"]=="RuntimeError"
+    assert "secret-token" not in raw
+    assert "a"*32 not in raw

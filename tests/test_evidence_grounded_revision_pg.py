@@ -8,7 +8,8 @@ import pytest
 pytestmark=pytest.mark.integration
 
 
-def test_grounded_revision_uses_real_postgres_and_keeps_history():
+@pytest.mark.parametrize("atomic_batch", [False, True])
+def test_grounded_revision_uses_real_postgres_and_keeps_history(atomic_batch):
     dsn=os.getenv("MEMORY_TEST_DSN")
     if not dsn:
         pytest.skip("Requires isolated PostgreSQL AGE/pgvector test service")
@@ -56,9 +57,12 @@ def test_grounded_revision_uses_real_postgres_and_keeps_history():
         headers={"Authorization":"Bearer "+token},json={
         "text":"supplier-7 settlement period now quarterly, not monthly",
         "source_id":"dialogue-turn-2","ground_with_memory":True,
+        "atomic_batch":atomic_batch,
         "context_turns":["supplier-7 settles every month"]})
     assert response.status_code==200,response.text
     assert response.json()["replaced"]==[new_id],response.json()
+    if atomic_batch:
+        assert response.json()["atomic_batch"] is True
     assert model.evidence[0]["memory_id"]==new_id
 
     verify=PostgresMemory(dsn)

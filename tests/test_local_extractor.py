@@ -19,9 +19,13 @@ def fake_opener(monkeypatch, handler):
 def test_local_ollama_returns_facts_and_never_needs_cloud(monkeypatch):
     captured={}
     def serve(request,timeout):
+        if request.get_method() == "GET" and request.full_url.endswith("/api/version"):
+            return FakeHTTP(json.dumps({"version":"0.5.7"}).encode())
+        if request.get_method() == "GET" and request.full_url.endswith("/api/tags"):
+            return FakeHTTP(json.dumps({"models":[]}).encode())
         captured["url"]=request.full_url
         captured["payload"]=json.loads(request.data)
-        return FakeHTTP(json.dumps({"response":json.dumps({"facts":[
+        return FakeHTTP(json.dumps({"model":"local-model","response":json.dumps({"facts":[
             {"subject_id":"bedroom","predicate":"noise",
              "value":{"level":"quiet"},"confidence":0.94}
         ]})}).encode())

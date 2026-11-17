@@ -76,6 +76,15 @@ def test_demo_evidence_search_and_replay(ui):
     with ui.expect_download() as download:
         ui.locator("#export").click()
     assert download.value.suggested_filename=="memory-observatory-demo.json"
+    # Verify downloaded bytes, not merely a browser download event. The JSON
+    # must represent the filtered demo snapshot and never contain credentials.
+    import json
+    exported = json.loads(download.value.path().read_text(encoding="utf-8"))
+    assert exported["mode"] == "demo"
+    assert isinstance(exported["claims"], list)
+    assert len(exported["claims"]) == int(ui.locator("#total").inner_text())
+    assert isinstance(exported["events"], list)
+    assert "authorization" not in json.dumps(exported).lower()
 
 def test_five_step_tour_and_keyboard_focus(ui):
     ui.locator("#tourLaunch").click()

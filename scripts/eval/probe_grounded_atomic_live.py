@@ -100,9 +100,18 @@ def run(args) -> dict:
         # Explicitly query retrieval, rather than treating a DB list as retrieval.
         search = call("POST", "/v1/search",
                       json={"query": subject, "limit": 5}).get("items", [])
-        checks["retrieval_contains_new"] = any(
-            hit.get("subject_id") == subject and hit.get("value") == {"months": 3}
+        # Search hits carry memory_id (not the browse endpoint's id). A
+        # semantically matching but stale/foreign hit must not count as proof
+        # that retrieval points to the exact newly committed claim.
+        new_id = checks["active_quarterly_id"]
+        checks["retrieval_contains_new"] = bool(new_id) and any(
+            hit.get("memory_id") == new_id
+            and hit.get("subject_id") == subject
+            and hit.get("predicate") == "settlement_period"
+            and hit.get("value") == {"months": 3}
             for hit in search)
+        checks["retrieval_excludes_old"] = all(
+            hit.get("memory_id") != old_id for hit in search)
         result["checks"] = checks
         result["passed"] = all(v is True for k, v in checks.items()
                                if k != "active_quarterly_id")

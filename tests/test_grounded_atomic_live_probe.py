@@ -87,3 +87,51 @@ def test_probe_search_requires_exact_new_memory_id_and_no_old_id():
     missing_id = [{k:v for k,v in canonical.items() if k != "memory_id"}]
     assert not probe.assess_search(missing_id, old_id="old-id",
                                    new_id="new-id", subject="supplier-1")["retrieval_contains_new"]
+
+
+def test_preflight_requires_exact_old_canonical_fact():
+    old={"memory_id":"old","subject_id":"supplier-a",
+         "predicate":"settlement_period","value":{"months":1}}
+    assert probe.assess_grounding([old],old_id="old",subject="supplier-a")
+    for row in [
+        {**old,"memory_id":"other"},
+        {**old,"subject_id":"supplier-b"},
+        {**old,"predicate":"different"},
+        {**old,"value":{"months":3}},
+    ]:
+        assert not probe.assess_grounding([row],old_id="old",subject="supplier-a")
+    assert not probe.assess_grounding([],old_id="old",subject="supplier-a")
+
+
+def test_model_attestation_rejects_wrong_provider_or_unhashed_response():
+    call={"requested_model":"qwen-local","response_model":"qwen-local",
+          "identity_status":"matched","request_sha256":"a"*64,
+          "response_sha256":"b"*64}
+    snapshot={"provider":"openai-compatible","identity_verified":True,
+              "calls":[call]}
+    good=probe.assess_model_attestation(snapshot,model="qwen-local",
+                                        provider="openai-compatible")
+    assert all(good.values())
+    assert not probe.assess_model_attestation(snapshot,model="qwen-local",
+                              provider="ollama")["model_provider_verified"]
+    assert not probe.assess_model_attestation(
+        {"provider":"openai-compatible","identity_verified":True,"calls":[{**call,"response_sha256":""}]},
+        model="qwen-local",provider="openai-compatible")["model_identity_verified"]
+    assert not probe.assess_model_attestation(
+        {"provider":"openai-compatible","identity_verified":True,"calls":[]},
+        model="qwen-local",provider="openai-compatible")["model_attestation_present"]
+    assert not probe.assess_model_attestation(snapshot,model="another-model",
+                                        provider="openai-compatible")["model_identity_verified"]
+
+
+def test_ollama_attestation_requires_digest_and_version():
+    call={"requested_model":"qwen-local","response_model":"qwen-local",
+          "identity_status":"matched","request_sha256":"a"*64,
+          "response_sha256":"b"*64,"model_digest":"sha256:abc",
+          "runtime_version":"0.5.7"}
+    snapshot={"provider":"ollama","identity_verified":True,"calls":[call]}
+    assert all(probe.assess_model_attestation(snapshot,model="qwen-local",
+                                             provider="ollama").values())
+    call["model_digest"]=None
+    assert not probe.assess_model_attestation(snapshot,model="qwen-local",
+                                              provider="ollama")["model_runtime_verified"]

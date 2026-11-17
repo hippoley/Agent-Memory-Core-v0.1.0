@@ -91,3 +91,24 @@ If the provider smoke returns HTTP 401, regenerate or correct the pay-as-you-go
 API key in the matching region; do not change the test to accept synthetic
 responses. Once the smoke returns HTTP 200 with a matching model, the rest
 of the gated PostgreSQL + API + canonical-history probe runs normally.
+
+## Post-restart independent acceptance (P0.4, opt-in)
+
+The real Qwen workflow now adds a **separate process-restart acceptance gate**
+after its successful atomic correction. It kills the existing Uvicorn process,
+checks the prior API is no longer healthy, starts a new Uvicorn PID against the
+*same disposable PostgreSQL volume*, and runs
+`scripts/eval/verify_qwen_postrestart.py` from a new Python process and a
+fresh HTTP client/session. The original Qwen extractor is **not** called again.
+
+`evidence/qwen-postrestart-readback.json` must show all of the following:
+fresh API readiness, exactly one active quarterly value with the exact new ID,
+retained historical old and new records, new ID retrievable by search, and old
+ID absent from active search. The manifest records a SHA-256 digest of both
+primary and post-restart reports and sets its final `passed` flag only when
+**both** reports pass. If restart fails, the primary receipt may still pass, but
+P0.4 is not passed.
+
+This is a **new-API-process, new-client-session** persistence proof, not a
+PostgreSQL-container power-cycle proof, multitenant authentication exercise,
+nor full five-semantics benchmark. Those remain separate gates.

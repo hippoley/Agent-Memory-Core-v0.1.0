@@ -1,6 +1,7 @@
 """Tests for non-LLM frozen Chinese four-stage evaluation semantics."""
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -17,9 +18,9 @@ def _perfect_payload():
     for case in gold:
         predictions.append({
             "id":case["id"],
-            "extracted":case["expected_events"],
-            "current":case["expected_current"],
-            "retrieved":case["expected_retrieval"],
+            "extracted":deepcopy(case["expected_events"]),
+            "current":deepcopy(case["expected_current"]),
+            "retrieved":deepcopy(case["expected_retrieval"]),
             "answer":case["accepted_answers"][0],
         })
     payload = {

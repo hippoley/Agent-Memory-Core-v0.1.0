@@ -55,13 +55,15 @@ def test_two_tenants_cannot_read_retract_or_launder_victim_memory():
 
     created = a.post("/v1/memories", headers=ha, json={
         "subject_id": subject, "predicate": "settlement_period",
-        "value": {"months": 1}, "source_id": "victim:original"})
+        "value": {"months": 1}, "source_id": "victim:original",
+        "valid_from":"2026-01-01T00:00:00+00:00"})
     assert created.status_code == 200, created.text
     victim_id = created.json()["id"]
 
     own = b.post("/v1/memories", headers=hb, json={
         "subject_id": subject, "predicate": "settlement_period",
-        "value": {"months": 7}, "source_id": "attacker:own"})
+        "value": {"months": 7}, "source_id": "attacker:own",
+        "valid_from":"2026-01-01T00:00:00+00:00"})
     assert own.status_code == 200, own.text
     attacker_id = own.json()["id"]
 

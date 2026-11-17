@@ -17,6 +17,7 @@ def compare(a: dict, b: dict) -> dict:
         "retrieval_mrr_at_5": ("retrieval","mrr_at_5"),
         "answer_exact_accepted": ("answer","exact_accepted_accuracy"),
         "answer_abstention": ("answer","abstention_accuracy"),
+        "end_to_end_exact_story": ("end_to_end","exact_story_accuracy"),
     }
     values={}
     for name,(section,key) in metrics.items():

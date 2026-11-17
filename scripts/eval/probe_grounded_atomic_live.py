@@ -95,6 +95,22 @@ def assess_grounding(hits: list[dict], *, old_id: str,
         for hit in hits)
 
 
+
+def correction_for(subject: str, language: str) -> tuple[str, str]:
+    """Use exactly the same text for grounding preflight and processing."""
+    if language == "zh":
+        return (
+            f"供应商 {subject} 的结算周期现在改为每三个月一次，不再按月结算。",
+            f"供应商 {subject} 原先每个月结算一次。",
+        )
+    if language == "en":
+        return (
+            f"{subject} now settles every three months instead of monthly.",
+            f"{subject} settles monthly.",
+        )
+    raise ValueError("language must be zh or en")
+
+
 def run(args) -> dict:
     if not args.ack_disposable:
         raise ValueError("Pass --ack-disposable only for a new isolated API tenant")
@@ -105,7 +121,7 @@ def run(args) -> dict:
     base = require_loopback(args.base_url)
     subject = "supplier-" + uuid4().hex[:16]
     result = {"scope": "real_model_grounded_atomic_http", "subject": subject,
-              "extractor_model_declared": args.extractor_model, "checks": {}}
+              "extractor_model_declared": args.extractor_model, "language": args.language, "checks": {}}
     with httpx.Client(base_url=base, timeout=120, trust_env=False,
                       headers={"Authorization": "Bearer " + args.key}) as client:
         def call(method, path, **kw):
@@ -129,7 +145,7 @@ def run(args) -> dict:
         # The API's grounding query is the correction text. Verify that
         # its lexical/vector search can see the exact claim before calling
         # a model, otherwise a failed withdrawal is a retrieval failure.
-        correction = f"{subject} now settles every three months instead of monthly."
+        correction, prior_turn = correction_for(subject, args.language)
         preflight = call("POST", "/v1/search",
                          json={"query": correction, "limit": 8})
         hits = preflight.get("items", [])
@@ -145,7 +161,7 @@ def run(args) -> dict:
         updated = call("POST", "/v1/memories/process", json={
             "text": correction,
             "source_id": "real-probe:correction",
-            "context_turns": [f"{subject} settles monthly."],
+            "context_turns": [prior_turn],
             "ground_with_memory": True,
             "atomic_batch": True,
         })
@@ -186,6 +202,7 @@ def main() -> int:
     parser.add_argument("--key", default=os.getenv("MEMORY_API_KEY"))
     parser.add_argument("--extractor-model", required=True)
     parser.add_argument("--provider", choices=("ollama", "openai-compatible"), required=True)
+    parser.add_argument("--language", choices=("zh", "en"), default="zh")
     parser.add_argument("--ack-disposable", action="store_true")
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()

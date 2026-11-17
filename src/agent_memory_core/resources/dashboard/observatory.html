@@ -298,7 +298,7 @@ function renderSearchHits(items,live){
 }
 async function runSearch(){
  const query=$("query").value.trim();state.query=query;state.selection=null;
- const button=$("searchForm button");button.disabled=true;
+ const button=document.querySelector("#searchForm button");button.disabled=true;
  try{
   if(state.mode==="live"){
    $("searchNote").textContent="Querying the authenticated canonical retrieval API…";

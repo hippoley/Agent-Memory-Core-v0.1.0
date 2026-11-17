@@ -157,6 +157,7 @@ def test_real_live_browser_uses_its_own_persisted_tenant_history(runtime):
         try:
             page.goto(base + "/dashboard/observatory.html", wait_until="load")
             expect(page.locator("#pageMark")).to_have_text("/ DEMO")
+            expect(page.locator("#searchNote")).to_contain_text("Demo mode searches only")
             page.locator("#connectBtn").click()
             page.locator("#key").fill("wrong-key")
             page.locator("#liveBtn").click()

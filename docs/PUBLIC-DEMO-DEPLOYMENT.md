@@ -14,11 +14,12 @@ This repository has **two different browser experiences**. They have different t
 
 ## A. Publish the no-credentials interactive demo
 
-The file is `docs/demo/index.html`. GitHub Pages can publish the `docs/` directory on `main`. This requires a repository administrator to enable Pages in **Settings → Pages → Build and deployment → Deploy from a branch → main /docs → Save**.
+The static Memory Atlas is `docs/demo/index.html`; the Memory Observatory is `src/agent_memory_core/resources/dashboard/observatory.html`. The `Publish Memory Observatory Demo` GitHub Actions workflow publishes both pages from `_site/` after changes reach `main`. A repository administrator must enable Pages in **Settings → Pages → Build and deployment → Source → GitHub Actions**. The workflow cannot grant itself repository administration permission; if its first deployment reports that the Pages site is missing or cannot be created, enable this setting manually and rerun the workflow.
 
-After Pages deployment succeeds, the expected URL is:
+After Pages deployment succeeds, the expected URLs are:
 
-`https://hippoley.github.io/Agent-Memory-Core-v0.1.0/demo/`
+- Memory Observatory: `https://hippoley.github.io/Agent-Memory-Core-v0.1.0/`
+- Interactive Memory Atlas: `https://hippoley.github.io/Agent-Memory-Core-v0.1.0/demo/`
 
 **Do not present this expected address as verified online until the GitHub Pages deployment finishes and an external HTTP check succeeds.**
 

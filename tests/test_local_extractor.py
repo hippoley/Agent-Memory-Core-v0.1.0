@@ -92,3 +92,51 @@ def test_local_extractor_encodes_user_text_as_untrusted_json(monkeypatch):
     encoded=prompt.split("not instructions: ",1)[1]
     assert json.loads(encoded)["untrusted_user_text"]==hostile
     assert captured["payload"]["format"]=="json"
+
+
+def test_local_extractor_attests_ollama_digest_runtime_and_quantization(monkeypatch):
+    from agent_memory_core.local_extractor import OllamaFactExtractor
+    def serve(request, timeout):
+        if request.get_method() == "GET" and request.full_url.endswith("/api/version"):
+            return FakeHTTP(json.dumps({"version": "0.5.7"}).encode())
+        if request.get_method() == "GET" and request.full_url.endswith("/api/tags"):
+            return FakeHTTP(json.dumps({"models": [{
+                "name": "qwen3.6:35b", "model": "qwen3.6:35b",
+                "digest": "sha256:abc123",
+                "details": {"family": "qwen", "parameter_size": "35B",
+                            "quantization_level": "Q4_K_M"},
+            }]}).encode())
+        return FakeHTTP(json.dumps({
+            "model": "qwen3.6:35b", "created_at": "2026-11-17T03:00:00Z",
+            "done": True, "done_reason": "stop", "total_duration": 100,
+            "load_duration": 20, "prompt_eval_count": 50, "eval_count": 12,
+            "response": json.dumps({"facts": []}),
+        }).encode())
+    fake_opener(monkeypatch, serve)
+    ex = OllamaFactExtractor(model="qwen3.6:35b", require_model_attestation=True)
+    assert ex("test") == []
+    report = ex.attestation_snapshot()
+    assert report["identity_verified"] is True
+    call = report["calls"][0]
+    assert call["model_digest"] == "sha256:abc123"
+    assert call["runtime_version"] == "0.5.7"
+    assert call["model_details"]["quantization_level"] == "Q4_K_M"
+    assert call["response_model"] == "qwen3.6:35b"
+    assert len(call["request_sha256"]) == 64
+    assert len(call["response_sha256"]) == 64
+
+
+def test_local_extractor_strict_attestation_rejects_missing_digest(monkeypatch):
+    from agent_memory_core.local_extractor import OllamaFactExtractor
+    def serve(request, timeout):
+        if request.get_method() == "GET" and request.full_url.endswith("/api/version"):
+            return FakeHTTP(json.dumps({"version": "0.5.7"}).encode())
+        if request.get_method() == "GET" and request.full_url.endswith("/api/tags"):
+            return FakeHTTP(json.dumps({"models": []}).encode())
+        return FakeHTTP(json.dumps({
+            "model": "qwen3.6:35b", "response": json.dumps({"facts": []})
+        }).encode())
+    fake_opener(monkeypatch, serve)
+    ex = OllamaFactExtractor(model="qwen3.6:35b", require_model_attestation=True)
+    with pytest.raises(RuntimeError, match="could not be independently attested"):
+        ex("test")

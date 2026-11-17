@@ -20,6 +20,8 @@ Configuration (extractor / embedding)
     MEMORY_EXTRACTOR_API_KEY    bearer token (optional for self-hosted)
     MEMORY_EXTRACTOR_TIMEOUT    seconds, default 30
     MEMORY_EXTRACTOR_JSON_MODE  1|0, default 1 (response_format json_object)
+    MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION  1|0, default 0; fail closed
+                                when response identity/digest cannot be verified
 
     MEMORY_EMBEDDING_PROVIDER   same preset names
     MEMORY_EMBEDDING_MODEL      model id (preset default otherwise)

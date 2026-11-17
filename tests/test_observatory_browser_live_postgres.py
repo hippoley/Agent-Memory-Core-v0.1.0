@@ -209,3 +209,70 @@ def test_database_connection_failure_is_visible_without_false_live_success(runti
         finally:
             runtime["broken"]["value"] = False
             browser.close()
+
+
+def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
+    """Browser mutations must hit the real API and canonical PostgreSQL, no route mocks."""
+    base, key = runtime["base"], runtime["key"]
+    subject = "observatory-ui-mutation-" + uuid4().hex
+    with sync_playwright() as browser_api:
+        browser = browser_api.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        page = context.new_page()
+        errors = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        page.on("dialog", lambda dialog: dialog.accept())
+        try:
+            page.goto(base + "/dashboard/observatory.html", wait_until="load")
+            page.locator("#connectBtn").click()
+            page.locator("#key").fill(key)
+            page.locator("#liveBtn").click()
+            expect(page.locator("#pageMark")).to_have_text("/ LIVE")
+            expect(page.locator("#writePanel")).to_be_visible()
+
+            page.locator("#writeSubject").fill(subject)
+            page.locator("#writePredicate").fill("settlement_period")
+            page.locator("#writeValue").fill('{"months":1}')
+            page.locator("#writeSource").fill("ui-test:original")
+            page.locator("#saveMemory").click()
+            expect(page.locator("#mutationNote")).to_contain_text("Memory created. New ID:")
+            first_id = page.locator("#detail .provenance").nth(0).inner_text()
+            assert first_id
+
+            page.locator("#targetSelected").click()
+            page.locator("#writeValue").fill('{"months":3}')
+            page.locator("#writeSource").fill("ui-test:correction")
+            page.locator("#saveMemory").click()
+            expect(page.locator("#mutationNote")).to_contain_text("Revision committed.")
+            expect(page.locator("#total")).to_have_text("2")
+            expect(page.locator("#active")).to_have_text("1")
+            expect(page.locator("#old")).to_have_text("1")
+            second_id = page.locator("#detail .provenance").nth(0).inner_text()
+            assert second_id and second_id != first_id
+
+            page.locator("#forgetSelected").click()
+            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed")
+            expect(page.locator("#total")).to_have_text("2")
+            expect(page.locator("#active")).to_have_text("0")
+            expect(page.locator("#old")).to_have_text("2")
+
+            # Independent SQL assertion: original superseded, replacement forgotten;
+            # both rows remain auditable and no active fact remains.
+            sql = PostgresMemory(runtime["dsn"])
+            try:
+                rows = sql.conn.execute(
+                    "SELECT id::text, superseded_at, forgotten_at, source_id "
+                    "FROM memory_claims WHERE tenant_id=%s AND subject_id=%s "
+                    "ORDER BY recorded_at",
+                    (runtime["tenant"], subject)).fetchall()
+                assert len(rows) == 2, rows
+                by_source = {row[3]: row for row in rows}
+                assert by_source["ui-test:original"][1] is not None
+                assert by_source["ui-test:correction"][2] is not None
+                assert all(row[1] is not None or row[2] is not None for row in rows)
+            finally:
+                sql.close()
+            assert not errors, errors
+        finally:
+            context.close()
+            browser.close()

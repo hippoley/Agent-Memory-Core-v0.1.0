@@ -161,9 +161,9 @@ def test_real_live_browser_uses_its_own_persisted_tenant_history(runtime):
             page.locator("#key").fill(key)
             page.locator("#liveBtn").click()
             expect(page.locator("#pageMark")).to_have_text("/ LIVE")
-            expect(page.locator("#total")).to_have_text("2")
-            expect(page.locator("#active")).to_have_text("1")
-            expect(page.locator("#old")).to_have_text("1")
+            expect(page.locator("#total")).to_have_text(str(baseline_total + 2))
+            expect(page.locator("#active")).to_have_text(str(baseline_active + 1))
+            expect(page.locator("#old")).to_have_text(str(baseline_old + 1))
             assert int(page.locator("#eventsCount").inner_text()) >= 2
             page.locator("#claimPicker").select_option(first["id"])
             assert "evidence:old" in page.locator("#detail").inner_text()
@@ -229,6 +229,9 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             page.locator("#liveBtn").click()
             expect(page.locator("#pageMark")).to_have_text("/ LIVE")
             expect(page.locator("#writePanel")).to_be_visible()
+            baseline_total = int(page.locator("#total").inner_text())
+            baseline_active = int(page.locator("#active").inner_text())
+            baseline_old = int(page.locator("#old").inner_text())
 
             page.locator("#writeSubject").fill(subject)
             page.locator("#writePredicate").fill("settlement_period")
@@ -236,11 +239,6 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             page.locator("#writeSource").fill("ui-test:original")
             page.locator("#saveMemory").click()
             expect(page.locator("#mutationNote")).to_contain_text("Memory created. New ID:")
-            # Restrict the Observatory's local loaded-page view to this test subject;
-            # the runtime fixture is intentionally shared across browser scenarios.
-            page.locator("#query").fill(subject)
-            page.locator("#searchForm button").click()
-            expect(page.locator("#total")).to_have_text("1")
             first_id = page.locator("#detail .provenance").nth(0).inner_text()
             assert first_id
 
@@ -257,9 +255,9 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
 
             page.locator("#forgetSelected").click()
             expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed")
-            expect(page.locator("#total")).to_have_text("2")
-            expect(page.locator("#active")).to_have_text("0")
-            expect(page.locator("#old")).to_have_text("2")
+            expect(page.locator("#total")).to_have_text(str(baseline_total + 2))
+            expect(page.locator("#active")).to_have_text(str(baseline_active))
+            expect(page.locator("#old")).to_have_text(str(baseline_old + 2))
 
             # Independent SQL assertion: original superseded, replacement forgotten;
             # both rows remain auditable and no active fact remains.

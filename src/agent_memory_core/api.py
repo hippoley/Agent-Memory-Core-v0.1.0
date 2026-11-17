@@ -960,6 +960,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 # Historical backfills require a historical evidence snapshot;
                 # current-state retrieval must never rewrite history by mistake.
                 raise HTTPException(status_code=422, detail="Evidence grounding supports live revisions only, not historical replay")
+            provider_extractor = None
             if item.candidates is not None:
                 if item.context_turns or item.ground_with_memory:
                     raise HTTPException(status_code=422, detail="Cannot mix candidate facts with server-side context or grounding")
@@ -1108,6 +1109,10 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             }
             if item.atomic_batch:
                 result["atomic_batch"] = True
+            if provider_extractor is not None:
+                snapshot = getattr(provider_extractor, "attestation_snapshot", None)
+                if callable(snapshot):
+                    result["model_call_attestation"] = snapshot()
             return result
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))

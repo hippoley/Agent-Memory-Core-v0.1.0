@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'src/agent_memory_core/resources/dashboard/observatory.html'
+      - 'docs/demo/index.html'
       - '.github/workflows/publish-memory-observatory-demo.yml'
   workflow_dispatch:
 
@@ -30,6 +31,8 @@ jobs:
         run: |
           mkdir -p _site
           cp src/agent_memory_core/resources/dashboard/observatory.html _site/index.html
+          mkdir -p _site/demo
+          cp docs/demo/index.html _site/demo/index.html
           printf 'User-agent: *\nDisallow: /\n' > _site/robots.txt
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5

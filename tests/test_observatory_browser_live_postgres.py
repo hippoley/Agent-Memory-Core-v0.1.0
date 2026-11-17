@@ -161,9 +161,9 @@ def test_real_live_browser_uses_its_own_persisted_tenant_history(runtime):
             page.locator("#key").fill(key)
             page.locator("#liveBtn").click()
             expect(page.locator("#pageMark")).to_have_text("/ LIVE")
-            expect(page.locator("#total")).to_have_text(str(baseline_total + 2))
-            expect(page.locator("#active")).to_have_text(str(baseline_active + 1))
-            expect(page.locator("#old")).to_have_text(str(baseline_old + 1))
+            expect(page.locator("#total")).to_have_text("2")
+            expect(page.locator("#active")).to_have_text("1")
+            expect(page.locator("#old")).to_have_text("1")
             assert int(page.locator("#eventsCount").inner_text()) >= 2
             page.locator("#claimPicker").select_option(first["id"])
             assert "evidence:old" in page.locator("#detail").inner_text()
@@ -271,8 +271,8 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
                 assert len(rows) == 2, rows
                 by_source = {row[3]: row for row in rows}
                 assert by_source["ui-test:original"][1] is not None
-                assert by_source["ui-test:correction"][2] is not None
-                assert all(row[1] is not None or row[2] is not None for row in rows)
+                assert by_source["ui-test:correction"][1] is not None
+                assert all(row[1] is not None for row in rows)
             finally:
                 sql.close()
             assert not errors, errors

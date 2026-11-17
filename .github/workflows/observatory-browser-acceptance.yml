@@ -31,6 +31,19 @@ jobs:
         run: python -m pip install -e '.[dev,api,postgres]' 'playwright>=1.45'
       - name: Install Chromium and operating system dependencies
         run: python -m playwright install --with-deps chromium
+      - name: Verify the browser serves the checked-out Observatory source
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import agent_memory_core.api as api
+          asset = Path(api.__file__).resolve().parent / "resources" / "dashboard" / "observatory.html"
+          print("API module:", api.__file__)
+          print("Dashboard asset:", asset)
+          print("Updated live-search UI:", "Demo mode searches only" in asset.read_text(encoding="utf-8"))
+          assert "Demo mode searches only" in asset.read_text(encoding="utf-8")
+          PY
       - name: Real browser acceptance and viewport screenshots
         env:
           MEMORY_OBSERVATORY_BROWSER: '1'

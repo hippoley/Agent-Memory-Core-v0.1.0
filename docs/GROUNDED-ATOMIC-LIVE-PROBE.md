@@ -13,7 +13,7 @@ python scripts/eval/probe_grounded_atomic_live.py \
   --report /tmp/grounded-atomic-live.json
 ```
 
-The script refuses a non-loopback endpoint, credentials inside URL, or any tenant with prior canonical history. It creates one new random supplier subject, writes its monthly settlement fact, asks the **server-configured** LLM to ground a correction to quarterly, requests **strict atomic** processing, and independently reads historical and current claims plus search. It exits nonzero if the old memory remains active, quarterly fact is missing/duplicated, replacement ID is absent, or retrieval fails.
+The script refuses a non-loopback endpoint, credentials inside URL, or any tenant with prior canonical history. It creates one new random supplier subject, writes its monthly settlement fact, asks the **server-configured** LLM to ground a correction to quarterly, requests **strict atomic** processing, and independently reads historical and current claims plus search. It exits nonzero if the old memory remains active, quarterly fact is missing/duplicated, replacement ID is absent, or retrieval fails. Retrieval must point to the exact new canonical `memory_id`, not merely a matching subject/value, and must not return the retired memory ID.
 
 **Limitations:**
 - The script does not start a model, provision a tenant, or prove the server really loaded the *declared* `--extractor-model` string. Capture server configuration/model request logs separately; the CLI field is operator-declared metadata only.

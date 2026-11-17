@@ -61,3 +61,29 @@ def test_history_fails_when_old_value_remains_current_or_duplicate_active():
     rows[0]["superseded_at"] = "2026-11-17T01:00:00Z"
     rows.append({**rows[1], "id": "duplicate"})
     assert not probe.assess_history(rows, "old", "supplier-1")["quarterly_active"]
+
+
+def test_probe_search_requires_exact_new_memory_id_and_no_old_id():
+    canonical = {
+        "memory_id": "new-id", "subject_id": "supplier-1",
+        "predicate": "settlement_period", "value": {"months": 3},
+    }
+    ok = probe.assess_search([canonical], old_id="old-id",
+                             new_id="new-id", subject="supplier-1")
+    assert ok == {"retrieval_contains_new": True, "retrieval_excludes_old": True}
+    wrong_identity = [{**canonical, "memory_id": "unrelated-id"}]
+    assert not probe.assess_search(wrong_identity, old_id="old-id",
+                                    new_id="new-id", subject="supplier-1")["retrieval_contains_new"]
+    wrong_subject = [{**canonical, "subject_id": "supplier-2"}]
+    assert not probe.assess_search(wrong_subject, old_id="old-id",
+                                   new_id="new-id", subject="supplier-1")["retrieval_contains_new"]
+    wrong_predicate = [{**canonical, "predicate": "other"}]
+    assert not probe.assess_search(wrong_predicate, old_id="old-id",
+                                   new_id="new-id", subject="supplier-1")["retrieval_contains_new"]
+    with_stale = [canonical, {**canonical, "memory_id": "old-id",
+                              "value": {"months": 1}}]
+    assert not probe.assess_search(with_stale, old_id="old-id",
+                                   new_id="new-id", subject="supplier-1")["retrieval_excludes_old"]
+    missing_id = [{k:v for k,v in canonical.items() if k != "memory_id"}]
+    assert not probe.assess_search(missing_id, old_id="old-id",
+                                   new_id="new-id", subject="supplier-1")["retrieval_contains_new"]

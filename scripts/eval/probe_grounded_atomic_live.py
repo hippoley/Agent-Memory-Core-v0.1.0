@@ -43,6 +43,21 @@ def assess_history(rows: list[dict], old_id: str, subject: str) -> dict:
     }
 
 
+def assess_search(hits: list[dict], *, old_id: str, new_id: str | None,
+                  subject: str) -> dict[str, bool]:
+    """Reject stale and unrelated hits, even when they have the right value."""
+    return {
+        "retrieval_contains_new": bool(new_id) and any(
+            hit.get("memory_id") == new_id
+            and hit.get("subject_id") == subject
+            and hit.get("predicate") == "settlement_period"
+            and hit.get("value") == {"months": 3}
+            for hit in hits),
+        "retrieval_excludes_old": all(
+            hit.get("memory_id") != old_id for hit in hits),
+    }
+
+
 def run(args) -> dict:
     if not args.ack_disposable:
         raise ValueError("Pass --ack-disposable only for a new isolated API tenant")
@@ -100,9 +115,10 @@ def run(args) -> dict:
         # Explicitly query retrieval, rather than treating a DB list as retrieval.
         search = call("POST", "/v1/search",
                       json={"query": subject, "limit": 5}).get("items", [])
-        checks["retrieval_contains_new"] = any(
-            hit.get("subject_id") == subject and hit.get("value") == {"months": 3}
-            for hit in search)
+        # Search hits use memory_id, not the browse endpoint's id.
+        checks.update(assess_search(
+            search, old_id=old_id, new_id=checks["active_quarterly_id"],
+            subject=subject))
         result["checks"] = checks
         result["passed"] = all(v is True for k, v in checks.items()
                                if k != "active_quarterly_id")

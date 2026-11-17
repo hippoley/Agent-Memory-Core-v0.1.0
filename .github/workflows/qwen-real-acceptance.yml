@@ -68,6 +68,37 @@ jobs:
               f.write("MEMORY_API_KEY=" + token + "\n")
               f.write("MEMORY_TENANT_ID=qwen-eval-" + uuid.uuid4().hex + "\n")
           PY
+      - name: Real Qwen provider authentication and JSON-mode smoke
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, re, urllib.error, urllib.request
+          body=json.dumps({"model":os.environ["MEMORY_EXTRACTOR_MODEL"],
+            "messages":[{"role":"system","content":"Respond with a JSON object."},
+                        {"role":"user","content":"Return a JSON object with ok=true."}],
+            "temperature":0,"response_format":{"type":"json_object"}}).encode()
+          req=urllib.request.Request(os.environ["MEMORY_EXTRACTOR_BASE_URL"],
+                data=body,method="POST",headers={"Content-Type":"application/json",
+                "Authorization":"Bearer "+os.environ["MEMORY_EXTRACTOR_API_KEY"]})
+          try:
+              with urllib.request.urlopen(req,timeout=40) as response:
+                  obj=json.loads(response.read(200000))
+                  print("Qwen smoke HTTP:",response.status)
+                  print("Qwen response model:",obj.get("model"))
+                  print("Qwen response ID present:",bool(obj.get("id")))
+                  if obj.get("model")!=os.environ["MEMORY_EXTRACTOR_MODEL"]:
+                      raise RuntimeError("Qwen response model mismatch")
+          except urllib.error.HTTPError as exc:
+              print("Qwen smoke HTTP:",exc.code)
+              try:
+                  code=json.loads(exc.read(2000)).get("code","unknown")
+                  if not isinstance(code,str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}",code):
+                      code="unknown"
+                  print("Qwen provider error code:",code)
+              except (ValueError,TypeError):
+                  pass
+              raise SystemExit(1)
+          PY
       - name: Start local Memory API wired to REAL Qwen
         shell: bash
         run: |

@@ -55,6 +55,7 @@ def test_perfect_oracle_fixture_scoring_is_one_but_not_model_evidence():
     assert report["answer"]["exact_accepted_accuracy"]==1.0
     assert report["answer"]["abstention_accuracy"]==1.0
     assert report["retrieval"]["negative_queries"]>0
+    assert report["end_to_end"]["exact_story_accuracy"]==1.0
 
 
 def test_no_missing_stages_or_missing_cases_can_pass():
@@ -87,6 +88,7 @@ def test_recall_requires_exact_predicate_and_value_not_just_room():
                         payload["configuration"],sha)
     scored=next(x for x in report["details"] if x["id"]=="zh06")
     assert scored["retrieval_hits"]==0
+    assert not scored["story_exact"]
     assert report["retrieval"]["recall_at_5"]<1
 
 
@@ -119,6 +121,8 @@ def test_wrong_retraction_value_does_not_inflate_extraction_f1():
     case_detail=next(x for x in report["details"] if x["id"]=="zh02")
     assert case_detail["extraction"]=={"tp":1,"fp":1,"fn":1}
     assert report["extraction"]["f1"]<1.0
+    assert report["end_to_end"]["exact_story_accuracy"]<1.0
+    assert not case_detail["story_exact"]
     # A correct final state cannot rescue an incorrect model withdrawal target.
     assert report["revision"]["exact_final_state_accuracy"]==1.0
 

@@ -1,6 +1,7 @@
 """Tests for non-LLM frozen Chinese four-stage evaluation semantics."""
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -17,9 +18,9 @@ def _perfect_payload():
     for case in gold:
         predictions.append({
             "id":case["id"],
-            "extracted":case["expected_events"],
-            "current":case["expected_current"],
-            "retrieved":case["expected_retrieval"],
+            "extracted":deepcopy(case["expected_events"]),
+            "current":deepcopy(case["expected_current"]),
+            "retrieved":deepcopy(case["expected_retrieval"]),
             "answer":case["accepted_answers"][0],
         })
     payload = {
@@ -55,6 +56,7 @@ def test_perfect_oracle_fixture_scoring_is_one_but_not_model_evidence():
     assert report["answer"]["exact_accepted_accuracy"]==1.0
     assert report["answer"]["abstention_accuracy"]==1.0
     assert report["retrieval"]["negative_queries"]>0
+    assert report["end_to_end"]["exact_story_accuracy"]==1.0
 
 
 def test_no_missing_stages_or_missing_cases_can_pass():
@@ -87,6 +89,7 @@ def test_recall_requires_exact_predicate_and_value_not_just_room():
                         payload["configuration"],sha)
     scored=next(x for x in report["details"] if x["id"]=="zh06")
     assert scored["retrieval_hits"]==0
+    assert not scored["story_exact"]
     assert report["retrieval"]["recall_at_5"]<1
 
 
@@ -100,12 +103,29 @@ def test_empty_gold_retrieval_is_not_reported_as_perfect_recall():
     assert report["retrieval"]["precision_recall"]["fp"]>0
 
 
-def test_retract_compares_scope_not_arbitrary_marker_value():
+def test_retract_must_match_old_canonical_value_not_just_scope():
     expected=[{"turn":1,"subject_id":"次卧","predicate":"noise_preference",
                "operation":"RETRACT","value":{"level":"quiet"}}]
-    actual=[{"turn":1,"subject_id":"次卧","predicate":"noise_preference",
-             "operation":"RETRACT","value":{"reason":"explicit_withdrawal"}}]
-    assert MODULE._counts(expected,actual,event=True)==(1,0,0)
+    wrong=[{"turn":1,"subject_id":"次卧","predicate":"noise_preference",
+            "operation":"RETRACT","value":{"reason":"explicit_withdrawal"}}]
+    assert MODULE._counts(expected,wrong,event=True)==(0,1,1)
+    assert MODULE._counts(expected,[dict(expected[0])],event=True)==(1,0,0)
+
+
+def test_wrong_retraction_value_does_not_inflate_extraction_f1():
+    gold,sha,payload=_perfect_payload()
+    case=next(c for c in payload["cases"] if c["id"]=="zh02")
+    target=next(e for e in case["extracted"] if e["operation"]=="RETRACT")
+    target["value"]={"level":"loud"}
+    report=MODULE.score(gold,MODULE.validate_predictions(payload,gold,sha),
+                        payload["configuration"],sha)
+    case_detail=next(x for x in report["details"] if x["id"]=="zh02")
+    assert case_detail["extraction"]=={"tp":1,"fp":1,"fn":1}
+    assert report["extraction"]["f1"]<1.0
+    assert report["end_to_end"]["exact_story_accuracy"]<1.0
+    assert not case_detail["story_exact"]
+    # A correct final state cannot rescue an incorrect model withdrawal target.
+    assert report["revision"]["exact_final_state_accuracy"]==1.0
 
 
 def test_abstention_is_scored_separately():

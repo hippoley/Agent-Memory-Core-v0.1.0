@@ -158,6 +158,64 @@ jobs:
             --key="${MEMORY_API_KEY}" \
             --primary-report evidence/qwen-grounded-atomic.json \
             --report evidence/qwen-postrestart-readback.json
+      - name: Stop actual PostgreSQL container and prove database becomes unavailable
+        shell: bash
+        run: |
+          db_container="$(docker compose ps -q memory-db)"
+          if [[ -z "${db_container}" ]]; then
+            echo "Missing disposable PostgreSQL container" >&2
+            exit 1
+          fi
+          docker inspect -f '{{.State.StartedAt}}' "${db_container}" > /tmp/qwen-db-start-before.txt
+          docker compose stop memory-db
+          if [[ "$(docker inspect -f '{{.State.Running}}' "${db_container}")" != "false" ]]; then
+            echo "PostgreSQL did not stop" >&2
+            exit 1
+          fi
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -H "Authorization: Bearer ${MEMORY_API_KEY}" \
+            http://127.0.0.1:8767/v1/ready || true)"
+          if [[ "${status}" != "503" ]]; then
+            echo "API did not report canonical database unavailable during PostgreSQL outage (HTTP ${status})" >&2
+            exit 1
+          fi
+      - name: Restart the SAME disposable PostgreSQL container and verify recovery
+        shell: bash
+        run: |
+          db_container="$(docker compose ps -aq memory-db | head -n 1)"
+          if [[ -z "${db_container}" ]]; then
+            echo "Lost PostgreSQL container; refusing replacement-database proof" >&2
+            exit 1
+          fi
+          docker compose up -d --wait memory-db
+          actual="$(docker compose ps -q memory-db)"
+          if [[ "${db_container}" != "${actual}" ]]; then
+            echo "PostgreSQL container was replaced rather than restarted" >&2
+            exit 1
+          fi
+          after="$(docker inspect -f '{{.State.StartedAt}}' "${actual}")"
+          before="$(cat /tmp/qwen-db-start-before.txt)"
+          if [[ "${before}" == "${after}" ]]; then
+            echo "PostgreSQL start time unchanged; no proven restart" >&2
+            exit 1
+          fi
+          for attempt in {1..40}; do
+            if curl --silent --fail --output /dev/null \
+              -H "Authorization: Bearer ${MEMORY_API_KEY}" \
+              http://127.0.0.1:8767/v1/ready; then exit 0; fi
+            sleep 1
+          done
+          echo "Memory API did not recover after PostgreSQL restart" >&2
+          exit 1
+      - name: Independently verify IDs, history, and search after PostgreSQL restart
+        shell: bash
+        run: |
+          python scripts/eval/verify_qwen_postrestart.py \
+            --base-url http://127.0.0.1:8767 \
+            --key="${MEMORY_API_KEY}" \
+            --primary-report evidence/qwen-grounded-atomic.json \
+            --scope postgres-container-restart \
+            --report evidence/qwen-postgres-restart-readback.json
       - name: Record source commit and report digest
         if: always()
         shell: bash
@@ -168,6 +226,7 @@ jobs:
           from pathlib import Path
           path = Path("evidence/qwen-grounded-atomic.json")
           restart = Path("evidence/qwen-postrestart-readback.json")
+          postgres = Path("evidence/qwen-postgres-restart-readback.json")
           out = {"github_sha": os.environ["GITHUB_SHA"],
                  "workflow_run_id": os.environ["GITHUB_RUN_ID"],
                  "provider": "dashscope",
@@ -188,7 +247,17 @@ jobs:
                   out["restart_passed"]=False
           else:
               out["restart_passed"]=False
-          out["passed"]=out.get("passed") is True and out["restart_passed"] is True
+          if postgres.exists():
+              out["postgres_restart_report_sha256"]=hashlib.sha256(postgres.read_bytes()).hexdigest()
+              try:
+                  out["postgres_restart_passed"]=json.loads(postgres.read_bytes()).get("passed") is True
+              except (ValueError, TypeError):
+                  out["postgres_restart_passed"]=False
+          else:
+              out["postgres_restart_passed"]=False
+          out["passed"]=(out.get("passed") is True
+                         and out["restart_passed"] is True
+                         and out["postgres_restart_passed"] is True)
           Path("evidence/manifest.json").write_text(
               json.dumps(out,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
           PY

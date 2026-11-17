@@ -58,6 +58,43 @@ def assess_search(hits: list[dict], *, old_id: str, new_id: str | None,
     }
 
 
+
+def assess_model_attestation(attestation: dict, *, model: str, provider: str) -> dict[str, bool]:
+    """Tie this exact API process call to the claimed provider and model."""
+    calls = attestation.get("calls")
+    calls = calls if isinstance(calls, list) else []
+    expected_provider = "ollama" if provider == "ollama" else "openai-compatible"
+    identity_ok = bool(calls) and all(
+        isinstance(call, dict)
+        and call.get("requested_model") == model
+        and call.get("response_model") == model
+        and call.get("identity_status") == "matched"
+        and isinstance(call.get("request_sha256"), str)
+        and len(call["request_sha256"]) == 64
+        and isinstance(call.get("response_sha256"), str)
+        and len(call["response_sha256"]) == 64
+        for call in calls)
+    runtime_ok = provider != "ollama" or (bool(calls) and all(
+        bool(call.get("model_digest")) and bool(call.get("runtime_version"))
+        for call in calls))
+    return {
+        "model_attestation_present": bool(calls),
+        "model_provider_verified": attestation.get("provider") == expected_provider,
+        "model_identity_verified": attestation.get("identity_verified") is True and identity_ok,
+        "model_runtime_verified": runtime_ok,
+    }
+
+def assess_grounding(hits: list[dict], *, old_id: str,
+                     subject: str) -> bool:
+    """The exact old claim must be available to the grounding search."""
+    return any(
+        hit.get("memory_id") == old_id
+        and hit.get("subject_id") == subject
+        and hit.get("predicate") == "settlement_period"
+        and hit.get("value") == {"months": 1}
+        for hit in hits)
+
+
 def run(args) -> dict:
     if not args.ack_disposable:
         raise ValueError("Pass --ack-disposable only for a new isolated API tenant")
@@ -89,25 +126,30 @@ def run(args) -> dict:
         })
         old_id = first["id"]
         result["initial_id"] = old_id
-        # Search must be real and grounded. The model receives this subject
-        # identifier in its utterance, not a fabricated memory ID.
+        # The API's grounding query is the correction text. Verify that
+        # its lexical/vector search can see the exact claim before calling
+        # a model, otherwise a failed withdrawal is a retrieval failure.
+        correction = f"{subject} now settles every three months instead of monthly."
+        preflight = call("POST", "/v1/search",
+                         json={"query": correction, "limit": 8})
+        hits = preflight.get("items", [])
+        result["preflight"] = {
+            "old_id_retrievable": assess_grounding(hits, old_id=old_id, subject=subject),
+            "channels_used": preflight.get("channels_used", []),
+            "degraded_channels": preflight.get("degraded_channels", {}),
+        }
+        if not result["preflight"]["old_id_retrievable"]:
+            result["failure_stage"] = "grounding_retrieval"
+            result["passed"] = False
+            return result
         updated = call("POST", "/v1/memories/process", json={
-            "text": f"{subject} now settles every three months instead of monthly.",
+            "text": correction,
             "source_id": "real-probe:correction",
             "context_turns": [f"{subject} settles monthly."],
             "ground_with_memory": True,
             "atomic_batch": True,
         })
         attestation = updated.get("model_call_attestation") or {}
-        calls = attestation.get("calls") if isinstance(attestation.get("calls"), list) else []
-        identity_calls = bool(calls) and all(
-            call.get("requested_model") == args.extractor_model
-            and call.get("identity_status") == "matched"
-            and call.get("response_model") == args.extractor_model
-            for call in calls)
-        ollama_digest = (args.provider != "ollama" or all(
-            bool(call.get("model_digest")) and bool(call.get("runtime_version"))
-            for call in calls))
         result["model_attestation"] = attestation
         result["process"] = {
             "atomic_batch": updated.get("atomic_batch"),
@@ -119,10 +161,8 @@ def run(args) -> dict:
                                "include_superseded": "true"}).get("items", [])
         checks = assess_history(history, old_id, subject)
         checks["atomic_response"] = updated.get("atomic_batch") is True
-        checks["model_attestation_present"] = bool(calls)
-        checks["model_identity_verified"] = (
-            attestation.get("identity_verified") is True and identity_calls)
-        checks["ollama_digest_and_runtime_verified"] = ollama_digest
+        checks.update(assess_model_attestation(
+            attestation, model=args.extractor_model, provider=args.provider))
         checks["old_id_reported_replaced"] = old_id in updated.get("replaced", [])
         current = call("GET", "/v1/memories",
                        params={"subject_id": subject, "limit": 100}).get("items", [])
@@ -149,12 +189,19 @@ def main() -> int:
     parser.add_argument("--ack-disposable", action="store_true")
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
-    report = run(args)
+    try:
+        report = run(args)
+    except Exception as exc:
+        # Store a negative result even if the API or model fails. Exclude
+        # exception messages: HTTP traces may contain credentials or prompts.
+        report = {"scope": "real_model_grounded_atomic_http",
+                  "passed": False, "failure_stage": "exception",
+                  "failure_type": type(exc).__name__}
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["passed"] else 1
+    return 0 if report.get("passed") is True else 1
 
 
 if __name__ == "__main__":

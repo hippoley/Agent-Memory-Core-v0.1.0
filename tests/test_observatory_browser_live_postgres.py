@@ -236,6 +236,11 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             page.locator("#writeSource").fill("ui-test:original")
             page.locator("#saveMemory").click()
             expect(page.locator("#mutationNote")).to_contain_text("Memory created. New ID:")
+            # Restrict the Observatory's local loaded-page view to this test subject;
+            # the runtime fixture is intentionally shared across browser scenarios.
+            page.locator("#query").fill(subject)
+            page.locator("#searchForm button").click()
+            expect(page.locator("#total")).to_have_text("1")
             first_id = page.locator("#detail .provenance").nth(0).inner_text()
             assert first_id
 

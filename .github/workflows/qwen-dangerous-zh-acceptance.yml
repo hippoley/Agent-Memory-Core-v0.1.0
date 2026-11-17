@@ -1,5 +1,11 @@
+# TEMPORARY eval-branch-only live trigger; do not merge this trigger into main.
 name: qwen-real-dangerous-zh-acceptance
 on:
+  push:
+    branches:
+      - eval/p0-zh-dangerous-live-20261117
+    paths:
+      - '.github/workflows/qwen-dangerous-zh-acceptance.yml'
   workflow_dispatch:
     inputs:
       model:

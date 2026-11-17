@@ -98,6 +98,17 @@ def run(args) -> dict:
             "ground_with_memory": True,
             "atomic_batch": True,
         })
+        attestation = updated.get("model_call_attestation") or {}
+        calls = attestation.get("calls") if isinstance(attestation.get("calls"), list) else []
+        identity_calls = bool(calls) and all(
+            call.get("requested_model") == args.extractor_model
+            and call.get("identity_status") == "matched"
+            and call.get("response_model") == args.extractor_model
+            for call in calls)
+        ollama_digest = (args.provider != "ollama" or all(
+            bool(call.get("model_digest")) and bool(call.get("runtime_version"))
+            for call in calls))
+        result["model_attestation"] = attestation
         result["process"] = {
             "atomic_batch": updated.get("atomic_batch"),
             "replaced": updated.get("replaced"),
@@ -108,6 +119,10 @@ def run(args) -> dict:
                                "include_superseded": "true"}).get("items", [])
         checks = assess_history(history, old_id, subject)
         checks["atomic_response"] = updated.get("atomic_batch") is True
+        checks["model_attestation_present"] = bool(calls)
+        checks["model_identity_verified"] = (
+            attestation.get("identity_verified") is True and identity_calls)
+        checks["ollama_digest_and_runtime_verified"] = ollama_digest
         checks["old_id_reported_replaced"] = old_id in updated.get("replaced", [])
         current = call("GET", "/v1/memories",
                        params={"subject_id": subject, "limit": 100}).get("items", [])
@@ -130,6 +145,7 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--key", default=os.getenv("MEMORY_API_KEY"))
     parser.add_argument("--extractor-model", required=True)
+    parser.add_argument("--provider", choices=("ollama", "openai-compatible"), required=True)
     parser.add_argument("--ack-disposable", action="store_true")
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()

@@ -172,3 +172,45 @@ def test_scalar_values_are_normalised_not_dropped(monkeypatch):
         {"subject_name": "boots", "predicate": "sizes", "value": ["41", "42"]}])
     assert facts[0]["value"] == {"value": "Zara"}
     assert facts[1]["value"] == {"values": ["41", "42"]}
+
+
+def test_openai_compat_captures_redacted_response_identity_and_hashes(monkeypatch):
+    body = json.dumps({
+        "id": "chatcmpl-test", "created": 1794910000,
+        "model": "qwen-local-32b", "system_fingerprint": "fp-local-abc",
+        "usage": {"prompt_tokens": 31, "completion_tokens": 12, "total_tokens": 43},
+        "choices": [{"finish_reason": "stop", "message": {
+            "role": "assistant", "content": json.dumps({"facts": []})}}],
+    }).encode()
+    fake_opener(monkeypatch, lambda *a: FakeHTTP(body))
+    ex = OpenAICompatFactExtractor(
+        model="qwen-local-32b",
+        base_url="http://127.0.0.1:8000/v1/chat/completions",
+        require_model_match=True)
+    assert ex("hello") == []
+    report = ex.attestation_snapshot()
+    assert report["identity_verified"] is True
+    call = report["calls"][0]
+    assert call["response_model"] == "qwen-local-32b"
+    assert call["system_fingerprint"] == "fp-local-abc"
+    assert call["usage"]["total_tokens"] == 43
+    assert len(call["request_sha256"]) == 64
+    assert len(call["response_sha256"]) == 64
+    assert "hello" not in json.dumps(report)
+    assert "api_key" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("response_model", [None, "different-model"])
+def test_openai_compat_strict_model_attestation_fails_closed(monkeypatch, response_model):
+    body = json.dumps({
+        "model": response_model,
+        "choices": [{"message": {"content": json.dumps({"facts": []})}}],
+    }).encode()
+    fake_opener(monkeypatch, lambda *a: FakeHTTP(body))
+    ex = OpenAICompatFactExtractor(
+        model="expected-model",
+        base_url="http://127.0.0.1:8000/v1/chat/completions",
+        require_model_match=True)
+    with pytest.raises(RuntimeError, match="response model"):
+        ex("hello")
+    assert ex.attestations[0]["identity_status"] in ("unattested", "mismatch")

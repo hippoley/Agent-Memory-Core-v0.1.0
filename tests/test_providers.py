@@ -40,6 +40,7 @@ BARE_ENV = ("MEMORY_EXTRACTOR_PROVIDER", "MEMORY_EXTRACTOR_MODEL", "MEMORY_EXTRA
             "MEMORY_EMBEDDING_API_KEY", "MEMORY_EMBEDDING_DIMENSIONS",
             "MEMORY_EMBEDDING_BATCH_SIZE", "MEMORY_EMBEDDING_TIMEOUT",
             "MEMORY_PROVIDER_CONFIG", "MEMORY_LOCAL_OLLAMA_MODEL",
+            "MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION",
             "MEMORY_LOCAL_OLLAMA_ENDPOINT", "MEMORY_AUTO_EMBED")
 
 
@@ -224,3 +225,18 @@ def test_embedder_rejects_bad_base_urls():
                 "ftp://x.example/v1/embeddings", "https://u:p@x.example/v1/embeddings"]:
         with pytest.raises(ValueError):
             OpenAICompatEmbedder(model="m", base_url=url)
+
+
+def test_strict_model_attestation_policy_is_wired_to_both_extractor_adapters(monkeypatch):
+    monkeypatch.setenv("MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION", "1")
+    monkeypatch.setenv("MEMORY_EXTRACTOR_PROVIDER", "openai-compat")
+    monkeypatch.setenv("MEMORY_EXTRACTOR_MODEL", "qwen-local")
+    monkeypatch.setenv("MEMORY_EXTRACTOR_BASE_URL", "http://127.0.0.1:8000/v1/chat/completions")
+    openai_extractor = providers.build_extractor()
+    assert openai_extractor.require_model_match is True
+
+    monkeypatch.setenv("MEMORY_EXTRACTOR_PROVIDER", "ollama")
+    monkeypatch.delenv("MEMORY_EXTRACTOR_BASE_URL", raising=False)
+    monkeypatch.setenv("MEMORY_LOCAL_OLLAMA_MODEL", "qwen-local:latest")
+    ollama_extractor = providers.build_extractor()
+    assert ollama_extractor.require_model_attestation is True

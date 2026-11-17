@@ -71,6 +71,10 @@ class DummyExtractor:
     def extract_with_evidence(self,text,context_turns,memory_evidence):
         self.seen=(text,context_turns,memory_evidence)
         return self.proposed
+    def attestation_snapshot(self):
+        return {"provider":"test-provider","identity_verified":True,
+                "calls":[{"requested_model":"test-model","response_model":"test-model",
+                          "identity_status":"matched"}]}
 
 
 KEY="local-test-key-with-32-characters-at-least"
@@ -96,6 +100,8 @@ def test_authenticated_api_retrieves_canonical_evidence_then_processes_withdrawa
     response,memory,search,extractor=run_request([CANDIDATE],[HIT])
     assert response.status_code==200,response.text
     assert response.json()["replaced"]==["mem-1"]
+    assert response.json()["model_call_attestation"]["identity_verified"] is True
+    assert response.json()["model_call_attestation"]["calls"][0]["response_model"]=="test-model"
     assert search.calls[0]["tenant_id"]=="tenant-a"
     assert search.calls[0]["limit"]==8
     assert search.closed

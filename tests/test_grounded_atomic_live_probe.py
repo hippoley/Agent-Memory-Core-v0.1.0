@@ -156,3 +156,15 @@ def test_probe_writes_redacted_nonzero_failure_artifact(monkeypatch, tmp_path):
     assert report["failure_type"]=="RuntimeError"
     assert "secret-token" not in raw
     assert "a"*32 not in raw
+
+
+def test_qwen_probe_uses_same_chinese_correction_for_preflight_and_processing():
+    subject="supplier-test-123"
+    correction, previous=probe.correction_for(subject, "zh")
+    assert subject in correction and subject in previous
+    assert "三个月" in correction and "按月" in correction
+    assert "每个月" in previous
+    english, previous_en=probe.correction_for(subject, "en")
+    assert subject in english and subject in previous_en
+    with pytest.raises(ValueError):
+        probe.correction_for(subject, "other")

@@ -317,8 +317,8 @@ async function runSearch(){
   $("searchNote").textContent="Retrieval unavailable; no search result claimed. "+(err.message||"API request failed");
  }finally{button.disabled=false;render();draw()}
 }
-$("searchForm").onsubmit=e=>{e.preventDefault();runSearch()};
-$("searchForm button").onclick=e=>{e.preventDefault();runSearch()};
+document.querySelector("#searchForm").onsubmit=e=>{e.preventDefault();runSearch()};
+document.querySelector("#searchForm button").onclick=e=>{e.preventDefault();runSearch()};
 canvas.onclick=e=>{let r=canvas.getBoundingClientRect();let x=e.clientX-r.left,y=e.clientY-r.top;let closest=positions.map(p=>({...p,d:Math.hypot(x-p.x,y-p.y)})).sort((a,b)=>a.d-b.d)[0];if(!closest||closest.d>150)return;let items=closest.group.items;let matched=state.query?items.find(it=>[it.subject_id,it.predicate,it.source_id,valueText(it)].join(" ").toLowerCase().includes(state.query.toLowerCase())):null;let item=matched||items[0];state.selection=String(item.id||item.memory_id);render();draw()};
 canvas.onwheel=e=>{if(!e.ctrlKey)return;e.preventDefault();state.scale=Math.max(.62,Math.min(1.65,state.scale-e.deltaY*.001));draw()};
 $("export").onclick=()=>{let body=JSON.stringify({mode:state.mode,exported_at:new Date().toISOString(),claims:subset(),events:state.events},null,2);let blob=new Blob([body],{type:"application/json"}),url=URL.createObjectURL(blob);let a=document.createElement("a");a.href=url;a.download="memory-observatory-"+state.mode+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};

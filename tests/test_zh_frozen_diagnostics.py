@@ -48,9 +48,11 @@ def test_compare_tracks_real_metric_deltas():
           "extraction":{"f1":score},
           "revision":{"exact_final_state_accuracy":score},
           "retrieval":{"recall_at_5":score,"mrr_at_5":score},
-          "answer":{"exact_accepted_accuracy":score,"abstention_accuracy":score}
+          "answer":{"exact_accepted_accuracy":score,"abstention_accuracy":score},
+          "end_to_end":{"exact_story_accuracy":score}
         }
     out=comp.compare(report("A",0.5),report("B",0.75))
     assert out["metrics"]["extraction_f1"]["delta"]==0.25
+    assert out["metrics"]["end_to_end_exact_story"]["delta"]==0.25
     assert out["n"]==12
     assert "statistical" in out["warning"]

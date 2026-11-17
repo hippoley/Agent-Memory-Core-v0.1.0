@@ -120,6 +120,44 @@ jobs:
             --language zh \
             --ack-disposable \
             --report evidence/qwen-grounded-atomic.json
+      - name: Terminate original Memory API and start a fresh process
+        shell: bash
+        run: |
+          kill "$(cat /tmp/memory-api-qwen.pid)"
+          for attempt in {1..30}; do
+            if ! curl --silent --fail --output /dev/null \
+              -H "Authorization: Bearer ${MEMORY_API_KEY}" \
+              http://127.0.0.1:8767/v1/ready; then break; fi
+            sleep 1
+          done
+          if curl --silent --fail --output /dev/null \
+            -H "Authorization: Bearer ${MEMORY_API_KEY}" \
+            http://127.0.0.1:8767/v1/ready; then
+            echo "Original API still responding; refusing fake restart proof" >&2
+            exit 1
+          fi
+          uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8767 > /tmp/memory-api-qwen-restarted.log 2>&1 &
+          echo $! > /tmp/memory-api-qwen-restarted.pid
+          if [[ "$(cat /tmp/memory-api-qwen.pid)" == "$(cat /tmp/memory-api-qwen-restarted.pid)" ]]; then
+            echo "API PID was not replaced" >&2
+            exit 1
+          fi
+          for attempt in {1..40}; do
+            if curl --silent --fail --output /dev/null \
+              -H "Authorization: Bearer ${MEMORY_API_KEY}" \
+              http://127.0.0.1:8767/v1/ready; then exit 0; fi
+            sleep 1
+          done
+          echo "Fresh API process failed readiness" >&2
+          exit 1
+      - name: Verify persisted memory from independent process and HTTP session
+        shell: bash
+        run: |
+          python scripts/eval/verify_qwen_postrestart.py \
+            --base-url http://127.0.0.1:8767 \
+            --key="${MEMORY_API_KEY}" \
+            --primary-report evidence/qwen-grounded-atomic.json \
+            --report evidence/qwen-postrestart-readback.json
       - name: Record source commit and report digest
         if: always()
         shell: bash
@@ -129,6 +167,7 @@ jobs:
           import hashlib, json, os
           from pathlib import Path
           path = Path("evidence/qwen-grounded-atomic.json")
+          restart = Path("evidence/qwen-postrestart-readback.json")
           out = {"github_sha": os.environ["GITHUB_SHA"],
                  "workflow_run_id": os.environ["GITHUB_RUN_ID"],
                  "provider": "dashscope",
@@ -141,6 +180,15 @@ jobs:
                   out["passed"]=json.loads(raw).get("passed") is True
               except (ValueError, TypeError):
                   out["passed"]=False
+          if restart.exists():
+              out["restart_report_sha256"]=hashlib.sha256(restart.read_bytes()).hexdigest()
+              try:
+                  out["restart_passed"]=json.loads(restart.read_bytes()).get("passed") is True
+              except (ValueError, TypeError):
+                  out["restart_passed"]=False
+          else:
+              out["restart_passed"]=False
+          out["passed"]=out.get("passed") is True and out["restart_passed"] is True
           Path("evidence/manifest.json").write_text(
               json.dumps(out,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
           PY

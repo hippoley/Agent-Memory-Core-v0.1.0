@@ -310,7 +310,7 @@ $("searchForm").onsubmit=async e=>{
   }else{
    const matches=state.items.filter(x=>[x.subject_id,x.predicate,x.source_id,valueText(x)].join(" ").toLowerCase().includes(query.toLowerCase()));
    renderSearchHits(matches.slice(0,10),false);
-   $("searchNote").textContent="Demo-only local matching · "+matches.length+" synthetic records · no server or model was queried.";
+   $("searchNote").textContent="Demo mode local matching claims · "+matches.length+" synthetic records · no server or model was queried.";
   }
  }catch(err){
   $("searchResults").replaceChildren();

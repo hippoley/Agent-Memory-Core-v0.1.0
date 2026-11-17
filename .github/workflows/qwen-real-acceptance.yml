@@ -1,5 +1,13 @@
 name: qwen-real-memory-acceptance
+# One-shot live acceptance requested by repository owner.
+# The push trigger is scoped to the dedicated evaluation branch and THIS file.
+# Do not merge this temporary trigger into main.
 on:
+  push:
+    branches:
+      - eval/qwen-live-one-shot-20261117
+    paths:
+      - '.github/workflows/qwen-real-acceptance.yml'
   workflow_dispatch:
     inputs:
       model:
@@ -96,7 +104,7 @@ jobs:
                  "workflow_run_id": os.environ["GITHUB_RUN_ID"],
                  "provider": "dashscope",
                  "model_declared": os.environ.get("MEMORY_EXTRACTOR_MODEL"),
-                 "real_model_invocation": path.exists()}
+                 "evidence_report_written": path.exists()}
           if path.exists():
               raw=path.read_bytes()
               out["report_sha256"]=hashlib.sha256(raw).hexdigest()

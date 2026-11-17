@@ -41,7 +41,8 @@ def run(args):
                               "include_superseded":str(history).lower()})["items"]
         def seed(subject, pred, value, source):
             return call("POST","/v1/memories",json={
-                "subject_id":subject,"predicate":pred,"value":value,"source_id":source
+                "subject_id":subject,"predicate":pred,"value":value,"source_id":source,
+                "valid_from":"2026-01-01T00:00:00+00:00"
             })["id"]
         def execute(case_id, prompt, context, subjects, check):
             previous={sub:read(sub,True) for sub in subjects}

@@ -87,7 +87,7 @@ jobs:
           mkdir -p evidence
           python scripts/eval/probe_grounded_atomic_live.py \
             --base-url http://127.0.0.1:8767 \
-            --key "${MEMORY_API_KEY}" \
+            --key="${MEMORY_API_KEY}" \
             --extractor-model "${MEMORY_EXTRACTOR_MODEL}" \
             --provider openai-compatible \
             --language zh \

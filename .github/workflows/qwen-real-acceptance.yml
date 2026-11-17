@@ -24,7 +24,7 @@ jobs:
     env:
       MEMORY_EXTRACTOR_PROVIDER: dashscope
       MEMORY_EXTRACTOR_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
-      MEMORY_EXTRACTOR_MODEL: ${{ inputs.model }}
+      MEMORY_EXTRACTOR_MODEL: ${{ inputs.model || 'qwen-plus' }}
       MEMORY_EXTRACTOR_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
       MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION: "1"
       MEMORY_AUTO_EMBED: "0"

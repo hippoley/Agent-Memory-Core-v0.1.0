@@ -1,0 +1,158 @@
+name: qwen-real-dangerous-zh-acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "DashScope model ID (manual, billable live inference)"
+        required: true
+        default: "qwen-plus"
+        type: string
+jobs:
+  real-qwen-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      MEMORY_EXTRACTOR_PROVIDER: dashscope
+      MEMORY_EXTRACTOR_BASE_URL: ${{ vars.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' }}
+      MEMORY_EXTRACTOR_MODEL: ${{ inputs.model || 'qwen-plus' }}
+      MEMORY_EXTRACTOR_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION: "1"
+      MEMORY_AUTO_EMBED: "0"
+      MEMORY_ENABLE_VECTOR: "0"
+      MEMORY_ENABLE_AGE: "0"
+      MEMORY_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Require explicit DashScope secret and safe model identifier
+        shell: bash
+        run: |
+          if [[ -z "${MEMORY_EXTRACTOR_API_KEY:-}" ]]; then
+            echo "DASHSCOPE_API_KEY repository Actions secret is not configured" >&2
+            exit 1
+          fi
+          if [[ "${MEMORY_EXTRACTOR_API_KEY}" != sk-* || "${MEMORY_EXTRACTOR_API_KEY}" == sk-sp-* ]]; then
+            echo "This backend requires a standard pay-as-you-go Model Studio API key (sk- prefix, not sk-sp- plan key)" >&2
+            exit 1
+          fi
+          if [[ ! "${MEMORY_EXTRACTOR_MODEL}" =~ ^[a-zA-Z0-9._-]{1,100}$ ]]; then
+            echo "Unsafe DashScope model identifier" >&2
+            exit 1
+          fi
+      - name: Real Qwen provider authentication and JSON-mode smoke
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, re, urllib.error, urllib.request
+          body=json.dumps({"model":os.environ["MEMORY_EXTRACTOR_MODEL"],
+            "messages":[{"role":"system","content":"Respond with a JSON object."},
+                        {"role":"user","content":"Return a JSON object with ok=true."}],
+            "temperature":0,"response_format":{"type":"json_object"}}).encode()
+          req=urllib.request.Request(os.environ["MEMORY_EXTRACTOR_BASE_URL"],
+                data=body,method="POST",headers={"Content-Type":"application/json",
+                "Authorization":"Bearer "+os.environ["MEMORY_EXTRACTOR_API_KEY"]})
+          try:
+              with urllib.request.urlopen(req,timeout=40) as response:
+                  obj=json.loads(response.read(200000))
+                  print("Qwen smoke HTTP:",response.status)
+                  print("Qwen response model:",obj.get("model"))
+                  print("Qwen response ID present:",bool(obj.get("id")))
+                  if obj.get("model")!=os.environ["MEMORY_EXTRACTOR_MODEL"]:
+                      raise RuntimeError("Qwen response model mismatch")
+          except urllib.error.HTTPError as exc:
+              print("Qwen smoke HTTP:",exc.code)
+              try:
+                  code=json.loads(exc.read(2000)).get("code","unknown")
+                  if not isinstance(code,str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}",code):
+                      code="unknown"
+                  print("Qwen provider error code:",code)
+              except (ValueError,TypeError):
+                  pass
+              raise SystemExit(1)
+          PY
+      - name: Start disposable PostgreSQL AGE/pgvector database
+        run: docker compose up -d --build --wait
+      - name: Install API, database and evaluation dependencies
+        run: python -m pip install -e ".[postgres,api]"
+      - name: Initialize isolated database and API identity
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, secrets, uuid
+          from agent_memory_core.postgres import PostgresMemory
+          db = PostgresMemory(os.environ["MEMORY_DSN"])
+          try:
+              db.migrate()
+          finally:
+              db.close()
+          token = secrets.token_urlsafe(48)
+          print("::add-mask::" + token)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write("MEMORY_API_KEY=" + token + "\n")
+              f.write("MEMORY_TENANT_ID=qwen-eval-" + uuid.uuid4().hex + "\n")
+          PY
+      - name: Start local Memory API wired to REAL Qwen
+        shell: bash
+        run: |
+          uvicorn agent_memory_core.server:app --host 127.0.0.1 --port 8767 > /tmp/memory-api-qwen.log 2>&1 &
+          echo $! > /tmp/memory-api-qwen.pid
+          for attempt in {1..40}; do
+            if curl --silent --show-error --fail --output /dev/null \
+              -H "Authorization: Bearer ${MEMORY_API_KEY}" \
+              http://127.0.0.1:8767/v1/ready; then exit 0; fi
+            sleep 1
+          done
+          echo "Local API readiness failed" >&2
+          exit 1
+      - name: Execute REAL Qwen hazardous Chinese semantics on isolated PostgreSQL
+        shell: bash
+        run: |
+          mkdir -p evidence
+          python scripts/eval/probe_zh_dangerous_live.py \
+            --base-url http://127.0.0.1:8767 \
+            --key="${MEMORY_API_KEY}" \
+            --model "${MEMORY_EXTRACTOR_MODEL}" \
+            --ack-disposable \
+            --report evidence/qwen-dangerous-zh.json
+      - name: Build fail-closed evidence receipt
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          path=Path("evidence/qwen-dangerous-zh.json")
+          manifest={"github_sha":os.environ["GITHUB_SHA"],
+                    "workflow_run_id":os.environ["GITHUB_RUN_ID"],
+                    "provider":"dashscope",
+                    "model":os.environ["MEMORY_EXTRACTOR_MODEL"],
+                    "report_written":path.exists(),"passed":False}
+          if path.exists():
+              raw=path.read_bytes()
+              manifest["report_sha256"]=hashlib.sha256(raw).hexdigest()
+              try:
+                  result=json.loads(raw)
+                  manifest["case_count"]=result.get("total")
+                  manifest["passed_count"]=result.get("passed_count")
+                  manifest["passed"]=result.get("passed") is True
+              except (ValueError,TypeError):
+                  pass
+          Path("evidence/manifest.json").write_text(
+              json.dumps(manifest,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+          PY
+      - name: Upload machine-readable semantic evidence (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwen-real-dangerous-zh-evidence
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Shutdown disposable database
+        if: always()
+        run: docker compose down -v
+

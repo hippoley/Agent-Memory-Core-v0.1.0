@@ -1,5 +1,5 @@
 name: qwen-real-memory-acceptance
-# One-shot live acceptance requested by repository owner.
+# One-shot live acceptance requested by repository owner; diagnostic rerun with sanitized HTTP status reporting.
 # The push trigger is scoped to the dedicated evaluation branch and THIS file.
 # Do not merge this temporary trigger into main.
 on:

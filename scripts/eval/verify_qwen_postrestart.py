@@ -16,7 +16,9 @@ import httpx
 from probe_grounded_atomic_live import require_loopback
 
 
-def verify(base_url: str, key: str, primary: dict) -> dict:
+def verify(base_url: str, key: str, primary: dict, *, scope: str = "api-process-restart") -> dict:
+    if scope not in {"api-process-restart", "postgres-container-restart"}:
+        raise ValueError("Unsupported verification scope")
     if primary.get("passed") is not True:
         raise ValueError("Primary live probe was not successful")
     subject = primary.get("subject")
@@ -66,7 +68,7 @@ def verify(base_url: str, key: str, primary: dict) -> dict:
         "old_search_excluded": all(h.get("memory_id") != old_id for h in hits),
     }
     return {
-        "scope": "independent_new_process_api_restart_postgres_readback",
+        "scope": scope,
         "primary_subject": subject,
         "primary_old_id": old_id,
         "primary_new_id": new_id,
@@ -80,11 +82,12 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--key", default=os.getenv("MEMORY_API_KEY"))
     parser.add_argument("--primary-report", type=Path, required=True)
+    parser.add_argument("--scope", choices=("api-process-restart", "postgres-container-restart"), default="api-process-restart")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     try:
         primary = json.loads(args.primary_report.read_text(encoding="utf-8"))
-        result = verify(args.base_url, args.key, primary)
+        result = verify(args.base_url, args.key, primary, scope=args.scope)
     except httpx.HTTPStatusError as exc:
         result = {"scope": "independent_new_process_api_restart_postgres_readback",
                   "passed": False, "failure_type": "HTTPStatusError",

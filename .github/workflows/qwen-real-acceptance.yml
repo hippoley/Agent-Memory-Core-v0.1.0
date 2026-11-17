@@ -62,8 +62,10 @@ jobs:
               db.migrate()
           finally:
               db.close()
+          token = secrets.token_urlsafe(48)
+          print("::add-mask::" + token)
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
-              f.write("MEMORY_API_KEY=" + secrets.token_urlsafe(48) + "\n")
+              f.write("MEMORY_API_KEY=" + token + "\n")
               f.write("MEMORY_TENANT_ID=qwen-eval-" + uuid.uuid4().hex + "\n")
           PY
       - name: Start local Memory API wired to REAL Qwen

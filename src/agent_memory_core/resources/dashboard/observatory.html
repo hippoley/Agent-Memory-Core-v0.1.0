@@ -105,7 +105,7 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 </main>
 <aside class="right">
 <section class="panel"><h2>Memory population <span id="pageMark" class="blue">/ DEMO</span></h2><div id="total" class="metric">—</div><div class="metric-sub" id="totalNote">Canonical claims in selected snapshot</div><div class="small-stats"><div class="kv"><span>Semantic domains</span><strong id="domains">—</strong></div><div class="kv"><span>Active claims</span><strong id="active">—</strong></div><div class="kv"><span>Superseded claims</span><strong id="old">—</strong></div><div class="kv"><span>Recorded events</span><strong id="eventsCount">—</strong></div></div></section>
-<section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="submit">Find related memories →</button></form><div id="searchNote" class="result-note">Demo mode searches only the synthetic claims in this browser. Live mode queries the authenticated canonical retrieval API.</div><div id="searchResults" class="search-results" aria-live="polite"></div></section>
+<section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="button">Find related memories →</button></form><div id="searchNote" class="result-note">Demo mode searches only the synthetic claims in this browser. Live mode queries the authenticated canonical retrieval API.</div><div id="searchResults" class="search-results" aria-live="polite"></div></section>
 <section class="panel"><h2>Focus / Evidence</h2><label class="micro" for="claimPicker">SELECT VISIBLE MEMORY / KEYBOARD</label><select id="claimPicker" class="claim-picker" aria-label="选择记忆以查看证据"><option value="">Choose a visible claim</option></select><div class="selection" id="detail" aria-live="polite">Select a topology strand to inspect its supporting claims.</div></section>
 <section class="panel" id="writePanel" hidden>
 <h2>Write / Revise / Forget</h2>
@@ -296,6 +296,7 @@ function renderSearchHits(items,live){
   host.append(button);
  }
 }
+$("searchForm button").onclick=e=>{e.preventDefault();$("searchForm").requestSubmit()};
 $("searchForm").onsubmit=async e=>{
  e.preventDefault();const query=$("query").value.trim();state.query=query;state.selection=null;
  const button=$("searchForm button");button.disabled=true;

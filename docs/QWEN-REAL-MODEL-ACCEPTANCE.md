@@ -63,3 +63,31 @@ python scripts/eval/probe_grounded_atomic_live.py \
 The API bearer credential is read from `MEMORY_API_KEY`. The external Qwen
 API credential must be configured **on the server** via
 `MEMORY_EXTRACTOR_API_KEY` (never sent to the probe client).
+
+## Authentication failures established by real runs (2026-11-17)
+
+Owner-authorized one-shot Actions exercises reached PostgreSQL and the authenticated
+API, then the real Model Studio upstream refused both Beijing and Singapore shared
+DashScope endpoints with **HTTP 401**. This proves secret *presence*, not its
+validity. No real Qwen memory correction succeeded in those runs. Do not report
+the 401 sessions as model evaluation passes.
+
+The manual workflow first performs a synthetic Qwen JSON-mode authentication
+smoke **before** starting the database and does not send real user memories.
+For a standard, pay-as-you-go Model Studio key, use an `sk-` key, not a
+plan-specific `sk-sp-` key (Coding Plan and Token Plan usage is not permitted
+for this noninteractive backend workflow). Match the API key region to the
+endpoint region; the shared Beijing domain is the default.
+
+The operator can set the optional GitHub Actions **repository variable**
+`DASHSCOPE_BASE_URL` to the full OpenAI-compatible chat/completions endpoint
+for the **same region and billing plan** as the API key. For example, for a
+Singapore pay-as-you-go API key:
+`https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions`.
+Use normal GitHub Actions Secrets for the key itself. Do not place the key in
+a variable, command, or repository file.
+
+If the provider smoke returns HTTP 401, regenerate or correct the pay-as-you-go
+API key in the matching region; do not change the test to accept synthetic
+responses. Once the smoke returns HTTP 200 with a matching model, the rest
+of the gated PostgreSQL + API + canonical-history probe runs normally.

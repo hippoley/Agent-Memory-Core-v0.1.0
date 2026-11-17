@@ -124,3 +124,13 @@ def test_channel_weights_change_fusion_order():
     assert tuned.channel_weights["vector"] == _DEFAULT_CHANNEL_WEIGHTS["vector"]
     for weight in search.channel_weights.values():
         assert weight > 0
+
+
+def test_mixed_chinese_canonical_subject_identifier_not_starved_by_bigram_budget():
+    from agent_memory_core.hybrid import query_terms
+    query = "供应商 supplier-e3d046e20ba043b1 的结算周期现在改为每三个月一次，不再按月结算。"
+    terms = query_terms(query)
+    assert "supplier" in terms
+    assert "e3d046e20ba043b1" in terms
+    assert len(terms) <= 10
+    assert "供应" in terms

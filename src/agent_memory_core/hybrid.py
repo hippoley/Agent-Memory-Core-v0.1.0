@@ -34,14 +34,18 @@ def query_terms(query: str, limit: int = 10) -> list[str]:
     """
     if not isinstance(query, str):
         return []
-    terms: list[str] = []
+    # Prioritize explicit Latin identifiers in mixed Chinese/ASCII queries.
+    # Otherwise ten CJK bigrams can exhaust the term budget before the
+    # canonical subject UUID or external entity identifier is even considered.
+    # Pure CJK behavior and scoring remain unchanged.
+    latin = [word for word in _LATIN_WORD.findall(query.lower())
+             if word not in _STOPWORDS]
+    terms: list[str] = latin
     for run in _CJK_RUN.findall(query):
         if len(run) <= 2:
             terms.append(run)
         else:
             terms.extend(run[i:i + 2] for i in range(len(run) - 1))
-    terms.extend(word for word in _LATIN_WORD.findall(query.lower())
-                 if word not in _STOPWORDS)
     seen: set[str] = set()
     picked: list[str] = []
     for term in terms:

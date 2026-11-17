@@ -112,3 +112,26 @@ P0.4 is not passed.
 This is a **new-API-process, new-client-session** persistence proof, not a
 PostgreSQL-container power-cycle proof, multitenant authentication exercise,
 nor full five-semantics benchmark. Those remain separate gates.
+
+## PostgreSQL container restart gate (P0.5)
+
+The opt-in, live Qwen workflow now adds a second independent readback after
+its previously proven API-process restart. The new gate actually **stops the
+PostgreSQL Compose service** while preserving its container and volume, asserts
+the container is stopped, and checks that the running Memory API reports
+`503` for authenticated `/v1/ready` during the outage. It then starts the
+**same container**, requires its `StartedAt` timestamp to change, waits for
+database readiness through the Memory API, and runs a fresh Python verification
+process checking the exact old/new memory IDs, historical status, and active
+search. This new report is
+`evidence/qwen-postgres-restart-readback.json`.
+
+The manifest's `passed` now requires **all three reports**, and includes
+SHA-256 digests for each receipt. These are integrity digests, not cryptographic
+signatures or a third-party attestation.
+
+**Boundary:** A stop/start of the same disposable PostgreSQL container with a
+persistent volume, not a hard host power loss, crash-consistent fsync proof,
+cross-region replica recovery, or real production disaster recovery. The
+four remaining Chinese semantics and tenant isolation are not covered by
+this gate.

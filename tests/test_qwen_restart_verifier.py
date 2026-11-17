@@ -93,4 +93,17 @@ def test_restart_workflow_is_manual_on_main_and_requires_both_receipts():
     assert "kill \"$(cat /tmp/memory-api-qwen.pid)\"" in workflow
     assert "verify_qwen_postrestart.py" in workflow
     assert 'out["restart_passed"]' in workflow
-    assert 'out["passed"]=out.get("passed") is True and out["restart_passed"] is True' in workflow
+    assert 'out["postgres_restart_passed"] is True' in workflow
+    assert "docker compose stop memory-db" in workflow
+    assert "docker compose up -d --wait memory-db" in workflow
+    assert "qwen-postgres-restart-readback.json" in workflow
+
+def test_postgres_restart_scope_is_explicit_and_checked(monkeypatch):
+    monkeypatch.setattr(verifier.httpx, "Client", FakeClient)
+    report = verifier.verify("http://127.0.0.1:8767", "k" * 32,
+                             primary(), scope="postgres-container-restart")
+    assert report["passed"] is True
+    assert report["scope"] == "postgres-container-restart"
+    with pytest.raises(ValueError, match="scope"):
+        verifier.verify("http://127.0.0.1:8767", "k" * 32,
+                        primary(), scope="not-a-real-proof")

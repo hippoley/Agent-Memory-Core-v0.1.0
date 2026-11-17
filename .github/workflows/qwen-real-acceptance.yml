@@ -1,7 +1,5 @@
+# Temporary branch-only automated trigger for owner-authorized Qwen acceptance; never merge trigger to main.
 name: qwen-real-memory-acceptance
-# One-shot live acceptance requested by repository owner; diagnostic rerun with sanitized HTTP status reporting.
-# The push trigger is scoped to the dedicated evaluation branch and THIS file.
-# Do not merge this temporary trigger into main.
 on:
   push:
     branches:
@@ -23,7 +21,7 @@ jobs:
       contents: read
     env:
       MEMORY_EXTRACTOR_PROVIDER: dashscope
-      MEMORY_EXTRACTOR_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions
+      MEMORY_EXTRACTOR_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
       MEMORY_EXTRACTOR_MODEL: ${{ inputs.model || 'qwen-plus' }}
       MEMORY_EXTRACTOR_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
       MEMORY_EXTRACTOR_REQUIRE_MODEL_ATTESTATION: "1"
@@ -41,6 +39,10 @@ jobs:
         run: |
           if [[ -z "${MEMORY_EXTRACTOR_API_KEY:-}" ]]; then
             echo "DASHSCOPE_API_KEY repository Actions secret is not configured" >&2
+            exit 1
+          fi
+          if [[ "${MEMORY_EXTRACTOR_API_KEY}" != sk-* || "${MEMORY_EXTRACTOR_API_KEY}" == sk-sp-* ]]; then
+            echo "This backend requires a standard pay-as-you-go Model Studio API key (sk- prefix, not sk-sp- plan key)" >&2
             exit 1
           fi
           if [[ ! "${MEMORY_EXTRACTOR_MODEL}" =~ ^[a-zA-Z0-9._-]{1,100}$ ]]; then

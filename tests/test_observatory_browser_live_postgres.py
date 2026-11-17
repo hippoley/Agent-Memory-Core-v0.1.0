@@ -27,6 +27,7 @@ pytest.importorskip("uvicorn")
 from playwright.sync_api import sync_playwright, expect
 from agent_memory_core.api import create_app
 from agent_memory_core.postgres import PostgresMemory
+from agent_memory_core.hybrid import HybridMemorySearch
 import uvicorn
 
 
@@ -60,7 +61,11 @@ def runtime():
             raise ConnectionError("Injected store connection failure for browser test")
         return PostgresMemory(dsn)
 
-    app = create_app(api_key=key, tenant_id=tenant, store_factory=store_factory)
+    def search_factory():
+        return HybridMemorySearch(PostgresMemory(dsn))
+
+    app = create_app(api_key=key, tenant_id=tenant, store_factory=store_factory,
+                     search_factory=search_factory)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -152,6 +157,7 @@ def test_real_live_browser_uses_its_own_persisted_tenant_history(runtime):
         try:
             page.goto(base + "/dashboard/observatory.html", wait_until="load")
             expect(page.locator("#pageMark")).to_have_text("/ DEMO")
+            expect(page.locator("#searchNote")).to_contain_text("Demo mode searches only")
             page.locator("#connectBtn").click()
             page.locator("#key").fill("wrong-key")
             page.locator("#liveBtn").click()
@@ -165,6 +171,18 @@ def test_real_live_browser_uses_its_own_persisted_tenant_history(runtime):
             expect(page.locator("#active")).to_have_text("1")
             expect(page.locator("#old")).to_have_text("1")
             assert int(page.locator("#eventsCount").inner_text()) >= 2
+
+            # Live recall must query the real HybridMemorySearch adapter,
+            # return canonical active claims and expose the channel provenance.
+            page.locator("#query").fill("settlement_period")
+            page.locator("#searchForm button").click()
+            expect(page.locator("#searchNote")).to_contain_text("Live API retrieval")
+            expect(page.locator("#searchNote")).to_contain_text("sql")
+            expect(page.locator("#searchResults .search-hit")).to_have_count(1)
+            expect(page.locator("#searchResults")).to_contain_text("evidence:new")
+            page.locator("#searchResults .search-hit").click()
+            assert "evidence:new" in page.locator("#detail").inner_text()
+
             page.locator("#claimPicker").select_option(first["id"])
             assert "evidence:old" in page.locator("#detail").inner_text()
             page.locator("#claimPicker").select_option(second["id"])

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import hashlib
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -41,7 +42,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class OpenAICompatFactExtractor:
     def __init__(self, *, model: str, base_url: str, api_key: str | None = None,
-                 timeout: float = 30.0, json_mode: bool = True):
+                 timeout: float = 30.0, json_mode: bool = True,
+                 require_model_match: bool = False):
         if not isinstance(model, str) or not model.strip() or timeout <= 0:
             raise ValueError("A model and positive timeout are required")
         parsed = urlsplit(base_url)
@@ -57,6 +59,8 @@ class OpenAICompatFactExtractor:
         self.api_key = api_key
         self.timeout = timeout
         self.json_mode = json_mode
+        self.require_model_match = require_model_match
+        self.attestations: list[dict] = []
         self._opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), _NoRedirect())
 
@@ -131,6 +135,7 @@ class OpenAICompatFactExtractor:
         if self.json_mode:
             payload["response_format"] = {"type": "json_object"}
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request_sha256 = hashlib.sha256(body).hexdigest()
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -145,9 +150,43 @@ class OpenAICompatFactExtractor:
             raise RuntimeError("Extractor response exceeds 1 MiB")
         try:
             outer = json.loads(raw)
-            return outer["choices"][0]["message"]["content"]
+            choice = outer["choices"][0]
+            content = choice["message"]["content"]
+            response_model = outer.get("model")
+            identity_status = ("matched" if response_model == self.model else
+                               "mismatch" if response_model else "unattested")
+            self.attestations.append({
+                "provider_protocol": "openai-compatible-chat-completions",
+                "requested_model": self.model, "response_model": response_model,
+                "identity_status": identity_status, "response_id": outer.get("id"),
+                "created": outer.get("created"),
+                "system_fingerprint": outer.get("system_fingerprint"),
+                "finish_reason": choice.get("finish_reason"),
+                "usage": outer.get("usage") if isinstance(outer.get("usage"), dict) else None,
+                "request_sha256": request_sha256,
+                "response_sha256": hashlib.sha256(raw).hexdigest(),
+                "endpoint_host": self.base_url.split("/")[2],
+                "attempt": len(self.attestations) + 1,
+            })
+            if self.require_model_match and identity_status != "matched":
+                raise RuntimeError("Extractor response model did not match configured model")
+            return content
+        except RuntimeError:
+            raise
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             raise RuntimeError("Extractor returned invalid JSON contract") from exc
+
+    def attestation_snapshot(self) -> dict:
+        """Return redacted metadata for this instance actual inference calls."""
+        return {
+            "provider": "openai-compatible",
+            "configured_model": self.model,
+            "require_model_match": self.require_model_match,
+            "calls": list(self.attestations),
+            "identity_verified": bool(self.attestations) and all(
+                call["identity_status"] == "matched" for call in self.attestations),
+            "cryptographic_weight_identity": False,
+        }
 
 
 class OpenAICompatEmbedder:

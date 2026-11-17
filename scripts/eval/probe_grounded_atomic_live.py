@@ -208,6 +208,14 @@ def main() -> int:
     args = parser.parse_args()
     try:
         report = run(args)
+    except httpx.HTTPStatusError as exc:
+        # Only disclose fixed local endpoint path and HTTP status, not body,
+        # request query, headers, bearer token, or provider error payload.
+        report = {"scope": "real_model_grounded_atomic_http",
+                  "passed": False, "failure_stage": "http",
+                  "failure_type": "HTTPStatusError",
+                  "http_status": exc.response.status_code,
+                  "endpoint_path": exc.request.url.path}
     except Exception as exc:
         # Store a negative result even if the API or model fails. Exclude
         # exception messages: HTTP traces may contain credentials or prompts.

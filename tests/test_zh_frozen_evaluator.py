@@ -100,12 +100,27 @@ def test_empty_gold_retrieval_is_not_reported_as_perfect_recall():
     assert report["retrieval"]["precision_recall"]["fp"]>0
 
 
-def test_retract_compares_scope_not_arbitrary_marker_value():
+def test_retract_must_match_old_canonical_value_not_just_scope():
     expected=[{"turn":1,"subject_id":"次卧","predicate":"noise_preference",
                "operation":"RETRACT","value":{"level":"quiet"}}]
-    actual=[{"turn":1,"subject_id":"次卧","predicate":"noise_preference",
-             "operation":"RETRACT","value":{"reason":"explicit_withdrawal"}}]
-    assert MODULE._counts(expected,actual,event=True)==(1,0,0)
+    wrong=[{"turn":1,"subject_id":"次卧","predicate":"noise_preference",
+            "operation":"RETRACT","value":{"reason":"explicit_withdrawal"}}]
+    assert MODULE._counts(expected,wrong,event=True)==(0,1,1)
+    assert MODULE._counts(expected,[dict(expected[0])],event=True)==(1,0,0)
+
+
+def test_wrong_retraction_value_does_not_inflate_extraction_f1():
+    gold,sha,payload=_perfect_payload()
+    case=next(c for c in payload["cases"] if c["id"]=="zh02")
+    target=next(e for e in case["extracted"] if e["operation"]=="RETRACT")
+    target["value"]={"level":"loud"}
+    report=MODULE.score(gold,MODULE.validate_predictions(payload,gold,sha),
+                        payload["configuration"],sha)
+    case_detail=next(x for x in report["details"] if x["id"]=="zh02")
+    assert case_detail["extraction"]=={"tp":1,"fp":1,"fn":1}
+    assert report["extraction"]["f1"]<1.0
+    # A correct final state cannot rescue an incorrect model withdrawal target.
+    assert report["revision"]["exact_final_state_accuracy"]==1.0
 
 
 def test_abstention_is_scored_separately():

@@ -264,12 +264,12 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             sql = PostgresMemory(runtime["dsn"])
             try:
                 rows = sql.conn.execute(
-                    "SELECT id::text, superseded_at, forgotten_at, source_id "
+                    "SELECT id::text, superseded_at, source_id "
                     "FROM memory_claims WHERE tenant_id=%s AND subject_id=%s "
                     "ORDER BY recorded_at",
                     (runtime["tenant"], subject)).fetchall()
                 assert len(rows) == 2, rows
-                by_source = {row[3]: row for row in rows}
+                by_source = {row[2]: row for row in rows}
                 assert by_source["ui-test:original"][1] is not None
                 assert by_source["ui-test:correction"][1] is not None
                 assert all(row[1] is not None for row in rows)

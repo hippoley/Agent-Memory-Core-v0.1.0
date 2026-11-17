@@ -90,7 +90,7 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 @media(max-width:680px){.domain-readout{display:block;font-size:11px;line-height:1.8;color:#607392;padding:9px 3px 13px}}
 /* Live canonical claim mutations — only shown after authenticated same-origin API connection */
 #writePanel[hidden]{display:none}#writePanel label{display:block;margin-top:13px}#writePanel textarea{resize:vertical;min-height:72px;border:1px solid var(--line);padding:10px;font-family:ui-monospace,monospace;font-size:11px}#writePanel .auth-actions{margin:12px 0;flex-wrap:wrap}#writePanel .auth-actions button{flex:1;min-width:145px}#forgetSelected{margin-top:4px;color:#a23d54}#mutationNote{min-height:24px;overflow-wrap:anywhere}
-</style>
+.search-results{display:grid;gap:7px;margin-top:12px}.search-hit{display:block;width:100%;text-align:left;padding:10px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;font:inherit}.search-hit:hover{border-color:var(--blue);background:#f7f9ff}.search-hit strong{display:block;font-size:11px;overflow-wrap:anywhere}.search-hit small{display:block;margin-top:4px;color:var(--muted);font-size:10px;line-height:1.5;overflow-wrap:anywhere}.search-hit .score{color:var(--blue);font-variant-numeric:tabular-nums}</style>
 </head>
 <body>
 <div class="shell">
@@ -105,7 +105,7 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 </main>
 <aside class="right">
 <section class="panel"><h2>Memory population <span id="pageMark" class="blue">/ DEMO</span></h2><div id="total" class="metric">—</div><div class="metric-sub" id="totalNote">Canonical claims in selected snapshot</div><div class="small-stats"><div class="kv"><span>Semantic domains</span><strong id="domains">—</strong></div><div class="kv"><span>Active claims</span><strong id="active">—</strong></div><div class="kv"><span>Superseded claims</span><strong id="old">—</strong></div><div class="kv"><span>Recorded events</span><strong id="eventsCount">—</strong></div></div></section>
-<section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="submit">Find related memories →</button></form><div id="searchNote" class="result-note">Search currently loaded claims. Highlighting is local; it is not a server-side hybrid retrieval score.</div></section>
+<section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="submit">Find related memories →</button></form><div id="searchNote" class="result-note">Demo mode searches only the synthetic claims in this browser. Live mode queries the authenticated canonical retrieval API.</div><div id="searchResults" class="search-results" aria-live="polite"></div></section>
 <section class="panel"><h2>Focus / Evidence</h2><label class="micro" for="claimPicker">SELECT VISIBLE MEMORY / KEYBOARD</label><select id="claimPicker" class="claim-picker" aria-label="选择记忆以查看证据"><option value="">Choose a visible claim</option></select><div class="selection" id="detail" aria-live="polite">Select a topology strand to inspect its supporting claims.</div></section>
 <section class="panel" id="writePanel" hidden>
 <h2>Write / Revise / Forget</h2>
@@ -282,7 +282,41 @@ $("claimPicker").onchange=e=>{state.selection=e.target.value||null;render();draw
 $("time").oninput=e=>{state.position=Number(e.target.value);render();draw()};
 $("reset").onclick=()=>{state.phase=0;state.scale=1;state.position=100;$("time").value=100;state.selection=null;state.query="";$("query").value="";render();draw()};
 $("pause").onclick=()=>{state.running=!state.running;$("pause").textContent=state.running?"Ⅱ":"▶";if(state.running)draw()};
-$("searchForm").onsubmit=e=>{e.preventDefault();state.query=$("query").value.trim();state.selection=null;render();draw()};
+function renderSearchHits(items,live){
+ const host=$("searchResults");host.replaceChildren();
+ if(!items.length){const empty=document.createElement("div");empty.className="mini";empty.textContent="No matching canonical memories.";host.append(empty);return}
+ for(const hit of items){
+  const button=document.createElement("button");button.type="button";button.className="search-hit";
+  const title=document.createElement("strong");title.textContent=String(hit.subject_id||"")+" / "+String(hit.predicate||"");
+  const value=document.createElement("small");value.textContent=typeof hit.value==="string"?hit.value:JSON.stringify(hit.value??{});
+  const meta=document.createElement("small");meta.textContent=(live?"score "+Number(hit.score||0).toFixed(4)+" · channels "+(hit.channels||[]).join(", ")+" · ":"")+String(hit.source_id||"no source");
+  button.append(title,value,meta);
+  const id=String(hit.memory_id||hit.id||"");
+  button.addEventListener("click",()=>{state.selection=id;render();draw();});
+  host.append(button);
+ }
+}
+$("searchForm").onsubmit=async e=>{
+ e.preventDefault();const query=$("query").value.trim();state.query=query;state.selection=null;
+ const button=$("searchForm button");button.disabled=true;
+ try{
+  if(state.mode==="live"){
+   $("searchNote").textContent="Querying the authenticated canonical retrieval API…";
+   const result=await api("/v1/search",state.key,{method:"POST",body:JSON.stringify({query,limit:10})});
+   renderSearchHits(result.items||[],true);
+   const channels=(result.channels_used||[]).join(", ")||"none";
+   const degraded=Object.keys(result.degraded_channels||{});
+   $("searchNote").textContent="Live API retrieval · channels: "+channels+(degraded.length?" · degraded: "+degraded.join(", "):"");
+  }else{
+   const matches=state.items.filter(x=>[x.subject_id,x.predicate,x.source_id,valueText(x)].join(" ").toLowerCase().includes(query.toLowerCase()));
+   renderSearchHits(matches.slice(0,10),false);
+   $("searchNote").textContent="Demo-only local matching · "+matches.length+" synthetic records · no server or model was queried.";
+  }
+ }catch(err){
+  $("searchResults").replaceChildren();
+  $("searchNote").textContent="Retrieval unavailable; no search result claimed. "+(err.message||"API request failed");
+ }finally{button.disabled=false;render();draw()}
+};
 canvas.onclick=e=>{let r=canvas.getBoundingClientRect();let x=e.clientX-r.left,y=e.clientY-r.top;let closest=positions.map(p=>({...p,d:Math.hypot(x-p.x,y-p.y)})).sort((a,b)=>a.d-b.d)[0];if(!closest||closest.d>150)return;let items=closest.group.items;let matched=state.query?items.find(it=>[it.subject_id,it.predicate,it.source_id,valueText(it)].join(" ").toLowerCase().includes(state.query.toLowerCase())):null;let item=matched||items[0];state.selection=String(item.id||item.memory_id);render();draw()};
 canvas.onwheel=e=>{if(!e.ctrlKey)return;e.preventDefault();state.scale=Math.max(.62,Math.min(1.65,state.scale-e.deltaY*.001));draw()};
 $("export").onclick=()=>{let body=JSON.stringify({mode:state.mode,exported_at:new Date().toISOString(),claims:subset(),events:state.events},null,2);let blob=new Blob([body],{type:"application/json"}),url=URL.createObjectURL(blob);let a=document.createElement("a");a.href=url;a.download="memory-observatory-"+state.mode+".json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};

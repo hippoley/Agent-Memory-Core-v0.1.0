@@ -73,7 +73,7 @@ def test_two_tenants_cannot_read_retract_or_launder_victim_memory():
             rows = d.list_claims(tenant_id=tenant_a, subject_id=subject,
                                  include_superseded=True)
             events = d.conn.execute(
-                "SELECT event_type, payload FROM memory_events WHERE tenant_id=%s ORDER BY id",
+                "SELECT event_type, payload FROM memory_events WHERE tenant_id=%s ORDER BY event_id",
                 (tenant_a,)).fetchall()
             return rows, [(r[0], r[1]) for r in events]
         finally:

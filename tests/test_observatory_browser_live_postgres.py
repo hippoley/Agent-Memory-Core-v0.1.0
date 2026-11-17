@@ -247,9 +247,9 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             page.locator("#writeSource").fill("ui-test:correction")
             page.locator("#saveMemory").click()
             expect(page.locator("#mutationNote")).to_contain_text("Revision committed.")
-            expect(page.locator("#total")).to_have_text("2")
-            expect(page.locator("#active")).to_have_text("1")
-            expect(page.locator("#old")).to_have_text("1")
+            expect(page.locator("#total")).to_have_text(str(baseline_total + 2))
+            expect(page.locator("#active")).to_have_text(str(baseline_active + 1))
+            expect(page.locator("#old")).to_have_text(str(baseline_old + 1))
             second_id = page.locator("#detail .provenance").nth(0).inner_text()
             assert second_id and second_id != first_id
 

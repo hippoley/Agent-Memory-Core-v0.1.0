@@ -72,11 +72,11 @@ def _fact_key(fact: dict, *, event: bool = False) -> str:
         if operation not in ("UPSERT", "RETRACT"):
             raise ValueError("Unknown memory operation")
         payload["operation"] = operation
-        # A retraction is scored as an operation targeting a specific fact
-        # identity, not as equality between arbitrary marker values. The
-        # original claim's prior value is validated by the revision stage.
-        if operation == "RETRACT":
-            payload.pop("value", None)
+        # A retraction must identify the *old canonical value* as well as
+        # subject/predicate/turn. Ignoring it gave a false extraction TP for
+        # retracting a different value, even if the model failed to resolve
+        # which claim should be withdrawn. Final state is scored separately.
+        # A provider's "reason" marker is NOT an expected old value.
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 

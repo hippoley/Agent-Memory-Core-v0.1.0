@@ -88,6 +88,8 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
  .claim-picker{display:block;width:100%;margin:8px 0 15px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:11px;padding:9px}
 .domain-readout{display:none}
 @media(max-width:680px){.domain-readout{display:block;font-size:11px;line-height:1.8;color:#607392;padding:9px 3px 13px}}
+/* Live canonical claim mutations — only shown after authenticated same-origin API connection */
+#writePanel[hidden]{display:none}#writePanel label{display:block;margin-top:13px}#writePanel textarea{resize:vertical;min-height:72px;border:1px solid var(--line);padding:10px;font-family:ui-monospace,monospace;font-size:11px}#writePanel .auth-actions{margin:12px 0;flex-wrap:wrap}#writePanel .auth-actions button{flex:1;min-width:145px}#forgetSelected{margin-top:4px;color:#a23d54}#mutationNote{min-height:24px;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -105,6 +107,19 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 <section class="panel"><h2>Memory population <span id="pageMark" class="blue">/ DEMO</span></h2><div id="total" class="metric">—</div><div class="metric-sub" id="totalNote">Canonical claims in selected snapshot</div><div class="small-stats"><div class="kv"><span>Semantic domains</span><strong id="domains">—</strong></div><div class="kv"><span>Active claims</span><strong id="active">—</strong></div><div class="kv"><span>Superseded claims</span><strong id="old">—</strong></div><div class="kv"><span>Recorded events</span><strong id="eventsCount">—</strong></div></div></section>
 <section class="panel"><h2>Explore / Recall</h2><form id="searchForm"><label for="query" class="sr-only">搜索记忆</label><input id="query" class="query" placeholder="例如：本地推理偏好" autocomplete="off"><button class="primary" type="submit">Find related memories →</button></form><div id="searchNote" class="result-note">Search currently loaded claims. Highlighting is local; it is not a server-side hybrid retrieval score.</div></section>
 <section class="panel"><h2>Focus / Evidence</h2><label class="micro" for="claimPicker">SELECT VISIBLE MEMORY / KEYBOARD</label><select id="claimPicker" class="claim-picker" aria-label="选择记忆以查看证据"><option value="">Choose a visible claim</option></select><div class="selection" id="detail" aria-live="polite">Select a topology strand to inspect its supporting claims.</div></section>
+<section class="panel" id="writePanel" hidden>
+<h2>Write / Revise / Forget</h2>
+<p class="mini">Live API only. Creates canonical claims, replaces one explicitly selected claim, or soft-forgets one selected claim while retaining audit history.</p>
+<form id="writeForm">
+<label class="micro" for="writeSubject">SUBJECT ID</label><input id="writeSubject" class="query" maxlength="255" required placeholder="e.g. supplier-001">
+<label class="micro" for="writePredicate">PREDICATE</label><input id="writePredicate" class="query" maxlength="255" required placeholder="e.g. settlement_period">
+<label class="micro" for="writeValue">VALUE · JSON OBJECT</label><textarea id="writeValue" class="query" rows="3" required spellcheck="false">{ "months": 1 }</textarea>
+<label class="micro" for="writeSource">SOURCE ID</label><input id="writeSource" class="query" maxlength="255" required placeholder="e.g. conversation:2026-11-17">
+<div class="auth-actions"><button class="primary" id="saveMemory" type="submit">Create memory →</button><button class="secondary" id="targetSelected" type="button">Use selected as revision target</button></div>
+</form>
+<button class="secondary" id="forgetSelected" type="button" disabled>Soft-forget selected memory</button>
+<div class="result-note" id="mutationNote" role="status" aria-live="polite">Connect to the protected live API to enable writes. Demo mode is synthetic and read-only.</div>
+</section>
 </aside></div>
 <div class="lower"><section><h2>Memory evolution / Time</h2><div class="mini">Snapshot evolution by recorded history. Drag the cursor to inspect previous states.</div><div class="timeline" id="histogram" aria-hidden="true"></div><input class="range" id="time" type="range" min="0" max="100" value="100" aria-label="历史快照位置"><div class="time-labels"><span id="startTime">Earlier</span><span id="currentTime">Latest</span></div></section><section><h2>Recent events / Provenance</h2><div id="eventList" class="mini">No events loaded.</div></section><section><h2>Data mapping / Transparency</h2><div class="mini">Each filament bundle = a stable semantic domain; strand count is a capped monotonic function of the number of claims in that domain; blue highlight = selected claim or locally matched evidence. Layout is deterministic per domain and record identity. Spatial distance and curve curvature are <strong>not</strong> similarity scores or causal relationships.</div><p class="mini">The API currently exposes claim browse and event replay. This first edition does not invent AGE topology edges, embeddings or model-quality metrics.</p><button id="export" class="secondary">Export current snapshot JSON ↓</button></section></div>
 <footer class="footer"><span>AGENT MEMORY CORE / OBSERVATORY / RESEARCH PREVIEW</span><span>Original data-driven visualization · Bsph Blue #125CFF · Demo never masquerades as production</span></footer>
@@ -134,7 +149,7 @@ function html(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 function visible(){let a=state.items.slice().sort((x,y)=>stamp(x)-stamp(y));if(!a.length)return [];let dates=a.map(stamp).filter(Boolean);if(!dates.length)return a;const min=Math.min(...dates),max=Math.max(...dates);const cut=min+(max-min)*state.position/100;return a.filter(x=>!stamp(x)||stamp(x)<=cut)}
 function subset(){return visible().filter(x=>state.scope==="all"||String(category(x))===state.scope)}
 function activeCount(a){return a.filter(x=>!x.superseded_at&&!x.forgotten_at).length}
-function render(){const a=subset(),all=visible(),groups=LABELS.map((name,i)=>({name,i,items:a.filter(x=>category(x)===i)}));$("total").textContent=a.length.toLocaleString();$("active").textContent=activeCount(a).toLocaleString();$("old").textContent=(a.length-activeCount(a)).toLocaleString();$("domains").textContent=groups.filter(x=>x.items.length).length;$("eventsCount").textContent=state.events.length.toLocaleString();$("pageMark").textContent=state.mode==="live"?"/ LIVE":"/ DEMO";$("statusText").textContent=state.mode==="live"?"Connected / live API":"Demo / synthetic records";$("statusDot").className="dot"+(state.mode==="live"?" live":"");$("totalNote").textContent=state.mode==="live"?"Loaded claim page — not lifetime totals":"10 synthetic example claims, not live metrics";$("canvasNote").textContent=groups.filter(x=>x.items.length).length+" populated domains · "+a.length+" visible claims";$("domainReadout").textContent=groups.filter(x=>x.items.length).map(x=>x.name+" ("+x.items.length+")").join(" · ");
+function render(){const a=subset(),all=visible(),groups=LABELS.map((name,i)=>({name,i,items:a.filter(x=>category(x)===i)}));$("writePanel").hidden=state.mode!=="live";$("forgetSelected").disabled=state.mode!=="live"||!state.selection;$("total").textContent=a.length.toLocaleString();$("active").textContent=activeCount(a).toLocaleString();$("old").textContent=(a.length-activeCount(a)).toLocaleString();$("domains").textContent=groups.filter(x=>x.items.length).length;$("eventsCount").textContent=state.events.length.toLocaleString();$("pageMark").textContent=state.mode==="live"?"/ LIVE":"/ DEMO";$("statusText").textContent=state.mode==="live"?"Connected / live API":"Demo / synthetic records";$("statusDot").className="dot"+(state.mode==="live"?" live":"");$("totalNote").textContent=state.mode==="live"?"Loaded claim page — not lifetime totals":"10 synthetic example claims, not live metrics";$("canvasNote").textContent=groups.filter(x=>x.items.length).length+" populated domains · "+a.length+" visible claims";$("domainReadout").textContent=groups.filter(x=>x.items.length).map(x=>x.name+" ("+x.items.length+")").join(" · ");
 let dates=all.map(stamp).filter(Boolean);$("startTime").textContent=dates.length?new Date(Math.min(...dates)).toLocaleDateString():"Earlier";$("currentTime").textContent=state.position===100?"Latest":state.position+"% of loaded history";const hist=$("histogram");hist.replaceChildren();for(let i=0;i<24;i++){let bar=document.createElement("div");bar.style.height=(5+Math.max(0,all.filter(x=>{let t=stamp(x);return dates.length&&t>=Math.min(...dates)+(Math.max(...dates)-Math.min(...dates))*i/24&&t<Math.min(...dates)+(Math.max(...dates)-Math.min(...dates))*(i+1)/24}).length)*11)+"px";bar.className=i/24<=state.position/100?"selected":"";hist.append(bar)}
 let ev=state.events.slice(0,4);$("eventList").innerHTML=ev.length?ev.map(e=>'<div class="event"><time>'+html(String(e.recorded_at||"").slice(11,16)||"—")+'</time><span>'+html(e.event_type||"memory event")+'</span></div>').join(""):'<div class="mini">'+(state.mode==="demo"?"No real events in demo mode.":"No events in loaded page.")+'</div>';
 if(state.selection&&!a.some(x=>String(x.id||x.memory_id)===state.selection))state.selection=null;
@@ -280,8 +295,56 @@ if(publicStaticHost){
 function closeAuth(){$("auth").classList.remove("open");$("auth").setAttribute("aria-hidden","true");$("key").value="";$("connectBtn").focus()}
 $("connectBtn").onclick=()=>{if(publicStaticHost)return;$("auth").classList.add("open");$("auth").setAttribute("aria-hidden","false");$("authError").textContent="";$("key").focus()};
 $("demoBtn").onclick=()=>{state={...state,mode:"demo",key:"",items:demo,events:[],selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";render();draw()};
-async function api(path,key){let ctl=new AbortController();let timer=setTimeout(()=>ctl.abort(),10000);try{let r=await fetch(path,{headers:{"Authorization":"Bearer "+key},signal:ctl.signal,cache:"no-store"});if(!r.ok)throw Error("API returned HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
-$("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key){$("authError").textContent="Enter the API key.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
+async function api(path,key,options={}){let ctl=new AbortController();let timer=setTimeout(()=>ctl.abort(),15000);try{let r=await fetch(path,{...options,headers:{"Authorization":"Bearer "+key,"Content-Type":"application/json",...(options.headers||{})},signal:ctl.signal,cache:"no-store"});let body;try{body=await r.json()}catch{body={}}if(!r.ok)throw Error("API returned HTTP "+r.status+": "+String(body.detail||"request failed"));return body}finally{clearTimeout(timer)}}
+async function refreshLive(){let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",state.key),api("/v1/events?limit=100",state.key)]);state.items=results[0].items;state.events=results[1].items;render();draw()}
+$("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key){$("authError").textContent="Enter the API key.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";$("mutationNote").textContent="Live API connected. Writes affect only the authenticated tenant; revisions require an explicit selected Memory ID.";$("writePanel").hidden=false;render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
+
+let revisionTarget=null;
+$("claimPicker").addEventListener("change",()=>{$("forgetSelected").disabled=state.mode!=="live"||!state.selection});
+$("targetSelected").onclick=()=>{
+ const selected=state.items.find(x=>String(x.id||x.memory_id)===state.selection);
+ if(!selected){$("mutationNote").textContent="Select a live memory first.";return}
+ revisionTarget=String(selected.id||selected.memory_id);
+ $("writeSubject").value=selected.subject_id||"";
+ $("writePredicate").value=selected.predicate||"";
+ $("writeValue").value=JSON.stringify(selected.value??{},null,2);
+ $("writeSource").value="observatory:revision:"+new Date().toISOString();
+ $("saveMemory").textContent="Replace selected memory →";
+ $("mutationNote").textContent="Revision target locked to Memory ID "+revisionTarget+". The API will retain the old version in history.";
+ $("writeValue").focus();
+};
+$("writeForm").onsubmit=async e=>{
+ e.preventDefault();
+ if(state.mode!=="live"||!state.key){$("mutationNote").textContent="Connect to Live API first.";return}
+ const subject_id=$("writeSubject").value.trim(),predicate=$("writePredicate").value.trim(),source_id=$("writeSource").value.trim();
+ let value;try{value=JSON.parse($("writeValue").value)}catch{$("mutationNote").textContent="Value must be valid JSON.";return}
+ if(!value||Array.isArray(value)||typeof value!=="object"){$("mutationNote").textContent="Value must be a JSON object.";return}
+ const payload={subject_id,predicate,value,source_id,valid_from:new Date().toISOString()};
+ if(revisionTarget)payload.replaces_id=revisionTarget;
+ const btn=$("saveMemory");btn.disabled=true;
+ try{
+  const created=await api("/v1/memories",state.key,{method:"POST",body:JSON.stringify(payload)});
+  await refreshLive();state.selection=created.id;render();draw();
+  $("mutationNote").textContent=(revisionTarget?"Revision committed. Previous Memory ID retained in history. New ID: ":"Memory created. New ID: ")+created.id;
+  revisionTarget=null;btn.textContent="Create memory →";$("writeValue").value="{\n  \"text\": \"\"\n}";
+  $("forgetSelected").disabled=false;
+ }catch(err){$("mutationNote").textContent="Write failed; no success claimed. "+err.message}
+ finally{btn.disabled=false}
+};
+$("forgetSelected").onclick=async()=>{
+ const id=state.selection;
+ if(state.mode!=="live"||!id)return;
+ if(!window.confirm("Soft-forget this exact Memory ID? Its audit history will be retained.\n"+id))return;
+ const btn=$("forgetSelected");btn.disabled=true;
+ try{
+  const result=await api("/v1/memories/"+encodeURIComponent(id),state.key,{method:"DELETE"});
+  await refreshLive();state.selection=null;revisionTarget=null;render();draw();
+  $("mutationNote").textContent="Soft-forget committed for "+(result.forgotten||[]).join(", ")+". Audit history retained.";
+  $("saveMemory").textContent="Create memory →";
+ }catch(err){$("mutationNote").textContent="Forget failed; no success claimed. "+err.message}
+ finally{btn.disabled=!state.selection}
+};
+
 document.addEventListener("keydown",e=>{
  const modal=$("tour").classList.contains("open")?$("tour"):($("auth").classList.contains("open")?$("auth"):null);
  if(!modal)return;

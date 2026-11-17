@@ -19,13 +19,13 @@ The repository is a **working local research prototype**, NOT a secure productio
 | G13 | Temporal durable orchestration adapter | Optional SDK adapter; real local Temporal dev service CI, no Temporal dependency in core | 🟡 Prototype verified |
 | G10 | Interop spec + external reproducer | Versioned MemoryPort + local REST contract, authenticated tenant-scoped API tests; external adopter absent | 🟡 Prototype verified |
 
-## Current architecture limitations (2026-11-16)
+## Current architecture limitations (reconciled 2026-11-17)
 
 - The model-neutral extractor accepts arbitrary-domain `UPSERT` and evidence-grounded `RETRACT`; `ground_with_memory` is opt-in and only safe when the configured model provider is appropriate for tenant data.
-- Current PostgreSQL withdrawal is claim-ID and expected-old-value constrained, but a compound `RETRACT + UPSERT` is **not yet one all-or-nothing transaction**.
+- Strict `POST /v1/memories/process` with opt-in `atomic_batch: true` now commits or rolls back the full canonical PostgreSQL `RETRACT + UPSERT` batch (PR #33). Default partial-acceptance mode is unchanged. Cross-request idempotency, historical `observed_at` replays and physical database restart are **not** certified.
 - Lite, Standard and Full currently rely on PostgreSQL, not a feature-complete SQLite-only backend.
 - The 94.34% 200-case Chinese score is **rule extraction only**, with 0/30 OOV exact coverage; it is not real-model, recall or answer quality.
-- AGE and Temporal are important optional extension paths. The separate Extended deployment work is tracked in [PR #29](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/29), not asserted as merged.
+- AGE and Temporal have an opt-in Extended local/CI development profile, merged in [PR #29](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/29). This is a real local workflow/receipt integration, **not** a production Temporal cluster acceptance.
 
 ## Verified version profile
 
@@ -34,12 +34,18 @@ pgvector **0.8.7**, on 2026-11-09. This is the observed integration profile;
 the Dockerfile is based on `apache/age:latest`, so image revisions can change.
 For reproducibility, pin base digest and package versions before production.
 
+## Five-layer closure status (2026-11-17)
+
+See [RSI-CLOSURE-2026-11-17.md](RSI-CLOSURE-2026-11-17.md) for the acceptance matrix, commands, evidence requirements and explicit non-claims. Memory Observatory [PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) and strict compound transaction [PR #33](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/33) are **merged**. Existing opt-in browser tests and CI workflow do not, by themselves, prove the workflow passed on the current main SHA. Real-model memory quality, complete bitemporal semantics and production resilience remain open.
+
 ## Next blocking work
 
-1. Complete graph rebuild and deletion propagation before mutable edge governance.
-2. Enforce tenant authorization at the database boundary, not just query wrappers.
-3. Implement local embeddings and relevance/latency evaluation on real Chinese agent corpora.
-4. Define physical evidence and workflows only through adapters, not memory side effects.
+1. Capture same-head Chromium + live PostgreSQL browser acceptance with retained screenshots/logs, while keeping unverified public Pages deployment separate.
+2. Measure reproducible real-model extraction, revision, recall and final-answer quality on frozen multi-domain conversation data.
+3. Complete bitemporal historical interval correction and compounded as-of replay.
+4. Complete graph deletion/rebuild and recovery before mutable edge governance.
+5. Independently validate tenant authorization, key rotation and crash/restore boundaries.
+6. Define physical evidence and workflows only through adapters, not memory side effects.
 
 Not planned: replicating Temporal, hosting a multi-model cloud platform or
 implementing a new database engine.

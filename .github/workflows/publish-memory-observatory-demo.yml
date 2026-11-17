@@ -1,6 +1,12 @@
 name: Publish Memory Observatory Demo
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/agent_memory_core/resources/dashboard/observatory.html'
+      - '.github/workflows/publish-memory-observatory-demo.yml'
   workflow_dispatch:
 
 permissions:

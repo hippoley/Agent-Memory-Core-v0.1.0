@@ -195,6 +195,25 @@ full resource-level RBAC, Worker/Temporal identity isolation, production RLS
 deployment, public TLS webhook operations, model quality, process/DB crash
 recovery, backup/restore, load and production security review.
 
+### Follow-on security integration (new code; revalidation pending)
+
+The Temporal PostgreSQL Activities now call
+`PostgresMemory.assert_database_tenant()` before both claim verification and
+verification-receipt insertion. A workflow's `tenant_id` is no longer treated
+as authority when the operator-installed principal-bound RLS registry is
+present. Production must set `MEMORY_TEMPORAL_REQUIRE_RLS=1`; a missing RLS
+installation then fails closed. The S10 adversarial PostgreSQL test now checks
+that a tenant-A database login can verify and write only tenant-A receipts,
+cannot read or write tenant-B data, and that an administrative login is rejected
+when the production flag is enabled.
+
+This is a single-tenant-bound worker safety step, not yet a complete
+multi-tenant Temporal worker router. One worker currently has one configured
+database DSN; tenant-aware credential routing or per-tenant worker/task-queue
+isolation remains required before shared multi-tenant production operation.
+The new code and adversarial test must pass on the final candidate SHA before
+this security slice is accepted.
+
 Still separate release gates: live external-provider interoperability beyond
 Keycloak, invitation onboarding, member administration, provider logout,
 multi-provider account linking, complete resource-level RBAC, arbitrary

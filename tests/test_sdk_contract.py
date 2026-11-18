@@ -245,3 +245,22 @@ def test_sdk_evidence_objects_are_binary_and_tenant_scoped():
         with pytest.raises(ValueError):
             sdk.download_object("../invalid")
     assert len(calls) == 2
+
+
+def test_sdk_revise_maps_to_replace_contract():
+    calls=[]
+    def server(request):
+        calls.append(request)
+        assert request.method=="POST"
+        assert request.url.path=="/v1/memories"
+        payload=json.loads(request.content)
+        assert payload["replaces_id"]=="old-memory-id"
+        assert payload["value"]=={"language":"Chinese"}
+        return httpx.Response(201,json={"id":"new-memory-id"})
+    with MemoryClient("https://memory.example","amc_key",
+                      transport=httpx.MockTransport(server)) as sdk:
+        result=sdk.revise("old-memory-id",subject_id="user-1",
+            predicate="preferred_language",value={"language":"Chinese"},
+            source_id="test:revision",valid_from="2026-11-18T00:00:00Z")
+    assert result["id"]=="new-memory-id"
+    assert len(calls)==1

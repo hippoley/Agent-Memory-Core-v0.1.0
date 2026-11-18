@@ -197,6 +197,63 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
               return response.status;
             }""")
             assert after_logout == 401, "Revoked browser session remained usable"
+
+            # A second, independently provisioned Keycloak identity must not
+            # inherit the first user's workspace or be able to select it.
+            username2, password2 = _create_idp_user()
+            context2 = browser.new_context(viewport={"width": 1440, "height": 900})
+            page2 = context2.new_page()
+            errors2: list[str] = []
+            page2.on("pageerror", lambda error: errors2.append(str(error)))
+            try:
+                page2.goto(BASE_URL + "/v1/auth/oidc/login", wait_until="domcontentloaded")
+                page2.locator("#username").fill(username2)
+                page2.locator("#password").fill(password2)
+                page2.locator("#kc-login").click()
+                page2.wait_for_url(
+                    re.compile(re.escape(BASE_URL) + r"/dashboard/observatory\\.html"),
+                    timeout=30000,
+                )
+                second_identity = page2.evaluate("""async () => {
+                  const item = document.cookie.split('; ').find(x => x.startsWith('amc_tenant='));
+                  const tenant = item ? decodeURIComponent(item.split('=').slice(1).join('=')) : '';
+                  const response = await fetch('/v1/identity/me', {
+                    credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                  });
+                  return {status:response.status,body:await response.json(),tenant};
+                }""")
+                assert second_identity["status"] == 200, second_identity
+                assert second_identity["body"]["role"] == "owner"
+                assert second_identity["body"]["principal_id"] != identity["body"]["principal_id"]
+                assert second_identity["tenant"] != original_tenant
+
+                # Directly naming the first user's tenant must not authenticate
+                # the second user's otherwise-valid browser Session.
+                cross_read = page2.evaluate("""async (tenant) => {
+                  const response = await fetch('/v1/memories?limit=100', {
+                    credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                  });
+                  return {status:response.status,body:await response.json()};
+                }""", original_tenant)
+                assert cross_read["status"] == 401, cross_read
+
+                # The workspace-switch endpoint must reject a tenant that is
+                # not present in this principal's live memberships.
+                cross_switch = page2.evaluate("""async (tenant) => {
+                  const current = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+                  const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
+                  const response = await fetch('/v1/identity/select-tenant', {
+                    method:'POST', credentials:'same-origin',
+                    headers:{'Content-Type':'application/json','X-Memory-Tenant':current,'X-CSRF-Token':csrf},
+                    body:JSON.stringify({tenant_id:tenant})
+                  });
+                  return {status:response.status,body:await response.json()};
+                }""", original_tenant)
+                assert cross_switch["status"] == 403, cross_switch
+                assert not errors2, "Second browser JavaScript errors: " + "; ".join(errors2)
+            finally:
+                context2.close()
+
             assert not errors, "Browser JavaScript errors: " + "; ".join(errors)
         finally:
             context.close()

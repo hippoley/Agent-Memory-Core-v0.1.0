@@ -233,31 +233,15 @@ class DurableTaskStore:
             )
             return {"task_id":task_id,"version":next_version,"replayed":False}
 
-    def set_status(self, *, tenant_id: str, task_id: str, status: str,
+    def set_status(self, *, tenant_id: str, task_id: str, worker_id: str,
+                   lease_epoch: int, status: str,
                    result: dict | None = None, error: dict | None = None) -> bool:
-        allowed={"queued","running","paused","completed","failed","cancelled"}
-        if status not in allowed:
-            raise ValueError("Unsupported task status")
-        terminal=status in {"completed","failed","cancelled"}
-        with self.conn.transaction():
-            row=self.conn.execute(
-                """UPDATE memory_durable_tasks SET status=%s,result=%s::jsonb,
-                   last_error=%s::jsonb,updated_at=clock_timestamp(),
-                   completed_at=CASE WHEN %s THEN clock_timestamp() ELSE NULL END
-                   WHERE tenant_id=%s AND task_id=%s::uuid
-                     AND status NOT IN ('completed','failed','cancelled')
-                   RETURNING task_id""",
-                (status,_canonical(result) if result is not None else None,
-                 _canonical(error) if error is not None else None,terminal,tenant_id,task_id),
-            ).fetchone()
-            if row is not None:
-                self.conn.execute(
-                    """INSERT INTO memory_outbox
-                       (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
-                       VALUES (%s,%s,'task',%s,'memory.task.status.changed',%s::jsonb)""",
-                    (uuid4(),tenant_id,task_id,_canonical({
-                        "task_id":task_id,"status":status,
-                        "terminal":terminal,
-                    })),
-                )
-            return row is not None
+        """Compatibility facade that now requires and enforces Worker Fencing.
+
+        There is deliberately no tenant-only status mutation path. All writes
+        delegate to the same lease/epoch-checked store used by the public API.
+        """
+        from .worker_leases import DurableTaskLeaseStore
+        return DurableTaskLeaseStore(self.conn).finish(
+            tenant_id=tenant_id,task_id=task_id,worker_id=worker_id,
+            lease_epoch=lease_epoch,status=status,result=result,error=error)

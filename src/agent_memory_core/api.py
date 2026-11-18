@@ -1388,6 +1388,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             )
             return {"workflow_id":handle.id,"run_id":getattr(handle,"result_run_id",None),
                     "workflow_type":"VerifyMemoryWorkflow","status":"STARTED"}
+        except HTTPException:
+            raise
         except ValueError as exc:
             raise HTTPException(status_code=422,detail="memory_id must be a valid UUID")
         except Exception:

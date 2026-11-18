@@ -372,7 +372,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 issuer=config.issuer, subject=claims["sub"],
                 email=claims.get("email") if isinstance(claims.get("email"), str) else None,
                 email_verified=claims.get("email_verified") is True,
-                display_name=(claims.get("name") if isinstance(claims.get("name"), str) else\n                              claims.get("preferred_username") if isinstance(claims.get("preferred_username"), str) else None),
+                display_name=(claims.get("name") if isinstance(claims.get("name"), str) else
+                              claims.get("preferred_username") if isinstance(claims.get("preferred_username"), str) else None),
                 allow_signup=config.allow_signup, bootstrap_workspace=True,
                 user_agent=request.headers.get("user-agent"))
         except LookupError as exc:

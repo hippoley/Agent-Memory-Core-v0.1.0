@@ -233,6 +233,16 @@ class SearchRequest(BaseModel):
     known_at: str | None = Field(default=None, description="Timezone-aware ISO-8601 knowledge-time filter.")
 
 
+class TenantCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=120)
+
+
+class TenantSelect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tenant_id: str = Field(min_length=1, max_length=255)
+
+
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
                temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None,
@@ -423,6 +433,51 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             return {"items": tenants, "count": len(tenants)}
         finally:
             identity_store.close()
+
+    @app.post("/v1/identity/tenants", status_code=201, tags=["Identity"],
+              summary="Create a workspace owned by the current principal")
+    def identity_create_tenant(item: TenantCreate, request: Request, response: Response,
+                               t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        principal_id = identity.get("principal_id")
+        if identity.get("auth_type") != "session" or not principal_id:
+            raise HTTPException(status_code=403, detail="Workspace creation requires a browser session")
+        tenant_id = "ws-" + uuid4().hex
+        identity_store = identity_store_factory()
+        try:
+            identity_store.create_tenant(
+                tenant_id=tenant_id, display_name=item.display_name.strip(),
+                owner_principal_id=principal_id)
+        finally:
+            identity_store.close()
+        secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
+        response.set_cookie("amc_tenant", tenant_id, max_age=43200, path="/",
+                            httponly=False, secure=secure_cookie, samesite="lax")
+        return {"tenant_id": tenant_id, "display_name": item.display_name.strip(),
+                "role": "owner", "created": True}
+
+    @app.post("/v1/identity/select-tenant", tags=["Identity"],
+              summary="Switch the current browser session workspace")
+    def identity_select_tenant(item: TenantSelect, request: Request, response: Response,
+                               t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        token = request.cookies.get("amc_session")
+        if identity.get("auth_type") != "session" or not token:
+            raise HTTPException(status_code=403, detail="Workspace switching requires a browser session")
+        identity_store = identity_store_factory()
+        try:
+            memberships = identity_store.list_session_tenants(token=token)
+            selected = next((row for row in memberships
+                             if row.get("tenant_id") == item.tenant_id), None)
+            if selected is None:
+                raise HTTPException(status_code=403, detail="Principal is not an active member of this workspace")
+        finally:
+            identity_store.close()
+        secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
+        response.set_cookie("amc_tenant", item.tenant_id, max_age=43200, path="/",
+                            httponly=False, secure=secure_cookie, samesite="lax")
+        return {"tenant_id": item.tenant_id, "display_name": selected.get("display_name"),
+                "role": selected.get("role"), "selected": True}
 
     @app.get("/v1/identity/me", tags=["Identity"], summary="Get the authenticated principal and tenant membership")
     def identity_me(request: Request, t: str = Depends(auth)):

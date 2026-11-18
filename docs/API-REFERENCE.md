@@ -79,18 +79,72 @@ configuration directly to the public internet.
 
 ## 3. Authentication and tenant boundary
 
-All endpoints except `GET /v1/health` require:
+The runtime supports two deliberately distinct authentication modes. Do not
+mix their configuration or treat the legacy key as an identity-mode credential.
+
+### 3.1 Legacy single-tenant compatibility mode
+
+When `MEMORY_IDENTITY_DSN` is not configured, the legacy local/single-tenant
+mode accepts:
 
 ```http
 Authorization: Bearer <MEMORY_API_KEY>
 ```
 
-One process binds one API key to one server-configured `MEMORY_TENANT_ID`.
-Tenant IDs are never accepted from request payloads. This is not yet a
-multi-tenant identity provider: deploy separate credentials and isolated
-database/object-store boundaries for mutually untrusted customers. Production
-RLS, key rotation/revocation, TLS, rate limiting and audit controls remain
-deployment acceptance requirements.
+The process binds this key to its server-configured
+`MEMORY_TENANT_ID`. This is a compatibility/development mode, not the
+multi-user identity control plane.
+
+### 3.2 Identity mode (PR #51)
+
+When `MEMORY_IDENTITY_DSN` is configured, requests use either an opaque
+browser Session or a scoped API credential:
+
+```http
+Authorization: Bearer <SESSION_OR_API_CREDENTIAL>
+X-Memory-Tenant: <WORKSPACE_ID>
+```
+
+The browser Observatory may instead send the HttpOnly `amc_session` cookie.
+Cookie-authenticated mutations also require the CSRF double-submit cookie and
+`X-CSRF-Token` header. The server resolves the current Principal, credential
+scope, active Membership and role from PostgreSQL; a caller-supplied tenant
+header selects a workspace but never grants access to it.
+
+A first Owner/Admin can issue a short-lived tenant-scoped API credential from
+the authenticated identity flow. The raw secret is returned once; store it
+outside source control. Revoke it with
+`DELETE /v1/identity/api-credentials/{credential_id}`. The issuing Principal
+must retain the required role, and the credential's scopes and expiry are
+enforced on every request. See
+[Identity control-plane deployment](IDENTITY-CONTROL-PLANE-DEPLOYMENT.md)
+for the separate identity database role and production worker boundaries.
+
+### 3.3 Reproducible local identity walkthrough
+
+From a fresh checkout with Docker Compose and Python available:
+
+```bash
+python scripts/launch_local.py up --profile lite --identity
+```
+
+Open `http://127.0.0.1:8765/dashboard/observatory.html`, choose **Sign in
+with organization**, and register a local Keycloak user. The local Keycloak
+admin console is at `http://127.0.0.1:8081`; its development-only bootstrap
+credentials are documented by the local Compose profile and must never be
+reused outside loopback development. After login, issue an API credential
+from the supported Owner/Admin flow and use it with the public SDK/REST API.
+
+To stop the stack without deleting its persistent development volumes:
+
+```bash
+python scripts/launch_local.py down
+```
+
+This local profile intentionally uses development secrets and loopback HTTP.
+It is not a production deployment recipe. Production requires a dedicated
+identity-service LOGIN, separate tenant-bound worker credentials, HTTPS,
+managed secrets, backup/restore, rate limiting and independent security review.
 
 ## 4. Complete HTTP route inventory
 

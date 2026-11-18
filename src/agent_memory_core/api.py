@@ -236,7 +236,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
                temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None,
                embedder=None, auto_embed=True,
-               webhook_signing_key=None, webhook_allowed_hosts=None):
+               webhook_signing_key=None, webhook_allowed_hosts=None,
+               identity_store_factory=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key.
 
     ``embedder`` is an optional provider-backed object exposing ``model_id``,
@@ -247,8 +248,11 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     """
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
-    if not key or len(key) < 24 or not tenant:
-        raise RuntimeError("MEMORY_API_KEY (24+ chars) and MEMORY_TENANT_ID required")
+    legacy_auth_enabled = bool(key and len(key) >= 24 and tenant)
+    if not legacy_auth_enabled and identity_store_factory is None:
+        raise RuntimeError(
+            "Configure either MEMORY_API_KEY (24+ chars) + MEMORY_TENANT_ID "
+            "or an identity_store_factory")
 
     if store_factory is None:
         def store_factory():
@@ -272,15 +276,59 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         description="API key issued by the service operator. Send: Authorization: Bearer <key>.",
     )
 
-    def auth(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-        if credentials is None or credentials.scheme.lower() != "bearer":
+    def auth(request: Request,
+             credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        presented = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else None
+        if legacy_auth_enabled and presented and hmac.compare_digest(presented, key):
+            request.state.identity = {"auth_type": "legacy", "tenant_id": tenant}
+            return tenant
+
+        if identity_store_factory is not None:
+            selected_tenant = request.headers.get("X-Memory-Tenant")
+            session_cookie = request.cookies.get("amc_session")
+            csrf_cookie = request.cookies.get("amc_csrf")
+            csrf_header = request.headers.get("X-CSRF-Token")
+            token = session_cookie or presented
+            if not token or not selected_tenant:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Session or API credential and X-Memory-Tenant are required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if session_cookie and request.method not in ("GET", "HEAD", "OPTIONS"):
+                if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+                    raise HTTPException(status_code=403, detail="CSRF validation failed")
+            identity_store = identity_store_factory()
+            try:
+                identity = identity_store.authenticate_api_credential(secret=token) if presented and not session_cookie else None
+                if identity is None:
+                    identity = identity_store.authenticate_session(
+                        token=token, tenant_id=selected_tenant)
+                if identity is None or identity.get("tenant_id") != selected_tenant:
+                    raise HTTPException(status_code=401, detail="Invalid or expired identity")
+                method = request.method.upper()
+                safe_method = method in ("GET", "HEAD", "OPTIONS")
+                role = identity.get("role")
+                if role not in ("owner", "admin", "editor", "reader"):
+                    raise HTTPException(status_code=403, detail="Membership role is invalid")
+                if not safe_method and role == "reader":
+                    raise HTTPException(status_code=403, detail="Reader membership is read-only")
+                scopes = identity.get("scopes")
+                if scopes is not None:
+                    required_scope = "memory:read" if safe_method else "memory:write"
+                    if required_scope not in scopes and "memory:*" not in scopes:
+                        raise HTTPException(status_code=403, detail="Credential scope is insufficient")
+                request.state.identity = identity
+                return selected_tenant
+            finally:
+                identity_store.close()
+
+        if presented is None:
             raise HTTPException(
                 status_code=401, detail="Bearer token required",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        if not hmac.compare_digest(credentials.credentials, key):
-            raise HTTPException(status_code=403, detail="Invalid credential")
-        return tenant
+        raise HTTPException(status_code=403, detail="Invalid credential")
 
     @app.get(
         "/v1/health", tags=["System"], summary="Health check", response_model=HealthResponse,

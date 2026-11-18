@@ -166,8 +166,34 @@ Keycloak 26.2.5's default registration template submits through an input inside
 actual submit semantics. Revision timestamps are generated independently and
 monotonically rather than reusing one timestamp for both versions.
 
-Latest run on the current branch head is pending/running; do not mark this gate
-passed until the real Keycloak and Observatory Chromium jobs finish successfully.
+### Latest verified CI evidence (2026-11-18)
+
+All seven integration workflows completed successfully on candidate SHA
+`c74b689f2a179a349aa890e229650eea913e8c17`:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| Pytest + wheel | [44231515112](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515112) | pytest + wheel build passed |
+| Lite / Standard / Full lifecycle | [44231515167](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515167) | all three profiles passed |
+| PostgreSQL / AGE / pgvector | [44231515103](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515103) | passed |
+| Temporal integration | [44231515147](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515147) | extended compose + local Temporal passed |
+| Extended AGE / Temporal smoke | [44231515119](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515119) | passed |
+| Keycloak OIDC Browser Acceptance | [44231515276](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515276) | real Keycloak + Chromium passed; 10 tests |
+| Observatory Browser Acceptance | [44231515160](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515160) | Chromium + Keycloak jobs passed |
+
+The two browser workflows prove the integrated local-provider path, including
+self-registration of two independent users, automatic Principal/Workspace/Owner/
+Session provisioning, Observatory create/revise/soft-forget through UI controls,
+PostgreSQL-backed active/history readback, tenant isolation, session restoration
+and logout revocation. Failure-only diagnostic steps are skipped on successful
+jobs; no required acceptance job above was skipped.
+
+This evidence closes the local Keycloak + Observatory browser acceptance gate
+for this candidate SHA. It does **not** close the independent release gates
+listed below: external-provider interoperability, invitation/member management,
+full resource-level RBAC, Worker/Temporal identity isolation, production RLS
+deployment, public TLS webhook operations, model quality, process/DB crash
+recovery, backup/restore, load and production security review.
 
 Still separate release gates: live external-provider interoperability beyond
 Keycloak, invitation onboarding, member administration, provider logout,

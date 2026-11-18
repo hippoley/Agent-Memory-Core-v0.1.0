@@ -13,6 +13,14 @@ class FakeWorkflowHandle:
         self.id=workflow_id
         self.result_run_id="run-001"
         self.cancelled=False
+        self.signals=[]
+    async def query(self, query_name):
+        assert query_name=="progress"
+        return {"stage":"VERIFYING_MEMORY","paused":False,
+                "completed_steps":0,"total_steps":2,"progress_percent":0,
+                "failure":None}
+    async def signal(self, signal_name):
+        self.signals.append(signal_name)
     async def describe(self):
         return SimpleNamespace(
             run_id="run-001",
@@ -77,6 +85,16 @@ def test_temporal_workflow_start_describe_cancel_and_tenant_scope():
     cancelled=client.post("/v1/workflows/"+workflow_id+"/cancel",headers=headers)
     assert cancelled.status_code==200,cancelled.text
     assert fake.handles[workflow_id].cancelled is True
+
+    progress=client.get("/v1/workflows/"+workflow_id+"/progress",headers=headers)
+    assert progress.status_code==200,progress.text
+    assert progress.json()["progress_percent"]==0
+    paused=client.post("/v1/workflows/"+workflow_id+"/pause",headers=headers)
+    assert paused.status_code==200,paused.text
+    assert paused.json()["pause_requested"] is True
+    resumed=client.post("/v1/workflows/"+workflow_id+"/resume",headers=headers)
+    assert resumed.status_code==200,resumed.text
+    assert fake.handles[workflow_id].signals==["pause","resume"]
 
     # Another tenant cannot inspect or cancel this execution.
     other,other_headers,_=make_client(tenant="tenant-b")

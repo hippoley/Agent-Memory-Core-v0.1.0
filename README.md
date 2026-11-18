@@ -391,3 +391,9 @@ Provider adapters must implement `execute(request, idempotency_key)` and
 `reconcile(request, idempotency_key, provider_reference)`. The stable key
 is scoped to tenant + task + effect. Exactly-once remote execution is not
 claimed; it depends on provider-side idempotency and reconciliation semantics.
+
+
+The fencing boundary is enforced inside the canonical Python task store too:
+checkpoint and status mutations require the current Worker ID and Lease Epoch.
+The HTTP layer is not the only guard; a tenant-only SDK/store write cannot
+bypass the PostgreSQL lease check.

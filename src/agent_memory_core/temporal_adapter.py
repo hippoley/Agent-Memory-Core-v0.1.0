@@ -64,9 +64,20 @@ def verify_memory_record(request: dict) -> dict:
             (request["tenant_id"],request["memory_id"])).fetchone()
         if row is None:
             raise ValueError("Claim absent in authorized tenant")
-        return {"tenant_id":request["tenant_id"],"memory_id":row[0],
-                "subject_id":row[1],"predicate":row[2],
-                "source_id":row[3],"active":row[4] is None}
+        return {
+            "tenant_id": request["tenant_id"],
+            "memory_id": row[0],
+            "subject_id": row[1],
+            "predicate": row[2],
+            "source_id": row[3],
+            "active": row[4] is None,
+            # Carry the authorization snapshot through the workflow so every
+            # side-effecting activity can re-authorize immediately before it
+            # commits a durable effect.
+            "principal_id": request.get("principal_id"),
+            "session_id": request.get("session_id"),
+            "membership_version": request.get("membership_version"),
+        }
     finally:
         db.close()
 
@@ -79,6 +90,7 @@ def write_memory_verification_receipt(verified: dict) -> dict:
     db=PostgresMemory(_database_dsn())
     try:
         _assert_temporal_tenant(db, verified["tenant_id"])
+        _assert_live_execution_authorization(verified)
         with db.conn.transaction():
             db.conn.execute(
                 """INSERT INTO memory_outbox

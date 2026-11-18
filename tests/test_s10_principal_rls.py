@@ -71,6 +71,41 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
 
         db_a=PostgresMemory(make_conninfo(dsn,user=role_a,password=password_a))
         db_b=PostgresMemory(make_conninfo(dsn,user=role_b,password=password_b))
+
+        # Temporal Activities must inherit the same authenticated PostgreSQL
+        # tenant boundary; a tenant_id in a workflow payload is not authority.
+        from agent_memory_core.temporal_adapter import (
+            verify_memory_record, write_memory_verification_receipt)
+        previous_dsn=os.environ.get("MEMORY_DSN")
+        previous_required=os.environ.get("MEMORY_TEMPORAL_REQUIRE_RLS")
+        try:
+            os.environ["MEMORY_TEMPORAL_REQUIRE_RLS"]="1"
+            os.environ["MEMORY_DSN"]=make_conninfo(dsn,user=role_a,password=password_a)
+            verified=verify_memory_record({"tenant_id":tenant_a,"memory_id":admin_id_a})
+            assert verified["tenant_id"]==tenant_a and verified["memory_id"]==admin_id_a
+            receipt=write_memory_verification_receipt(verified)
+            assert receipt["tenant_id"]==tenant_a
+            with pytest.raises(PermissionError):
+                verify_memory_record({"tenant_id":tenant_b,"memory_id":admin_id_b})
+            with pytest.raises(PermissionError):
+                write_memory_verification_receipt({
+                    "tenant_id":tenant_b,"memory_id":admin_id_b,
+                    "subject_id":"bedroom","predicate":"night_mode",
+                    "source_id":"b","active":True})
+            # A broad administrative login must not silently become a
+            # cross-tenant Temporal worker when production RLS is required.
+            os.environ["MEMORY_DSN"]=dsn
+            with pytest.raises(PermissionError):
+                verify_memory_record({"tenant_id":tenant_a,"memory_id":admin_id_a})
+        finally:
+            if previous_dsn is None:
+                os.environ.pop("MEMORY_DSN",None)
+            else:
+                os.environ["MEMORY_DSN"]=previous_dsn
+            if previous_required is None:
+                os.environ.pop("MEMORY_TEMPORAL_REQUIRE_RLS",None)
+            else:
+                os.environ["MEMORY_TEMPORAL_REQUIRE_RLS"]=previous_required
         db_a.assert_database_tenant(tenant_a)
         db_b.assert_database_tenant(tenant_b)
         with pytest.raises(PermissionError):

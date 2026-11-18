@@ -111,7 +111,8 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
                WHERE tenant_id=%s AND aggregate_id=%s
                  AND event_type='memory.task.status.changed'""",
             (tenant,task_id)).fetchone()[0]==1
-        with pytest.raises(TaskConflict,match="terminal task"):
+        from agent_memory_core.worker_leases import LeaseConflict
+        with pytest.raises(LeaseConflict,match="lease"):
             tasks.commit_checkpoint(
                 tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=2,
                 checkpoint={"last_completed":51},idempotency_key="checkpoint-3",

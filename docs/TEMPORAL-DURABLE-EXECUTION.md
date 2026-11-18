@@ -93,10 +93,17 @@ exact instruction where its process died.
   The external system must deduplicate the repeated request.
 
 Current Agent Memory Core `VerifyMemoryWorkflow` is a two-Activity workflow
-(claim verification and verification-receipt write). It demonstrates durable
-workflow scheduling and idempotent receipt identity; it is not yet a generic
-checkpointed long-running task engine with user-visible pause/resume and
-per-step progress. Those remain explicit product work.
+(claim verification and verification-receipt write). It now exposes durable
+stage progress (queued, verifying, writing receipt, completed/failed) and
+cooperative pause/resume signals. Pause takes effect only at safe stage
+boundaries; it does not stop an Activity mid-transaction. The API and SDK expose
+progress, pause and resume operations.
+
+This is still not a generic checkpointed long-running task engine. Arbitrary
+Activity heartbeat details, persisted domain checkpoints for multi-minute
+external operations, operator-driven retry-from-checkpoint, and fault-injected
+SIGKILL recovery remain unimplemented and must not be inferred from this
+two-step workflow.
 
 ## Current guarantee boundary
 

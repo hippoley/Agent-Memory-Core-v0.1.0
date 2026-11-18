@@ -376,3 +376,18 @@ and resume from that checkpoint. The test passed in the PostgreSQL integration w
 reported 62 passed and 7 skipped; skipped tests are not counted as passing. Provider-side idempotency and
 UNKNOWN reconciliation remain separate release gates; a database lease does
 not make a remote side effect exactly once.
+
+
+## External effect safety (Migration 008)
+
+Durable checkpoints can record external effect intents transactionally.
+`agent_memory_core.durable_effects` adds fenced provider execution and
+UNKNOWN reconciliation. An expired Worker does not trigger an automatic
+provider retry: the replacement Worker first reconciles the prior idempotency
+key. Only a definitive provider `NOT_FOUND` returns the effect to
+`requested`; task completion is blocked until every effect is committed.
+
+Provider adapters must implement `execute(request, idempotency_key)` and
+`reconcile(request, idempotency_key, provider_reference)`. The stable key
+is scoped to tenant + task + effect. Exactly-once remote execution is not
+claimed; it depends on provider-side idempotency and reconciliation semantics.

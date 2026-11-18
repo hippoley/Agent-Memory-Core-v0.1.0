@@ -371,7 +371,8 @@ ordinary memory write credentials cannot claim or mutate durable tasks.
 
 The SIGKILL acceptance test starts Worker A as a separate OS process, kills it
 after a durable checkpoint, then starts Worker B to reclaim the expired lease
-and resume from that checkpoint. The test is committed but is not considered
-passed until its PostgreSQL CI run is green. Provider-side idempotency and
+and resume from that checkpoint. The test passed in the PostgreSQL integration workflow on HEAD
+`3e1bce2db53e074baf0c7ba8d3755cc02b67341f`. The integration workflow
+reported 62 passed and 7 skipped; skipped tests are not counted as passing. Provider-side idempotency and
 UNKNOWN reconciliation remain separate release gates; a database lease does
 not make a remote side effect exactly once.

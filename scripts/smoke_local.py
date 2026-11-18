@@ -81,8 +81,8 @@ def main() -> int:
         # Exercise the actual object store and bind the returned digest to the
         # canonical claim. The SDK owns the full round-trip; no DB shortcuts.
         evidence_blob = (
-            f"Agent Memory Core local smoke evidence\\n"
-            f"subject={subject}\\nobserved_at={now}\\n"
+            f"Agent Memory Core local smoke evidence\n"
+            f"subject={subject}\nobserved_at={now}\n"
         ).encode("utf-8")
         object_ref = client.upload_object(
             evidence_blob, content_type="text/plain; charset=utf-8"

@@ -112,7 +112,6 @@ def main() -> None:
             "search_matches": len(search.get("items", [])),
             "provenance_sources": len(sources["sources"]),
             "events_read": len(events["items"]),
-            "evidence_object_sha256": object_digest,
             "temporal_workflow": workflow,
             "history_after_revoke": len(retained["items"]),
             "status": "THIRD_PARTY_SDK_ACCEPTED",

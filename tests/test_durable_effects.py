@@ -45,6 +45,7 @@ def test_remote_success_lost_ack_becomes_unknown_and_reconciles_without_reexecut
     db=PostgresMemory(dsn)
     try:
         db.migrate()
+        db.migrate()  # Migration 008 must remain safe under package-wide reapplication.
         task_id=_setup_task(db,tenant)
         a=_claim(db,tenant,"effect-worker-A")
         assert a and a["task_id"]==task_id

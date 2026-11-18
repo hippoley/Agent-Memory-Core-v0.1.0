@@ -32,7 +32,7 @@ WHERE effect.request IS NULL
   AND event.payload->>'effect_key'=effect.effect_key;
 
 
-DO $
+DO $migration008$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
@@ -60,7 +60,7 @@ BEGIN
       );
   END IF;
 END
-$;
+$migration008$;
 
 CREATE INDEX IF NOT EXISTS memory_task_effects_recovery
   ON memory_task_effects(status,updated_at)

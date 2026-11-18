@@ -12,6 +12,15 @@ def main() -> None:
     store = PostgresMemory(dsn)
     try:
         store.migrate()
+        # The optional local identity profile uses the same isolated database
+        # as both migration administrator and control-plane service. This is
+        # deliberately not the production role layout; production migrations
+        # are applied by the operator and the API uses memory_identity_service.
+        if os.getenv("MEMORY_LOCAL_IDENTITY_MIGRATE", "0") == "1":
+            from importlib.resources import files
+            migration = files("agent_memory_core").joinpath(
+                "resources/005_identity_foundation.sql")
+            store.conn.execute(migration.read_text(encoding="utf-8"))
     finally:
         store.close()
     import uvicorn

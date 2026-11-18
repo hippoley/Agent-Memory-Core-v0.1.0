@@ -7,6 +7,8 @@ from agent_memory_core.api import create_app
 
 EXPECTED={
     "/v1/health":{"get"},
+    "/v1/auth/oidc/login":{"get"},
+    "/v1/auth/oidc/callback":{"get"},
     "/v1/identity/me":{"get"},
     "/v1/identity/tenants":{"get"},
     "/v1/auth/logout":{"post"},
@@ -62,7 +64,7 @@ def test_every_nonpublic_operation_has_bearer_security():
     assert bearer
     for path,operations in document["paths"].items():
         for operation in operations.values():
-            if path=="/v1/health":
+            if path=="/v1/health" or path.startswith("/v1/auth/oidc/"):
                 continue
             assert any(b in item for item in operation.get("security",[]) for b in bearer), (path,operation)
 

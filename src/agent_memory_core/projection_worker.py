@@ -28,9 +28,11 @@ def run(*, poll_seconds: float = 1.0, batch_size: int = 20) -> None:
         raise ValueError("Invalid polling configuration")
     from .postgres import PostgresMemory
     from .projections import ProjectionWorker, PostgresProjectionHandlers
+    from .worker_identity import configured_worker_tenant, assert_worker_tenant
 
     dsn = os.environ["MEMORY_DSN"]
     embedder = _load_embedder(os.getenv("MEMORY_EMBEDDER"))
+    tenant_id = configured_worker_tenant()
     stopping = False
 
     def stop(*_):
@@ -42,10 +44,14 @@ def run(*, poll_seconds: float = 1.0, batch_size: int = 20) -> None:
     while not stopping:
         db = PostgresMemory(dsn)
         try:
+            assert_worker_tenant(db, tenant_id)
             worker = ProjectionWorker(db.conn)
             handlers = PostgresProjectionHandlers(embedder=embedder)
             fts_done = worker.consume(channel="fts", handler=handlers.full_text, limit=batch_size)
-            graph_done = worker.consume(channel="graph", handler=handlers.graph, limit=batch_size)
+            # AGE graph projection under principal-bound RLS is not yet
+            # independently authorized; leave its delivery pending.
+            graph_done = 0 if tenant_id else worker.consume(
+                channel="graph", handler=handlers.graph, limit=batch_size)
             vector_done = 0
             if embedder is not None:
                 vector_done = worker.consume(channel="vector", handler=handlers.vector, limit=batch_size)

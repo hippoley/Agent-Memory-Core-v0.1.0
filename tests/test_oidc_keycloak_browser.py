@@ -270,7 +270,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("!document.querySelector('#writePanel').hidden")
                 page.wait_for_function("""id => Array.from(document.querySelector('#claimPicker').options)
-                    .some(option => option.value === id)""", revision_two["body"]["id"])
+                    .some(option => option.value === id)""", arg=revision_two["body"]["id"])
                 page.locator("#claimPicker").select_option(revision_two["body"]["id"])
                 page.locator("#verifySelected").click()
                 expect(page.locator("#workflowNote")).to_contain_text(

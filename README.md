@@ -180,7 +180,7 @@ For Temporal verification, set `MEMORY_RUN_TEMPORAL=1` only when the deployment 
 
 The independent consumer has completed its real API lifecycle in the PR #51 Product E2E environment, including loading the SDK from the clean virtual environment's `site-packages`. The broader Product E2E job also contains a queued-work revocation check; its latest executor fix is awaiting a fresh run. See [PR #51](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/51) for current evidence. This is not a claim that the full release gate or production deployment is complete.
 
-## Memory Observatory — see memory, not just messages
+## Memory Observatory — See memory, not just messages
 
 **Memory Observatory** is the visual inspection surface for the memory runtime: browse claims, inspect provenance, filter the records currently loaded, and follow durable events.
 

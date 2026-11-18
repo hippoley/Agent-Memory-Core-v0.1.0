@@ -111,23 +111,89 @@ def test_queued_temporal_work_is_rejected_after_identity_revoke(revocation_kind)
                         principal_id=principal,
                     )
 
+                # Count actual Activity invocations. This proves that a terminal
+                # authorization denial is not retried and that the receipt writer
+                # is never entered for revoked work.
+                from temporalio import activity
+                from temporalio.exceptions import ApplicationError
+
+                attempts = {"verify": 0, "receipt": 0}
+
+                @activity.defn(name="verify_memory_record")
+                def counted_verify_memory_record(request: dict) -> dict:
+                    attempts["verify"] += 1
+                    return verify_memory_record(request)
+
+                @activity.defn(name="write_memory_verification_receipt")
+                def counted_write_memory_verification_receipt(verified: dict) -> dict:
+                    attempts["receipt"] += 1
+                    return write_memory_verification_receipt(verified)
+
                 # These activities intentionally remain synchronous because they
-                # perform blocking PostgreSQL work. Temporal requires an executor
-                # for sync activities; without it the test fails before exercising
-                # the authorization check.
+                # perform blocking PostgreSQL work. Temporal requires an executor.
                 with ThreadPoolExecutor(max_workers=2) as activity_executor:
-                    with pytest.raises(Exception, match="Queued work is no longer authorized"):
+                    try:
                         async with Worker(
                             env.client,
                             task_queue=queue,
                             workflows=[VerifyMemoryWorkflow],
-                            activities=[verify_memory_record, write_memory_verification_receipt],
+                            activities=[
+                                counted_verify_memory_record,
+                                counted_write_memory_verification_receipt,
+                            ],
                             activity_executor=activity_executor,
                         ):
                             # A revoked queued workflow must terminate promptly;
                             # guard against regressions to unbounded Temporal retries.
                             async with asyncio.timeout(90):
                                 await handle.result()
+                    except Exception as exc:
+                        # Temporal wraps an Activity ApplicationError in an
+                        # ActivityError and then a WorkflowFailureError. Inspect
+                        # the causal chain rather than matching the outer message.
+                        chain = []
+                        pending = [exc]
+                        seen = set()
+                        while pending:
+                            current = pending.pop(0)
+                            if id(current) in seen:
+                                continue
+                            seen.add(id(current))
+                            chain.append(current)
+                            for candidate in (
+                                getattr(current, "cause", None),
+                                getattr(current, "__cause__", None),
+                                getattr(current, "__context__", None),
+                            ):
+                                if isinstance(candidate, BaseException):
+                                    pending.append(candidate)
+
+                        denial = next(
+                            (
+                                item
+                                for item in chain
+                                if isinstance(item, ApplicationError)
+                                and item.type == "AuthorizationDenied"
+                            ),
+                            None,
+                        )
+                        assert denial is not None, (
+                            "Expected Temporal cause chain to contain "
+                            "ApplicationError(type='AuthorizationDenied'); got: "
+                            + " -> ".join(
+                                f"{type(item).__name__}: {item}" for item in chain
+                            )
+                        )
+                        assert denial.non_retryable is True
+                    else:
+                        pytest.fail(
+                            "Revoked queued workflow unexpectedly completed successfully"
+                        )
+
+                assert attempts == {"verify": 1, "receipt": 0}, (
+                    "Revoked work must execute exactly one authorization check "
+                    "and must never enter the receipt-writing Activity"
+                )
 
             receipt_count = db.conn.execute(
                 """SELECT count(*) FROM memory_outbox

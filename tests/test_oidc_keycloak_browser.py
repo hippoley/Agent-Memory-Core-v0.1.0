@@ -147,7 +147,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
 
             page.once("dialog", lambda dialog: dialog.accept())
             page.locator("#forgetSelected").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed.", timeout=15000)
+            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed for", timeout=15000)
             ui_forgotten = page.evaluate("""async () => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const [activeResponse, historyResponse] = await Promise.all([
@@ -356,6 +356,53 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 assert second_identity["body"]["role"] == "owner"
                 assert second_identity["body"]["principal_id"] != identity["body"]["principal_id"]
                 assert second_identity["tenant"] != original_tenant
+
+                # Self-registration must lead to a usable product, not only a session.
+                page2.wait_for_function("!document.querySelector('#writePanel').hidden")
+                page2.locator("#writeSubject").fill("self-registered-user")
+                page2.locator("#writePredicate").fill("onboarding_status")
+                page2.locator("#writeValue").fill('{"status":"registered"}')
+                page2.locator("#writeSource").fill("observatory-ui:self-registration:create")
+                page2.locator("#saveMemory").click()
+                expect(page2.locator("#mutationNote")).to_contain_text("Memory created.", timeout=15000)
+                page2.locator("#targetSelected").click()
+                expect(page2.locator("#saveMemory")).to_contain_text("Replace selected memory")
+                page2.locator("#writeValue").fill('{"status":"verified"}')
+                page2.locator("#writeSource").fill("observatory-ui:self-registration:revision")
+                page2.locator("#saveMemory").click()
+                expect(page2.locator("#mutationNote")).to_contain_text("Revision committed.", timeout=15000)
+                self_service_state = page2.evaluate("""async () => {
+                  const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+                  const [activeResponse, historyResponse] = await Promise.all([
+                    fetch('/v1/memories?subject_id=self-registered-user&predicate=onboarding_status', {
+                      credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                    }),
+                    fetch('/v1/memories?subject_id=self-registered-user&predicate=onboarding_status&include_superseded=true', {
+                      credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                    })
+                  ]);
+                  return {active:await activeResponse.json(),history:await historyResponse.json()};
+                }""")
+                assert len(self_service_state["active"]["items"]) == 1, self_service_state
+                assert self_service_state["active"]["items"][0]["value"]["status"] == "verified"
+                assert len(self_service_state["history"]["items"]) == 2, self_service_state
+                page2.once("dialog", lambda dialog: dialog.accept())
+                page2.locator("#forgetSelected").click()
+                expect(page2.locator("#mutationNote")).to_contain_text("Soft-forget committed for", timeout=15000)
+                self_service_after_forget = page2.evaluate("""async () => {
+                  const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+                  const [activeResponse, historyResponse] = await Promise.all([
+                    fetch('/v1/memories?subject_id=self-registered-user&predicate=onboarding_status', {
+                      credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                    }),
+                    fetch('/v1/memories?subject_id=self-registered-user&predicate=onboarding_status&include_superseded=true', {
+                      credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                    })
+                  ]);
+                  return {active:await activeResponse.json(),history:await historyResponse.json()};
+                }""")
+                assert self_service_after_forget["active"]["items"] == [], self_service_after_forget
+                assert len(self_service_after_forget["history"]["items"]) == 2, self_service_after_forget
 
                 # A valid B session in B's own workspace must not see A's
                 # active or superseded claims.

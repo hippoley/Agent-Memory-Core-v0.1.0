@@ -100,20 +100,28 @@ Webhook、中文本地模型质量、DB RLS、备份恢复或 100 Agent 负载�
   Chinese extraction or retrieval-quality gates.
 
 
-## Identity Foundation — implementation slice 1 (2026-11-18)
+## Identity Foundation — implementation slice 2 (2026-11-18)
 
-- Added `005_identity_foundation.sql` for principals, external OIDC identity references,
-  tenants, memberships, opaque-session hash records, scoped API credential hash records,
-  and identity audit events.
-- Session and API credential tables store only 32-byte hashes, never raw secrets.
-- Membership role/status/version and session revocation are persisted as control-plane
-  state. OIDC validation, session issuance/rotation, membership authorization middleware,
-  credential lifecycle APIs and Observatory integration are **not implemented by this
-  schema migration**.
-- The identity tables are intentionally not granted to `memory_tenant`; application
-  integration must use a separately provisioned control-plane connection and must never
-  expose its DSN to tenant/browser traffic.
-- Real PostgreSQL acceptance: `tests/test_identity_foundation.py`. It requires a
-  disposable privileged `MEMORY_TEST_DSN`; an unrun or skipped test is not a pass.
-- This is a schema foundation only. It does not enable multi-user mode or change the
-  current single-tenant Bearer API behavior.
+Implemented on the PR #51 branch:
+
+- `005_identity_foundation.sql`: Principal, external identity, tenant, membership,
+  opaque session hash, scoped API credential hash and audit-event tables.
+- `IdentityStore`: principal/tenant/membership creation; session issue, authenticate
+  and revoke; API credential issue, authenticate and revoke; active tenant discovery.
+- FastAPI identity mode via a separately provisioned `MEMORY_IDENTITY_DSN`.
+- Existing single-tenant Bearer key remains backward-compatible.
+- Identity mode supports session Bearer/cookie, scoped API credential, required
+  `X-Memory-Tenant`, live membership/role checks, reader write denial and API
+  credential scope enforcement.
+- Cookie mutation requests require CSRF double-submit validation.
+- `GET /v1/identity/tenants`, `GET /v1/identity/me`,
+  `POST /v1/auth/logout`.
+- Deployment role provisioning: `sql/postgresql/security/002_identity_service_role.sql`.
+- Automated tests: `tests/test_identity_foundation.py`,
+  `tests/test_identity_store.py`, `tests/test_identity_api.py`.
+
+Still not implemented: OIDC discovery/PKCE/JWKS/callback, browser session-cookie
+issuance, invitation onboarding/first-owner bootstrap, complete resource-level RBAC,
+and arbitrary multi-tenant data-plane PostgreSQL isolation. This branch is not yet
+a public registration release. CI must pass on the latest head; skipped PostgreSQL
+or browser tests do not count as passes.

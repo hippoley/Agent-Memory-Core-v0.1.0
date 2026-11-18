@@ -243,6 +243,13 @@ class TenantSelect(BaseModel):
     tenant_id: str = Field(min_length=1, max_length=255)
 
 
+class CredentialCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    scopes: list[str] = Field(min_length=1, max_length=8)
+    expires_in_days: int | None = Field(default=90, ge=1, le=365)
+
+
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
                temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None,
@@ -481,6 +488,49 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                             httponly=False, secure=secure_cookie, samesite="lax")
         return {"tenant_id": item.tenant_id, "display_name": selected.get("display_name"),
                 "role": selected.get("role"), "selected": True}
+
+    @app.post("/v1/identity/api-credentials", status_code=201, tags=["Identity"],
+              summary="Create a tenant-scoped API credential for SDK integration")
+    def identity_create_api_credential(item: CredentialCreate, request: Request,
+                                       t: str = Depends(auth)):
+        # API keys must not mint replacement credentials. Explicit human
+        # sessions own the bootstrap step and receive the secret exactly once.
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") != "session" or identity.get("role") not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Owner/Admin browser session required")
+        allowed = {"memory:read", "memory:write", "memory:*"}
+        if any(scope not in allowed for scope in item.scopes) or len(set(item.scopes)) != len(item.scopes):
+            raise HTTPException(status_code=422, detail="Invalid or duplicate credential scope")
+        from datetime import timedelta
+        store = identity_store_factory()
+        try:
+            issued = store.issue_api_credential(
+                principal_id=identity["principal_id"], tenant_id=t,
+                name=item.name.strip(), scopes=item.scopes,
+                ttl=timedelta(days=item.expires_in_days) if item.expires_in_days else None,
+            )
+            return {**issued, "tenant_id": t, "name": item.name.strip(),
+                    "scopes": item.scopes, "expires_in_days": item.expires_in_days}
+        finally:
+            store.close()
+
+    @app.delete("/v1/identity/api-credentials/{credential_id}", tags=["Identity"],
+                summary="Revoke one of your API credentials immediately")
+    def identity_revoke_api_credential(credential_id: str, request: Request,
+                                      t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") != "session":
+            raise HTTPException(status_code=403, detail="Browser session required")
+        cid = require_uuid(credential_id)
+        store = identity_store_factory()
+        try:
+            revoked = store.revoke_api_credential(
+                credential_id=cid, principal_id=identity["principal_id"])
+            if not revoked:
+                raise HTTPException(status_code=404, detail="Credential not found")
+            return {"credential_id": cid, "revoked": True}
+        finally:
+            store.close()
 
     @app.get("/v1/identity/me", tags=["Identity"], summary="Get the authenticated principal and tenant membership")
     def identity_me(request: Request, t: str = Depends(auth)):

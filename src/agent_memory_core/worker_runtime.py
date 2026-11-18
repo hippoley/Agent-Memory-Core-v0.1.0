@@ -49,6 +49,18 @@ class WorkerContext:
         finally:
             db.close()
 
+    def execute_effect(self, *, effect_key: str, provider) -> dict:
+        """Execute one requested effect using provider idempotency; ambiguity stays UNKNOWN."""
+        from .durable_effects import DurableTaskEffectRuntime
+        return DurableTaskEffectRuntime(self.connection_factory).execute(
+            context=self,effect_key=effect_key,provider=provider)
+
+    def reconcile_effect(self, *, effect_key: str, provider) -> dict:
+        """Reconcile an UNKNOWN effect; NOT_FOUND is the only path back to requested."""
+        from .durable_effects import DurableTaskEffectRuntime
+        return DurableTaskEffectRuntime(self.connection_factory).reconcile(
+            context=self,effect_key=effect_key,provider=provider)
+
     def commit_checkpoint(self, *, checkpoint: dict, idempotency_key: str,
                           progress_completed: int = 0, progress_total: int = 0,
                           artifact_sha256: str | None = None,
@@ -143,6 +155,17 @@ class DurableTaskWorker:
             task=task, worker_id=self.worker_id, lease_seconds=self.lease_seconds,
             lease_lost=lost)
         try:
+            # Any effect still marked executing under an older lease epoch has
+            # an ambiguous remote outcome. Preserve it as UNKNOWN; never retry
+            # the provider call until its reconciliation contract says NOT_FOUND.
+            db = self.connection_factory()
+            try:
+                from .durable_effects import DurableTaskEffectStore
+                DurableTaskEffectStore(db.conn).mark_stale_executions_unknown(
+                    tenant_id=self.tenant_id,task_id=task["task_id"],
+                    worker_id=self.worker_id,lease_epoch=task["lease_epoch"])
+            finally:
+                db.close()
             handler = self.handlers.get(task["task_type"])
             if handler is None:
                 raise LookupError(f"No handler registered for task_type={task['task_type']!r}")

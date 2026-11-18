@@ -107,7 +107,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             page.locator("#workspaceSelect").select_option(original_tenant)
             page.wait_for_function(
                 "id => document.cookie.split('; ').some(x => x.trim() === 'amc_tenant=' + id)",
-                original_tenant,
+                arg=original_tenant,
             )
             switched_identity = page.evaluate("""async (tenant) => {
               const response = await fetch('/v1/identity/me', {

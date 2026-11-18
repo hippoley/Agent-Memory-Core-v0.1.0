@@ -9,7 +9,7 @@
 **An API-first, local-first memory runtime for AI agents.** Store versioned claims, revise them with provenance, retrieve current state and history, and run durable verification through one public REST API and Python SDK.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB](pyproject.toml)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](pyproject.toml)
 [![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
 [![Development status](https://img.shields.io/badge/status-active%20development-orange)](docs/USER-STORY-ACCEPTANCE.md)
 

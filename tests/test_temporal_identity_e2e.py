@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -95,14 +96,20 @@ def test_queued_temporal_work_is_rejected_after_session_revoke():
                     principal_id=principal,
                 )
 
-                with pytest.raises(Exception, match="Queued work is no longer authorized"):
-                    async with Worker(
-                        env.client,
-                        task_queue=queue,
-                        workflows=[VerifyMemoryWorkflow],
-                        activities=[verify_memory_record, write_memory_verification_receipt],
-                    ):
-                        await handle.result()
+                # These activities intentionally remain synchronous because they
+                # perform blocking PostgreSQL work. Temporal requires an executor
+                # for sync activities; without it the test fails before exercising
+                # the authorization check.
+                with ThreadPoolExecutor(max_workers=2) as activity_executor:
+                    with pytest.raises(Exception, match="Queued work is no longer authorized"):
+                        async with Worker(
+                            env.client,
+                            task_queue=queue,
+                            workflows=[VerifyMemoryWorkflow],
+                            activities=[verify_memory_record, write_memory_verification_receipt],
+                            activity_executor=activity_executor,
+                        ):
+                            await handle.result()
 
             receipt_count = db.conn.execute(
                 """SELECT count(*) FROM memory_outbox

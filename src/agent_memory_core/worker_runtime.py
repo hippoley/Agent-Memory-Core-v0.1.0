@@ -25,15 +25,29 @@ class WorkerContext:
     """Fenced capabilities supplied to one handler invocation."""
 
     def __init__(self, *, connection_factory: Callable, tenant_id: str,
-                 task: dict, worker_id: str, lease_seconds: int):
+                 task: dict, worker_id: str, lease_seconds: int,
+                 lease_lost: threading.Event | None = None):
         self.connection_factory = connection_factory
         self.tenant_id = tenant_id
         self.task = task
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        self.lease_lost = lease_lost or threading.Event()
         self.lease_epoch = int(task["lease_epoch"])
         self.checkpoint_version = int(task["checkpoint_version"])
         self.checkpoint = task.get("checkpoint")
+
+    def assert_lease(self) -> None:
+        """Fail closed before a handler performs a non-database side effect."""
+        if self.lease_lost.is_set():
+            raise LeaseConflict("Worker heartbeat reports that the lease was lost")
+        db = self.connection_factory()
+        try:
+            DurableTaskLeaseStore(db.conn).assert_current(
+                tenant_id=self.tenant_id,task_id=self.task["task_id"],
+                worker_id=self.worker_id,lease_epoch=self.lease_epoch)
+        finally:
+            db.close()
 
     def commit_checkpoint(self, *, checkpoint: dict, idempotency_key: str,
                           progress_completed: int = 0, progress_total: int = 0,
@@ -126,7 +140,8 @@ class DurableTaskWorker:
         thread.start()
         context = WorkerContext(
             connection_factory=self.connection_factory, tenant_id=self.tenant_id,
-            task=task, worker_id=self.worker_id, lease_seconds=self.lease_seconds)
+            task=task, worker_id=self.worker_id, lease_seconds=self.lease_seconds,
+            lease_lost=lost)
         try:
             handler = self.handlers.get(task["task_type"])
             if handler is None:

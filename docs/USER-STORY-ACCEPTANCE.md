@@ -125,3 +125,21 @@ issuance, invitation onboarding/first-owner bootstrap, complete resource-level R
 and arbitrary multi-tenant data-plane PostgreSQL isolation. This branch is not yet
 a public registration release. CI must pass on the latest head; skipped PostgreSQL
 or browser tests do not count as passes.
+
+
+## OIDC onboarding slice — implementation 2026-11-18
+
+Implemented on PR #51:
+
+- Browser Authorization Code + PKCE S256 start and callback routes.
+- Signed ten-minute HttpOnly transaction cookie; State and Nonce validation.
+- Provider Discovery issuer equality and HTTPS endpoint checks.
+- ID-token JWKS signature, Issuer, Audience, Expiry, Issued-at and Nonce verification.
+- Account identity is keyed only by issuer + subject; email is not an account-linking key.
+- Atomic Principal + External Identity + first Workspace + Owner Membership + Session creation.
+- Signup is disabled by default and requires explicit `MEMORY_OIDC_ALLOW_SIGNUP=1`.
+- HttpOnly Session cookie, readable CSRF double-submit cookie, selected-tenant cookie.
+- Observatory uses the browser session, tenant header and CSRF header; API Credential flow remains available.
+- Unit tests cover transaction tampering, expiry and state mismatch; API tests cover callback cookie issuance; PostgreSQL integration covers first login and identity reuse.
+
+Not yet accepted: live external OIDC provider interoperability, real Chromium sign-in and write/reload/forget journey, logout UX, tenant switch UX, invitation onboarding, provider logout, multi-provider account linking, and production security review. Do not mark the public multi-user User Story complete until the browser acceptance is run against a real provider and deployed PostgreSQL.

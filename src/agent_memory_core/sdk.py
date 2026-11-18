@@ -218,6 +218,43 @@ class MemoryClient:
             params["predicate"]=predicate
         return self._request("GET", "/v1/memories", params=params)
 
+    def create_task(self, *, task_type: str, input: dict,
+                    workflow_id: str | None = None,
+                    idempotency_key: str | None = None):
+        body={"task_type":task_type,"input":input}
+        if workflow_id is not None:
+            body["workflow_id"]=workflow_id
+        if idempotency_key is not None:
+            body["idempotency_key"]=idempotency_key
+        return self._request("POST","/v1/tasks",json=body)
+
+    def list_tasks(self, *, limit: int = 50, offset: int = 0):
+        return self._request("GET","/v1/tasks",params={"limit":limit,"offset":offset})
+
+    def get_task(self, task_id: str):
+        return self._request("GET","/v1/tasks/"+self._segment(task_id))
+
+    def commit_task_checkpoint(self, task_id: str, *, expected_version: int,
+                               checkpoint: dict, idempotency_key: str,
+                               progress_completed: int = 0, progress_total: int = 0,
+                               artifact_sha256: str | None = None,
+                               effect_key: str | None = None,
+                               effect_request: dict | None = None):
+        body={"expected_version":expected_version,"checkpoint":checkpoint,
+              "idempotency_key":idempotency_key,
+              "progress_completed":progress_completed,"progress_total":progress_total}
+        for key,value in {"artifact_sha256":artifact_sha256,
+                          "effect_key":effect_key,"effect_request":effect_request}.items():
+            if value is not None:
+                body[key]=value
+        return self._request("POST","/v1/tasks/"+self._segment(task_id)+"/checkpoints",
+                             json=body,headers={"Idempotency-Key":idempotency_key})
+
+    def set_task_status(self, task_id: str, *, status: str,
+                        result: dict | None = None, error: dict | None = None):
+        return self._request("POST","/v1/tasks/"+self._segment(task_id)+"/status",
+                             json={"status":status,"result":result,"error":error})
+
     def verify_memory_async(self, memory_id: str, *, workflow_id: str | None = None):
         """Start a durable Temporal verification on the configured task queue."""
         body={"memory_id":self._segment(memory_id)}

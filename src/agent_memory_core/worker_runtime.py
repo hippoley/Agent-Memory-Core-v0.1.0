@@ -39,7 +39,7 @@ class WorkerContext:
                           effect_request: dict | None = None) -> dict:
         db = self.connection_factory()
         try:
-            result = DurableTaskLeaseStore(db).commit_checkpoint(
+            result = DurableTaskLeaseStore(db.conn).commit_checkpoint(
                 tenant_id=self.tenant_id, task_id=self.task["task_id"],
                 worker_id=self.worker_id, lease_epoch=self.lease_epoch,
                 expected_version=self.checkpoint_version, checkpoint=checkpoint,
@@ -77,7 +77,7 @@ class DurableTaskWorker:
     def _claim(self) -> dict | None:
         db = self.connection_factory()
         try:
-            return DurableTaskLeaseStore(db).claim(
+            return DurableTaskLeaseStore(db.conn).claim(
                 tenant_id=self.tenant_id, worker_id=self.worker_id,
                 lease_seconds=self.lease_seconds)
         finally:
@@ -86,7 +86,7 @@ class DurableTaskWorker:
     def _finish(self, task: dict, *, status: str, result=None, error=None) -> None:
         db = self.connection_factory()
         try:
-            DurableTaskLeaseStore(db).finish(
+            DurableTaskLeaseStore(db.conn).finish(
                 tenant_id=self.tenant_id, task_id=task["task_id"],
                 worker_id=self.worker_id, lease_epoch=task["lease_epoch"],
                 status=status, result=result, error=error)
@@ -104,7 +104,7 @@ class DurableTaskWorker:
             while not stop.wait(self.heartbeat_interval):
                 db = self.connection_factory()
                 try:
-                    renewed = DurableTaskLeaseStore(db).renew(
+                    renewed = DurableTaskLeaseStore(db.conn).renew(
                         tenant_id=self.tenant_id, task_id=task["task_id"],
                         worker_id=self.worker_id, lease_epoch=task["lease_epoch"],
                         lease_seconds=self.lease_seconds)

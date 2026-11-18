@@ -41,10 +41,10 @@ def test_identity_store_session_membership_and_credential_lifecycle():
 
         with pytest.raises(ValueError, match="last active tenant owner"):
             store.set_membership_role(
-                tenant_id="tenant-a-" + suffix, principal_id=principal_a, role="reader")
+                tenant_id="tenant-b-" + suffix, principal_id=principal_b, role="reader")
         with pytest.raises(ValueError, match="last active tenant owner"):
             store.revoke_membership(
-                tenant_id="tenant-a-" + suffix, principal_id=principal_a)
+                tenant_id="tenant-b-" + suffix, principal_id=principal_b)
 
         session = store.issue_session(principal_id=principal_a)
         assert len(session["token"]) >= 40
@@ -55,7 +55,7 @@ def test_identity_store_session_membership_and_credential_lifecycle():
 
         # Role downgrade is enforced on the next request, not after token expiry.
         store.set_membership_role(
-            tenant_id="tenant-a-" + suffix, principal_id=principal_a, role="reader")
+            tenant_id="tenant-b-" + suffix, principal_id=principal_b, role="reader")
         assert store.authenticate_session(
             token=session["token"], tenant_id="tenant-a-" + suffix)["role"] == "reader"
         assert store.revoke_membership(

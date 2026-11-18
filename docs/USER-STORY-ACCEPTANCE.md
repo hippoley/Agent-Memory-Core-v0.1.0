@@ -168,18 +168,18 @@ monotonically rather than reusing one timestamp for both versions.
 
 ### Latest verified CI evidence (2026-11-18)
 
-All seven integration workflows completed successfully on candidate SHA
-`c74b689f2a179a349aa890e229650eea913e8c17`:
+All seven workflow groups completed successfully on candidate SHA
+`5c8baa3d8a8ed37735da0d6387aed2097cb0f012`:
 
 | Workflow | Run | Result |
 |---|---:|---|
-| Pytest + wheel | [44231515112](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515112) | pytest + wheel build passed |
-| Lite / Standard / Full lifecycle | [44231515167](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515167) | all three profiles passed |
-| PostgreSQL / AGE / pgvector | [44231515103](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515103) | passed |
-| Temporal integration | [44231515147](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515147) | extended compose + local Temporal passed |
-| Extended AGE / Temporal smoke | [44231515119](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515119) | passed |
-| Keycloak OIDC Browser Acceptance | [44231515276](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515276) | real Keycloak + Chromium passed; 10 tests |
-| Observatory Browser Acceptance | [44231515160](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515160) | Chromium + Keycloak jobs passed |
+| Pytest + wheel | [44234253197](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253197) | pytest + wheel build passed |
+| Lite / Standard / Full lifecycle | [44234253139](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253139) | all three profiles passed |
+| PostgreSQL / AGE / pgvector | [44234253226](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253226) | passed |
+| Temporal + S10 RLS adversarial acceptance | [44234253123](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253123) | Temporal workflow passed; Temporal integration 1/1 and S10 PostgreSQL RLS test 2/2 passed |
+| Extended AGE / Temporal smoke | [44234253280](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253280) | passed |
+| Keycloak OIDC Browser Acceptance | [44234253170](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253170) | real Keycloak + Chromium passed; 10 tests |
+| Observatory Browser Acceptance | [44234253390](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253390) | Chromium + Keycloak jobs passed |
 
 The two browser workflows prove the integrated local-provider path, including
 self-registration of two independent users, automatic Principal/Workspace/Owner/
@@ -188,12 +188,20 @@ PostgreSQL-backed active/history readback, tenant isolation, session restoration
 and logout revocation. Failure-only diagnostic steps are skipped on successful
 jobs; no required acceptance job above was skipped.
 
-This evidence closes the local Keycloak + Observatory browser acceptance gate
-for this candidate SHA. It does **not** close the independent release gates
-listed below: external-provider interoperability, invitation/member management,
-full resource-level RBAC, Worker/Temporal identity isolation, production RLS
-deployment, public TLS webhook operations, model quality, process/DB crash
-recovery, backup/restore, load and production security review.
+The follow-on Temporal security change is also verified on this SHA:
+PostgreSQL-backed Temporal Activities reject a mismatched tenant under the
+operator-installed principal-bound RLS registry, and reject an administrative
+login when `MEMORY_TEMPORAL_REQUIRE_RLS=1`. The dedicated Temporal CI job
+installed the optional Temporal dependency and ran the adversarial S10 test;
+both tests passed.
+
+This closes the local Keycloak + Observatory browser acceptance gate and the
+single-tenant-bound Temporal Activity security check for this candidate SHA.
+It does **not** close the independent release gates listed below: external-provider
+interoperability, invitation/member management, full resource-level RBAC,
+shared multi-tenant Worker/Temporal credential routing, production RLS rollout,
+public TLS webhook operations, model quality, process/DB crash recovery,
+backup/restore, load and production security review.
 
 ### Follow-on security integration (new code; revalidation pending)
 
@@ -207,12 +215,13 @@ that a tenant-A database login can verify and write only tenant-A receipts,
 cannot read or write tenant-B data, and that an administrative login is rejected
 when the production flag is enabled.
 
-This is a single-tenant-bound worker safety step, not yet a complete
-multi-tenant Temporal worker router. One worker currently has one configured
-database DSN; tenant-aware credential routing or per-tenant worker/task-queue
-isolation remains required before shared multi-tenant production operation.
-The new code and adversarial test must pass on the final candidate SHA before
-this security slice is accepted.
+This is a verified single-tenant-bound worker safety step, not yet a
+complete multi-tenant Temporal worker router. On candidate
+`5c8baa3d8a8ed37735da0d6387aed2097cb0f012`, the Temporal CI job ran the
+Temporal integration test (1 passed) and the PostgreSQL RLS adversarial test
+(2 passed). One worker currently has one configured database DSN; tenant-aware
+credential routing or per-tenant worker/task-queue isolation remains required
+before shared multi-tenant production operation.
 
 Still separate release gates: live external-provider interoperability beyond
 Keycloak, invitation onboarding, member administration, provider logout,

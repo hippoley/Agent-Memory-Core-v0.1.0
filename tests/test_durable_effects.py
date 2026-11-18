@@ -145,12 +145,24 @@ def test_unknown_effect_cannot_be_reexecuted_until_provider_says_not_found():
         effects.begin_reconciliation(tenant_id=tenant,task_id=task_id,
             effect_key="retry-after-reconcile",worker_id="effect-retry-B",
             lease_epoch=b["lease_epoch"])
+        # A reconciler can die too. Its in-progress lookup is also ambiguous.
+        _expire(db,tenant,task_id)
+        c=_claim(db,tenant,"effect-retry-C")
+        assert c and c["lease_epoch"]>b["lease_epoch"]
+        assert effects.mark_stale_executions_unknown(tenant_id=tenant,
+            task_id=task_id,worker_id="effect-retry-C",
+            lease_epoch=c["lease_epoch"])==1
+        assert effects.get_effect(task_id=task_id,
+            effect_key="retry-after-reconcile")["status"]=="unknown"
+        effects.begin_reconciliation(tenant_id=tenant,task_id=task_id,
+            effect_key="retry-after-reconcile",worker_id="effect-retry-C",
+            lease_epoch=c["lease_epoch"])
         effects.resolve_reconciliation(tenant_id=tenant,task_id=task_id,
-            effect_key="retry-after-reconcile",worker_id="effect-retry-B",
-            lease_epoch=b["lease_epoch"],outcome="not_found")
+            effect_key="retry-after-reconcile",worker_id="effect-retry-C",
+            lease_epoch=c["lease_epoch"],outcome="not_found")
         retry=effects.begin_execution(tenant_id=tenant,task_id=task_id,
-            effect_key="retry-after-reconcile",worker_id="effect-retry-B",
-            lease_epoch=b["lease_epoch"])
+            effect_key="retry-after-reconcile",worker_id="effect-retry-C",
+            lease_epoch=c["lease_epoch"])
         assert retry["attempt_count"]==2
         assert effects.get_effect(task_id=task_id,
             effect_key="retry-after-reconcile")["status"]=="executing"

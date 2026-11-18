@@ -80,23 +80,57 @@ class IdentityStore:
                             role: str) -> int:
         if role not in ("owner", "admin", "editor", "reader"):
             raise ValueError("Invalid membership role")
-        row = self.conn.execute(
-            """UPDATE memory_tenant_memberships
-               SET role=%s,version=version+1,updated_at=clock_timestamp()
-               WHERE tenant_id=%s AND principal_id=%s AND status='active'
-               RETURNING version""", (role, tenant_id, principal_id)).fetchone()
-        if row is None:
-            raise LookupError("Active membership not found")
-        return int(row[0])
+        with self.conn.transaction():
+            # Serialize owner transfers/downgrades per tenant so concurrent
+            # administrators cannot remove the final active owner.
+            self.conn.execute(
+                "SELECT tenant_id FROM memory_tenants WHERE tenant_id=%s FOR UPDATE",
+                (tenant_id,))
+            current = self.conn.execute(
+                """SELECT role FROM memory_tenant_memberships
+                   WHERE tenant_id=%s AND principal_id=%s AND status='active'
+                   FOR UPDATE""", (tenant_id, principal_id)).fetchone()
+            if current is None:
+                raise LookupError("Active membership not found")
+            if current[0] == "owner" and role != "owner":
+                owners = self.conn.execute(
+                    """SELECT count(*) FROM memory_tenant_memberships
+                       WHERE tenant_id=%s AND role='owner' AND status='active'""",
+                    (tenant_id,)).fetchone()[0]
+                if owners <= 1:
+                    raise ValueError("Cannot demote the last active tenant owner")
+            row = self.conn.execute(
+                """UPDATE memory_tenant_memberships
+                   SET role=%s,version=version+1,updated_at=clock_timestamp()
+                   WHERE tenant_id=%s AND principal_id=%s AND status='active'
+                   RETURNING version""", (role, tenant_id, principal_id)).fetchone()
+            return int(row[0])
 
     def revoke_membership(self, *, tenant_id: str, principal_id: str) -> bool:
-        row = self.conn.execute(
-            """UPDATE memory_tenant_memberships
-               SET status='revoked',revoked_at=clock_timestamp(),
-                   version=version+1,updated_at=clock_timestamp()
-               WHERE tenant_id=%s AND principal_id=%s AND status='active'
-               RETURNING membership_id""", (tenant_id, principal_id)).fetchone()
-        return row is not None
+        with self.conn.transaction():
+            self.conn.execute(
+                "SELECT tenant_id FROM memory_tenants WHERE tenant_id=%s FOR UPDATE",
+                (tenant_id,))
+            current = self.conn.execute(
+                """SELECT role FROM memory_tenant_memberships
+                   WHERE tenant_id=%s AND principal_id=%s AND status='active'
+                   FOR UPDATE""", (tenant_id, principal_id)).fetchone()
+            if current is None:
+                return False
+            if current[0] == "owner":
+                owners = self.conn.execute(
+                    """SELECT count(*) FROM memory_tenant_memberships
+                       WHERE tenant_id=%s AND role='owner' AND status='active'""",
+                    (tenant_id,)).fetchone()[0]
+                if owners <= 1:
+                    raise ValueError("Cannot revoke the last active tenant owner")
+            row = self.conn.execute(
+                """UPDATE memory_tenant_memberships
+                   SET status='revoked',revoked_at=clock_timestamp(),
+                       version=version+1,updated_at=clock_timestamp()
+                   WHERE tenant_id=%s AND principal_id=%s AND status='active'
+                   RETURNING membership_id""", (tenant_id, principal_id)).fetchone()
+            return row is not None
 
     def issue_session(self, *, principal_id: str, ttl: timedelta = timedelta(hours=12),
                       user_agent: str | None = None) -> dict:

@@ -126,7 +126,7 @@ def test_external_sdk_credential_full_memory_lifecycle_against_real_postgres():
         assert count==1
         events=db.conn.execute(
             """SELECT count(*) FROM memory_outbox
-               WHERE tenant_id=%s AND aggregate_id=%s::uuid""",
+               WHERE tenant_id=%s AND aggregate_id=%s""",
             (tenant,memory_id)).fetchone()[0]
         assert events>=1
     finally:

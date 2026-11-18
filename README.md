@@ -39,6 +39,22 @@ The issue isn't storing more history. It's **knowing which belief is current, wh
 
 The story illustrates the intended semantics. The repository implements structured revision and an opt-in evidence-grounded extraction path; it has **not** established reliable natural-language understanding across every industry or model.
 
+## API-first integration for external agents
+
+Observatory is one client of the product API, not a privileged execution path.
+External Python agents use the same authenticated REST contract through the
+published SDK. The independent consumer example lives in
+[`examples/third_party_memory_agent`](examples/third_party_memory_agent/README.md):
+it installs the distribution, connects with a tenant-scoped API credential,
+creates and revises a claim, reads current state and history, searches,
+retrieves provenance, polls events, and optionally runs Temporal verification.
+It does not import server internals or connect to PostgreSQL.
+
+See the [API reference](docs/API-REFERENCE.md) for OIDC credential bootstrap,
+scope requirements, OpenAPI/Swagger and deployment boundaries. The independent
+consumer is part of the PR #51 Product E2E workflow; it is not considered
+accepted until a clean virtual environment runs it against the live stack.
+
 ## See memory, not just messages
 
 The interface is part of the story: an agent's memory should be **inspectable**, not an invisible pile of retrieved vectors.

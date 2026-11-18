@@ -46,7 +46,7 @@ class DurableTaskEffectStore:
                    SET status='unknown',execution_worker_id=NULL,
                        execution_lease_epoch=NULL,
                        last_error=%s::jsonb,updated_at=clock_timestamp()
-                   WHERE task_id=%s::uuid AND status='executing'
+                   WHERE task_id=%s::uuid AND status IN ('executing','reconciling')
                      AND (execution_lease_epoch IS DISTINCT FROM %s
                           OR execution_worker_id IS DISTINCT FROM %s)
                    RETURNING effect_key""",

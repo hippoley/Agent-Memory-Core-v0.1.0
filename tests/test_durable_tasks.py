@@ -94,6 +94,15 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
         owner=DurableTaskLeaseStore(db.conn).claim(
             tenant_id=tenant,worker_id="task-store-test-worker",lease_seconds=30)
         assert owner and owner["task_id"]==task_id
+        from agent_memory_core.durable_effects import DurableTaskEffectStore
+        effect_store=DurableTaskEffectStore(db.conn)
+        effect_store.begin_execution(tenant_id=tenant,task_id=task_id,
+            effect_key="write-memory-claim-26",worker_id="task-store-test-worker",
+            lease_epoch=owner["lease_epoch"])
+        effect_store.mark_committed(tenant_id=tenant,task_id=task_id,
+            effect_key="write-memory-claim-26",worker_id="task-store-test-worker",
+            lease_epoch=owner["lease_epoch"],provider_reference="test-claim-26",
+            provider_result={"committed":True})
         assert tasks.set_status(tenant_id=tenant,task_id=task_id,
             worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],
             status="completed",result={"organized":50})

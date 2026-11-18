@@ -204,3 +204,80 @@ def test_oidc_login_callback_sets_session_csrf_and_workspace_cookies(monkeypatch
     assert identity.login_args["subject"] == "oidc-user-1"
     assert identity.login_args["allow_signup"] is True
     assert identity.closed is True
+
+
+class WorkspaceIdentityFake(IdentityStoreFake):
+    def __init__(self):
+        super().__init__()
+        self.tenants = [{
+            "tenant_id": TENANT, "display_name": "Tenant A",
+            "role": "owner", "membership_version": 1,
+        }]
+
+    def list_session_tenants(self, *, token):
+        if token != "valid-session" or self.revoked:
+            return []
+        return [dict(item) for item in self.tenants]
+
+    def authenticate_session(self, *, token, tenant_id):
+        if token != "valid-session" or self.revoked:
+            return None
+        membership = next((item for item in self.tenants
+                           if item["tenant_id"] == tenant_id), None)
+        if membership is None:
+            return None
+        return {
+            "session_id": "session-1", "principal_id": "principal-1",
+            "tenant_id": tenant_id, "role": membership["role"],
+            "membership_version": membership["membership_version"],
+        }
+
+    def create_tenant(self, *, tenant_id, display_name, owner_principal_id):
+        assert owner_principal_id == "principal-1"
+        self.tenants.append({
+            "tenant_id": tenant_id, "display_name": display_name,
+            "role": "owner", "membership_version": 1,
+        })
+        return tenant_id
+
+
+def test_browser_session_can_create_and_switch_only_its_own_workspaces():
+    identity = WorkspaceIdentityFake()
+    client = TestClient(_app(identity))
+    client.cookies.set("amc_session", "valid-session")
+    client.cookies.set("amc_csrf", "csrf-secret")
+    client.cookies.set("amc_tenant", TENANT)
+
+    create = client.post(
+        "/v1/identity/tenants",
+        headers={"X-Memory-Tenant": TENANT, "X-CSRF-Token": "csrf-secret"},
+        json={"display_name": "Research Workspace"},
+    )
+    assert create.status_code == 201, create.text
+    new_tenant = create.json()["tenant_id"]
+    assert create.json()["role"] == "owner"
+    assert client.cookies.get("amc_tenant") == new_tenant
+
+    switch_back = client.post(
+        "/v1/identity/select-tenant",
+        headers={"X-Memory-Tenant": new_tenant, "X-CSRF-Token": "csrf-secret"},
+        json={"tenant_id": TENANT},
+    )
+    assert switch_back.status_code == 200, switch_back.text
+    assert switch_back.json()["selected"] is True
+    assert client.cookies.get("amc_tenant") == TENANT
+
+    denied = client.post(
+        "/v1/identity/select-tenant",
+        headers={"X-Memory-Tenant": TENANT, "X-CSRF-Token": "csrf-secret"},
+        json={"tenant_id": "tenant-not-a-member"},
+    )
+    assert denied.status_code == 403
+
+    no_csrf = client.post(
+        "/v1/identity/tenants",
+        headers={"X-Memory-Tenant": TENANT},
+        json={"display_name": "Should Not Exist"},
+    )
+    assert no_csrf.status_code == 403
+

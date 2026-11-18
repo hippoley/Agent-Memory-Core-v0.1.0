@@ -5,6 +5,12 @@
 # container resets workflow history. Production must use durable Temporal storage.
 # A named volume under /var/lib/temporal failed in real CI due to UID permissions.
 services:
+  memory-api:
+    environment:
+      MEMORY_TEMPORAL_ADDRESS: memory-temporal:7233
+      MEMORY_TEMPORAL_NAMESPACE: default
+      MEMORY_TEMPORAL_TASK_QUEUE: agent-memory-core
+
   memory-temporal:
     image: temporalio/temporal:1.10.1
     command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/tmp/agent-memory-temporal-dev.db"]

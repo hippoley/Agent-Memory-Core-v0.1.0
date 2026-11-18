@@ -45,6 +45,9 @@ EXPECTED={
     "/v1/workflows/memory-verifications":{"post"},
     "/v1/workflows/{workflow_id}":{"get"},
     "/v1/workflows/{workflow_id}/cancel":{"post"},
+    "/v1/workflows/{workflow_id}/progress":{"get"},
+    "/v1/workflows/{workflow_id}/pause":{"post"},
+    "/v1/workflows/{workflow_id}/resume":{"post"},
 }
 
 def spec():

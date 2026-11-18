@@ -84,3 +84,52 @@ def test_identity_store_session_membership_and_credential_lifecycle():
         assert store.authenticate_api_credential(secret=credential["secret"]) is None
     finally:
         store.close()
+
+
+def test_oidc_first_login_bootstraps_owner_workspace_atomically_and_reuses_identity():
+    dsn = os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("MEMORY_TEST_DSN required")
+    from pathlib import Path
+    import psycopg
+    from agent_memory_core.identity import IdentityStore
+
+    root = Path(__file__).resolve().parents[1]
+    migration = root / "src/agent_memory_core/resources/005_identity_foundation.sql"
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        admin.execute(migration.read_text(encoding="utf-8"))
+
+    store = IdentityStore(dsn)
+    try:
+        suffix = uuid4().hex
+        issuer = "https://issuer.example.test/" + suffix
+        first = store.complete_oidc_login(
+            issuer=issuer, subject="subject-1", email="new-user@example.test",
+            email_verified=True, display_name="New User", allow_signup=True,
+            bootstrap_workspace=True, user_agent="acceptance-test")
+        assert first["is_new_principal"] is True
+        assert first["created_workspace"] is True
+        assert len(first["token"]) >= 40
+        assert len(first["tenants"]) == 1
+        assert first["tenants"][0]["role"] == "owner"
+
+        authenticated = store.authenticate_session(
+            token=first["token"], tenant_id=first["tenants"][0]["tenant_id"])
+        assert authenticated["principal_id"] == first["principal_id"]
+        assert authenticated["role"] == "owner"
+
+        second = store.complete_oidc_login(
+            issuer=issuer, subject="subject-1", email="new-user@example.test",
+            email_verified=True, display_name="New User", allow_signup=False,
+            bootstrap_workspace=True)
+        assert second["is_new_principal"] is False
+        assert second["created_workspace"] is False
+        assert second["principal_id"] == first["principal_id"]
+        assert second["tenants"] == first["tenants"]
+        assert second["token"] != first["token"]
+
+        with pytest.raises(LookupError, match="No account is linked"):
+            store.complete_oidc_login(
+                issuer=issuer, subject="unknown-subject", allow_signup=False)
+    finally:
+        store.close()

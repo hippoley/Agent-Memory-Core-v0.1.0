@@ -198,5 +198,19 @@ def test_queued_execution_is_denied_after_session_or_membership_revocation():
             principal_id=principal, tenant_id=tenant,
             session_id=session2["session_id"],
             membership_version=new_version)
+
+        credential=store.issue_api_credential(
+            principal_id=principal,tenant_id=tenant,name="Queued SDK job",
+            scopes=["memory:read","memory:write"])
+        assert store.authorize_background_execution(
+            principal_id=principal,tenant_id=tenant,
+            credential_id=credential["credential_id"],
+            membership_version=new_version)
+        assert store.revoke_api_credential(
+            credential_id=credential["credential_id"],principal_id=principal)
+        assert not store.authorize_background_execution(
+            principal_id=principal,tenant_id=tenant,
+            credential_id=credential["credential_id"],
+            membership_version=new_version)
     finally:
         store.close()

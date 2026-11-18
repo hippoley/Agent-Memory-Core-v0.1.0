@@ -49,6 +49,7 @@ def _assert_live_execution_authorization(request: dict) -> None:
             principal_id=principal_id,
             tenant_id=request["tenant_id"],
             session_id=request.get("session_id"),
+            credential_id=request.get("credential_id"),
             membership_version=request.get("membership_version"),
         )
     finally:
@@ -81,6 +82,7 @@ def verify_memory_record(request: dict) -> dict:
             # commits a durable effect.
             "principal_id": request.get("principal_id"),
             "session_id": request.get("session_id"),
+            "credential_id": request.get("credential_id"),
             "membership_version": request.get("membership_version"),
         }
     finally:

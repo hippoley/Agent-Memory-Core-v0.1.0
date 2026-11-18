@@ -70,7 +70,9 @@
             "userinfo.token.claim": "true"
           }
         }
-      ]
+      ],
+      "clientAuthenticatorType": "client-secret",
+      "fullScopeAllowed": true
     }
   ]
 }

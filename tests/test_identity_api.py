@@ -36,6 +36,12 @@ class IdentityStoreFake:
                 "tenant_id": TENANT, "role": self.role,
                 "membership_version": 1, "scopes": ["memory:read"]}
 
+    def revoke_session(self, *, session_id, principal_id):
+        if session_id == "session-1" and principal_id == "principal-1":
+            self.revoked = True
+            return True
+        return False
+
     def close(self):
         pass
 
@@ -105,3 +111,17 @@ def test_legacy_single_tenant_bearer_key_remains_compatible():
         headers={"Authorization": "Bearer " + KEY})
     assert response.status_code == 200
     assert response.json()["tenant_id"] == "legacy-tenant"
+
+
+def test_identity_me_and_logout_revoke_the_current_session():
+    identity = IdentityStoreFake()
+    client = TestClient(_app(identity))
+    headers = {"Authorization": "Bearer valid-session", "X-Memory-Tenant": TENANT}
+    me = client.get("/v1/identity/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["principal_id"] == "principal-1"
+    assert me.json()["role"] == "editor"
+    logout = client.post("/v1/auth/logout", headers=headers)
+    assert logout.status_code == 200
+    assert logout.json()["logged_out"] is True
+    assert client.get("/v1/identity/me", headers=headers).status_code == 401

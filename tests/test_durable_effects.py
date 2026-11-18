@@ -66,7 +66,11 @@ def test_remote_success_lost_ack_becomes_unknown_and_reconciles_without_reexecut
         # dies before PostgreSQL can record the acknowledgement.
         remote={}
         execute_calls=[]
+        from agent_memory_core.provider_contract import ProviderCapabilities
         class FakeProvider:
+            capabilities=ProviderCapabilities(
+                idempotency=True,reconciliation=True,lookup_consistency="strong",
+                idempotency_retention_seconds=86400)
             def execute(self,request,*,idempotency_key):
                 execute_calls.append(idempotency_key)
                 remote[idempotency_key]={"provider_reference":"remote-42","result":{"created":True}}

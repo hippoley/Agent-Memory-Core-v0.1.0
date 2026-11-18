@@ -157,10 +157,9 @@ class OIDCClient:
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": self.config.redirect_uri,
-                "client_id": self.config.client_id,
-                "client_secret": self.config.client_secret,
                 "code_verifier": transaction["verifier"],
-            }, headers={"Accept": "application/json"})
+            }, auth=(self.config.client_id, self.config.client_secret),
+               headers={"Accept": "application/json"})
             response.raise_for_status()
             token_response = response.json()
         id_token = token_response.get("id_token")

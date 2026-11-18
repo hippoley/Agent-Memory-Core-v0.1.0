@@ -281,3 +281,71 @@ def test_browser_session_can_create_and_switch_only_its_own_workspaces():
     )
     assert no_csrf.status_code == 403
 
+
+
+def test_owner_browser_session_mints_and_revokes_scoped_api_credential():
+    class Issuer(WorkspaceIdentityFake):
+        def __init__(self):
+            super().__init__()
+            self.issued = []
+            self.revoked = []
+
+        def issue_api_credential(self, **kwargs):
+            self.issued.append(kwargs)
+            return {"credential_id":"123e4567-e89b-12d3-a456-426614174000",
+                    "secret":"amc_once_only_secret"}
+
+        def revoke_api_credential(self, **kwargs):
+            self.revoked.append(kwargs)
+            return True
+
+    identity = Issuer()
+    client = TestClient(_app(identity))
+    client.cookies.set("amc_session","valid-session")
+    client.cookies.set("amc_csrf","csrf-secret")
+    headers = {"X-Memory-Tenant":TENANT,"X-CSRF-Token":"csrf-secret"}
+    issued = client.post("/v1/identity/api-credentials",headers=headers,
+                         json={"name":"my-agent","scopes":["memory:read","memory:write"],
+                               "expires_in_days":30})
+    assert issued.status_code == 403 # editor cannot mint credentials
+    identity.tenants[0]["role"] = "owner"
+    issued = client.post("/v1/identity/api-credentials",headers=headers,
+                         json={"name":"my-agent","scopes":["memory:read","memory:write"],
+                               "expires_in_days":30})
+    assert issued.status_code == 201, issued.text
+    assert issued.json()["secret"] == "amc_once_only_secret"
+    assert issued.json()["tenant_id"] == TENANT
+    assert identity.issued[0]["principal_id"] == "principal-1"
+    assert identity.issued[0]["tenant_id"] == TENANT
+    assert identity.issued[0]["ttl"].days == 30
+    revoked = client.delete(
+        "/v1/identity/api-credentials/123e4567-e89b-12d3-a456-426614174000",
+        headers=headers)
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["revoked"] is True
+    assert identity.revoked[0]["principal_id"] == "principal-1"
+
+    client.cookies.clear()
+    bearer = {"Authorization":"Bearer amc_valid_api_credential",
+              "X-Memory-Tenant":TENANT}
+    assert client.post("/v1/identity/api-credentials",headers=bearer,json={
+        "name":"illegal","scopes":["memory:*"]}).status_code == 403
+    assert client.delete(
+        "/v1/identity/api-credentials/123e4567-e89b-12d3-a456-426614174000",
+        headers=bearer).status_code == 403
+
+
+def test_credential_creation_rejects_unsafe_scope_and_csrf():
+    identity = WorkspaceIdentityFake()
+    client = TestClient(_app(identity))
+    client.cookies.set("amc_session","valid-session")
+    client.cookies.set("amc_csrf","csrf-secret")
+    headers = {"X-Memory-Tenant":TENANT,"X-CSRF-Token":"csrf-secret"}
+    for scopes in (["admin:*"],["memory:read","memory:read"]):
+        result=client.post("/v1/identity/api-credentials",headers=headers,
+                           json={"name":"bad","scopes":scopes})
+        assert result.status_code == 422
+    denied=client.post("/v1/identity/api-credentials",
+                       headers={"X-Memory-Tenant":TENANT},
+                       json={"name":"bad","scopes":["memory:read"]})
+    assert denied.status_code == 403

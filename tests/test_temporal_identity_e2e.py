@@ -109,7 +109,10 @@ def test_queued_temporal_work_is_rejected_after_session_revoke():
                             activities=[verify_memory_record, write_memory_verification_receipt],
                             activity_executor=activity_executor,
                         ):
-                            await handle.result()
+                            # A revoked queued workflow must terminate promptly;
+                            # guard against regressions to unbounded Temporal retries.
+                            async with asyncio.timeout(90):
+                                await handle.result()
 
             receipt_count = db.conn.execute(
                 """SELECT count(*) FROM memory_outbox

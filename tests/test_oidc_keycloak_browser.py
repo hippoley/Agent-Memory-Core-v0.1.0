@@ -146,6 +146,55 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             assert listed["status"] == 200
             assert any(item.get("id") == memory_id for item in listed["body"]["items"])
 
+            # Correct a canonical claim through the real browser session and
+            # prove both the active value and superseded audit version survive.
+            revision_one = page.evaluate("""async (now) => {
+              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
+              const response = await fetch('/v1/memories', {
+                method:'POST', credentials:'same-origin',
+                headers:{'Content-Type':'application/json','X-Memory-Tenant':tenant,'X-CSRF-Token':csrf},
+                body:JSON.stringify({
+                  subject_id:'oidc-e2e-user', predicate:'preferred_language',
+                  value:{language:'English'}, source_id:'keycloak-e2e-revision-1',
+                  valid_from:now
+                })
+              });
+              return {status:response.status,body:await response.json()};
+            }""", now)
+            assert revision_one["status"] == 201, revision_one
+            revision_two = page.evaluate("""async ({now, replacesId}) => {
+              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
+              const response = await fetch('/v1/memories', {
+                method:'POST', credentials:'same-origin',
+                headers:{'Content-Type':'application/json','X-Memory-Tenant':tenant,'X-CSRF-Token':csrf},
+                body:JSON.stringify({
+                  subject_id:'oidc-e2e-user', predicate:'preferred_language',
+                  value:{language:'Chinese'}, source_id:'keycloak-e2e-revision-2',
+                  valid_from:now, replaces_id:replacesId
+                })
+              });
+              return {status:response.status,body:await response.json()};
+            }""", {"now":now,"replacesId":revision_one["body"]["id"]})
+            assert revision_two["status"] == 201, revision_two
+            revision_state = page.evaluate("""async () => {
+              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const [activeResponse, historyResponse] = await Promise.all([
+                fetch('/v1/memories?subject_id=oidc-e2e-user&predicate=preferred_language', {
+                  credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                }),
+                fetch('/v1/memories?subject_id=oidc-e2e-user&predicate=preferred_language&include_superseded=true', {
+                  credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                })
+              ]);
+              return {active:await activeResponse.json(),history:await historyResponse.json()};
+            }""")
+            assert len(revision_state["active"]["items"]) == 1, revision_state
+            assert revision_state["active"]["items"][0]["value"]["language"] == "Chinese"
+            assert len(revision_state["history"]["items"]) == 2, revision_state
+            assert {item["value"]["language"] for item in revision_state["history"]["items"]} == {"English","Chinese"}
+
             forgotten = page.evaluate("""async (memoryId) => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
@@ -200,16 +249,26 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
 
             # A second, independently provisioned Keycloak identity must not
             # inherit the first user's workspace or be able to select it.
-            username2, password2 = _create_idp_user()
+            # Register the second user through Keycloak's public self-service
+            # registration page; do not provision this identity through Admin API.
+            username2 = "amc-self-" + uuid.uuid4().hex[:12]
+            password2 = "Local-Self-Register-" + uuid.uuid4().hex + "!"
             context2 = browser.new_context(viewport={"width": 1440, "height": 900})
             page2 = context2.new_page()
             errors2: list[str] = []
             page2.on("pageerror", lambda error: errors2.append(str(error)))
             try:
                 page2.goto(BASE_URL + "/v1/auth/oidc/login", wait_until="domcontentloaded")
+                page2.locator("#kc-registration a").click()
+                page2.wait_for_url(re.compile(r".*/realms/agent-memory/login-actions/registration.*"),
+                                   timeout=15000)
+                page2.locator("#firstName").fill("Self")
+                page2.locator("#lastName").fill("Registered")
+                page2.locator("#email").fill(username2 + "@example.test")
                 page2.locator("#username").fill(username2)
                 page2.locator("#password").fill(password2)
-                page2.locator("#kc-login").click()
+                page2.locator("#password-confirm").fill(password2)
+                page2.locator("#kc-register").click()
                 page2.wait_for_url(
                     re.compile(re.escape(BASE_URL) + r"/dashboard/observatory\.html"),
                     timeout=30000,

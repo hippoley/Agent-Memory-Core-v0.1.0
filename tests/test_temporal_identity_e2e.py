@@ -197,7 +197,7 @@ def test_queued_temporal_work_is_rejected_after_identity_revoke(revocation_kind)
 
             receipt_count = db.conn.execute(
                 """SELECT count(*) FROM memory_outbox
-                   WHERE tenant_id=%s AND aggregate_id=%s::uuid
+                   WHERE tenant_id=%s AND aggregate_id=%s
                      AND event_type='memory.claim.verified'""",
                 (tenant, memory_id),
             ).fetchone()[0]

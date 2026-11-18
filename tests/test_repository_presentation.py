@@ -72,6 +72,7 @@ def test_bsph_blue_svg_illustrations_follow_one_design_contract():
 def test_readme_observatory_previews_are_truthfully_labeled():
     readme=README.read_text(encoding="utf-8")
     assert "See memory, not just messages" in readme
-    assert "Draft PR #30" in readme
-    assert "not merged or publicly deployed" in readme
+    assert "PR #30" in readme and "PR #51" in readme
+    assert "Local Chromium acceptance passed on 2026-11-18" in readme
+    assert "no public hosted deployment is claimed" in readme
     assert "docs/DESIGN-SYSTEM.md" in readme

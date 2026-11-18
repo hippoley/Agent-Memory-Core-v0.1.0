@@ -650,3 +650,14 @@ the adapter may treat `NOT_FOUND` as safe to retry. PostgreSQL fencing cannot
 prevent a remote provider from performing an operation after a delayed
 request; provider idempotency and reconciliation are mandatory. The runtime
 does not claim exactly-once external effects.
+
+
+### Direct SDK/store write boundary
+
+The canonical Python store methods are also fenced, not merely their HTTP
+wrappers. `DurableTaskStore.commit_checkpoint(...)` and
+`DurableTaskStore.set_status(...)` require `worker_id` and
+`lease_epoch`, then validate the current unexpired PostgreSQL lease inside
+the write transaction. Calling either method with tenant identity alone is
+not a supported mutation path. The Worker Lease Store and HTTP endpoints
+delegate to this same enforcement boundary.

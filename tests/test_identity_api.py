@@ -22,6 +22,12 @@ class IdentityStoreFake:
         self.role = "editor"
         self.revoked = False
 
+    def list_session_tenants(self, *, token):
+        if token != "valid-session" or self.revoked:
+            return []
+        return [{"tenant_id": TENANT, "display_name": "Tenant A",
+                 "role": self.role, "membership_version": 1}]
+
     def authenticate_session(self, *, token, tenant_id):
         if token != "valid-session" or tenant_id != TENANT or self.revoked:
             return None
@@ -125,3 +131,13 @@ def test_identity_me_and_logout_revoke_the_current_session():
     assert logout.status_code == 200
     assert logout.json()["logged_out"] is True
     assert client.get("/v1/identity/me", headers=headers).status_code == 401
+
+
+def test_identity_tenant_discovery_does_not_require_preselected_tenant():
+    identity = IdentityStoreFake()
+    client = TestClient(_app(identity))
+    response = client.get("/v1/identity/tenants",
+        headers={"Authorization": "Bearer valid-session"})
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["items"][0]["tenant_id"] == TENANT

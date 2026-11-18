@@ -32,8 +32,11 @@ def main() -> None:
         identity = memory.whoami()
         assert identity["tenant_id"] == tenant_id, identity
         capabilities = memory.capabilities()
-        enabled = {item["name"]: item["enabled"]
-                   for item in capabilities.get("capabilities", [])}
+        available = {item["name"]: item["available"]
+                     for item in capabilities["capabilities"]}
+        assert available["memory.claims"] and available["memory.bitemporal"], capabilities
+        if os.getenv("MEMORY_RUN_TEMPORAL") == "1":
+            assert available["workflow.temporal"], capabilities
 
         first = memory.remember(
             subject_id=subject,

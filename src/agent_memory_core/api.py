@@ -442,18 +442,21 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         principal_id = identity.get("principal_id")
         if identity.get("auth_type") != "session" or not principal_id:
             raise HTTPException(status_code=403, detail="Workspace creation requires a browser session")
+        display_name = item.display_name.strip()
+        if not display_name:
+            raise HTTPException(status_code=422, detail="Workspace display name cannot be blank")
         tenant_id = "ws-" + uuid4().hex
         identity_store = identity_store_factory()
         try:
             identity_store.create_tenant(
-                tenant_id=tenant_id, display_name=item.display_name.strip(),
+                tenant_id=tenant_id, display_name=display_name,
                 owner_principal_id=principal_id)
         finally:
             identity_store.close()
         secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
         response.set_cookie("amc_tenant", tenant_id, max_age=43200, path="/",
                             httponly=False, secure=secure_cookie, samesite="lax")
-        return {"tenant_id": tenant_id, "display_name": item.display_name.strip(),
+        return {"tenant_id": tenant_id, "display_name": display_name,
                 "role": "owner", "created": True}
 
     @app.post("/v1/identity/select-tenant", tags=["Identity"],

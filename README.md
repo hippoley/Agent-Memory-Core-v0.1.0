@@ -45,14 +45,14 @@ The interface is part of the story: an agent's memory should be **inspectable**,
 
 | Experience | Open | What is real |
 | --- | --- | --- |
-| **Memory Observatory · Bsph Blue** | [View the UI source](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) | New white/blue visual system: claim-domain filaments, time filtering, evidence details, five-step synthetic Demo, authenticated read-only Live mode. **Draft PR #30, not merged or publicly deployed.** |
+| **Memory Observatory · Bsph Blue** | [View the UI source](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) | White/blue visual system: claim-domain filaments, time filtering, evidence details, synthetic Demo and authenticated Live mode. The identity integration on [PR #51](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/51) adds OIDC session restore, workspace selection and real memory create/revise/forget. **Local Chromium acceptance passed on 2026-11-18; no public hosted deployment is claimed.** |
 | **Classic Memory Console** | [Launch locally](#quickstart) | Same-origin UI for existing memory APIs at `/dashboard/`; requires a key for data operations |
 | **Memory Atlas** | [Open static interactive tour](docs/demo/index.html) | Architecture-oriented walkthrough using clearly marked synthetic browser data |
 
 The Observatory is **not** a fake knowledge graph: lines are visual groupings of classified loaded claims, **not** Apache AGE edges, vector similarities, or model confidence scores. Its local search and recorded-time slider do not replace canonical hybrid retrieval or SQL bitemporal queries.
 
 
-**Local preview in PR #30:** `python scripts/launch_local.py up --profile lite`, then open `http://127.0.0.1:8765/dashboard/observatory.html`. The Live API contract is covered by real PostgreSQL tests, not a full browser acceptance test.
+**Local preview:** `python scripts/launch_local.py up --profile lite --identity`, then open `http://127.0.0.1:8765/dashboard/observatory.html` and choose **Sign in with organization**. The integrated Keycloak + Observatory Chromium workflows passed on candidate `c74b689f`: [Keycloak E2E](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515276) · [Observatory browser acceptance](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515160). This proves the local provider flow, not external-provider production readiness or a public deployment.
 
 **Visual direction:** a single white-paper / Bsph Blue language across the project hero, memory lifecycle, runtime architecture, and Observatory. Diagrams are native, editable SVGs — not screenshots. See [visual system and semantics](docs/DESIGN-SYSTEM.md). A real-browser-verified Observatory screenshot will be added only after that UI's visual acceptance.
 

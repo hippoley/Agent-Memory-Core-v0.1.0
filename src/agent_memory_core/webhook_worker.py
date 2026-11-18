@@ -32,6 +32,8 @@ def main():
         parser.error("MEMORY_DSN, 32+ char MEMORY_WEBHOOK_SIGNING_KEY and MEMORY_WEBHOOK_ALLOWED_HOSTS required")
     from .postgres import PostgresMemory
     from .webhooks import WebhookWorker
+    from .worker_identity import configured_worker_tenant, assert_worker_tenant
+    tenant_id=configured_worker_tenant()
     db=PostgresMemory(dsn)
     stopping=False
     def stop(*_):
@@ -40,11 +42,15 @@ def main():
     signal.signal(signal.SIGTERM,stop)
     signal.signal(signal.SIGINT,stop)
     try:
-        db.migrate()
+        # Schema migrations require an administrator. Never attempt them with
+        # a restricted tenant worker login.
+        if tenant_id is None:
+            db.migrate()
+        assert_worker_tenant(db,tenant_id)
         worker=WebhookWorker(db.conn,signing_master_key=master,
                              allowed_hosts=hosts)
         while not stopping:
-            delivered=worker.consume(limit=args.batch_size)
+            delivered=worker.consume(limit=args.batch_size,tenant_id=tenant_id)
             print({"claimed_or_attempted":delivered},flush=True)
             if args.once:
                 break

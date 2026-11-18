@@ -46,7 +46,7 @@ class DurableTaskLeaseStore:
                      SELECT task_id
                      FROM memory_durable_tasks
                      WHERE tenant_id=%s
-                       AND status IN ('queued','running')
+                       AND status IN ('queued','running','paused')
                        AND (lease_expires_at IS NULL OR lease_expires_at <= clock_timestamp())
                      ORDER BY created_at,task_id
                      FOR UPDATE SKIP LOCKED

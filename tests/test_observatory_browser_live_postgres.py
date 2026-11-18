@@ -187,7 +187,11 @@ def test_real_live_browser_uses_its_own_persisted_tenant_history(runtime):
             assert "evidence:old" in page.locator("#detail").inner_text()
             page.locator("#claimPicker").select_option(second["id"])
             assert "evidence:new" in page.locator("#detail").inner_text()
-            assert "999" not in page.locator("#detail").inner_text()
+            detail_value = page.locator("#detail").inner_text()
+            # Do not use a substring assertion here: PostgreSQL timestamps can
+            # legitimately contain the digit sequence 999 in microseconds.
+            assert '"months": 999' not in detail_value
+            assert "evidence:foreign" not in detail_value
             assert all(url.startswith(base + "/v1/") for url in requests)
             assert any("/v1/memories?" in url for url in requests)
             assert any("/v1/events?" in url for url in requests)

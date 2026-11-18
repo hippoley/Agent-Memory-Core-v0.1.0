@@ -338,7 +338,7 @@ async function refreshLive(){let results=await Promise.all([api("/v1/memories?li
 $("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key&&!readCookie("amc_tenant")){$("authError").textContent="Sign in with your organization or enter an API credential.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";$("mutationNote").textContent="Live API connected. Writes affect only the authenticated tenant; revisions require an explicit selected Memory ID.";$("writePanel").hidden=false;render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
 
 let revisionTarget=null;
-$("claimPicker").addEventListener("change",()=>{$("forgetSelected").disabled=state.mode!=="live"||!state.selection});
+$("claimPicker").addEventListener("change",()=>{state.selection=$("claimPicker").value||null;$("forgetSelected").disabled=state.mode!=="live"||!state.selection;render();draw()});
 $("targetSelected").onclick=()=>{
  const selected=state.items.find(x=>String(x.id||x.memory_id)===state.selection);
  if(!selected){$("mutationNote").textContent="Select a live memory first.";return}

@@ -45,7 +45,7 @@ The interface is part of the story: an agent's memory should be **inspectable**,
 
 | Experience | Open | What is real |
 | --- | --- | --- |
-| **Memory Observatory · Bsph Blue** | [View the UI source](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) | White/blue visual system: claim-domain filaments, time filtering, evidence details, synthetic Demo and authenticated Live mode. The identity integration on [PR #51](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/51) adds OIDC session restore, workspace selection and real memory create/revise/forget. **Local Chromium acceptance passed on 2026-11-18; no public hosted deployment is claimed.** |
+| **Memory Observatory · Bsph Blue** | [View the UI source](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30) | White/blue visual system (original UI work: PR #30): claim-domain filaments, time filtering, evidence details, synthetic Demo and authenticated Live mode. The identity integration on [PR #51](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/51) adds OIDC session restore, workspace selection and real memory create/revise/forget. **Local Chromium acceptance passed on 2026-11-18; no public hosted deployment is claimed.** |
 | **Classic Memory Console** | [Launch locally](#quickstart) | Same-origin UI for existing memory APIs at `/dashboard/`; requires a key for data operations |
 | **Memory Atlas** | [Open static interactive tour](docs/demo/index.html) | Architecture-oriented walkthrough using clearly marked synthetic browser data |
 

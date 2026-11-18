@@ -128,7 +128,8 @@ class DurableTaskStore:
         return task
 
     def commit_checkpoint(
-        self, *, tenant_id: str, task_id: str, expected_version: int,
+        self, *, tenant_id: str, task_id: str, worker_id: str,
+        lease_epoch: int, expected_version: int,
         checkpoint: dict, idempotency_key: str,
         progress_completed: int = 0, progress_total: int = 0,
         artifact_sha256: str | None = None,
@@ -146,7 +147,11 @@ class DurableTaskStore:
             len(artifact_sha256) != 64 or any(c not in "0123456789abcdef" for c in artifact_sha256)
         ):
             raise ValueError("artifact_sha256 must be lowercase SHA-256 hex")
+        from .worker_leases import DurableTaskLeaseStore
         with self.conn.transaction():
+            DurableTaskLeaseStore(self.conn).assert_current(
+                tenant_id=tenant_id,task_id=task_id,worker_id=worker_id,
+                lease_epoch=lease_epoch,lock=True)
             task=self.conn.execute(
                 """SELECT checkpoint_version,status FROM memory_durable_tasks
                    WHERE tenant_id=%s AND task_id=%s::uuid FOR UPDATE""",

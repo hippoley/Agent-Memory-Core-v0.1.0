@@ -408,18 +408,24 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 # active or superseded claims.
                 own_scope_read = page2.evaluate("""async () => {
                   const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
-                  const [activeResponse, historyResponse] = await Promise.all([
+                  const [activeResponse, historyResponse, allResponse] = await Promise.all([
                     fetch('/v1/memories?subject_id=oidc-e2e-user&predicate=preferred_language', {
                       credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
                     }),
                     fetch('/v1/memories?subject_id=oidc-e2e-user&predicate=preferred_language&include_superseded=true', {
                       credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                    }),
+                    fetch('/v1/memories?limit=500&include_superseded=true', {
+                      credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
                     })
                   ]);
-                  return {active:await activeResponse.json(),history:await historyResponse.json()};
+                  return {active:await activeResponse.json(),history:await historyResponse.json(),
+                          all:await allResponse.json()};
                 }""")
                 assert own_scope_read["active"]["items"] == [], own_scope_read
                 assert own_scope_read["history"]["items"] == [], own_scope_read
+                assert not any(item.get("subject_id") in {"oidc-e2e-user", "observatory-ui-user"}
+                               for item in own_scope_read["all"]["items"]), own_scope_read
 
                 # Directly naming the first user's tenant must not authenticate
                 # the second user's otherwise-valid browser Session.

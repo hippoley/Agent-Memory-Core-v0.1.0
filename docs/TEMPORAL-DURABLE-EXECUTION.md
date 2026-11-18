@@ -132,3 +132,40 @@ This proves process-level Activity retry and replacement-worker recovery. It
 does not yet prove arbitrary business checkpoint resume inside an Activity:
 the demo Activity is deliberately restartable and the workflow's idempotent
 side-effect requirements still apply to production Activities.
+
+
+## Durable business tasks and checkpoints
+
+Temporal History is not the business task record. Migration
+`006_durable_tasks.sql` adds a tenant-scoped PostgreSQL task aggregate,
+versioned checkpoints, and idempotent effect intents.
+
+- `memory_durable_tasks` is the canonical lifecycle/progress record.
+- `memory_task_checkpoints` stores immutable checkpoint versions and binds
+  each idempotency key to checkpoint content, progress, artifact digest, and
+  optional effect request fingerprint.
+- `memory_task_effects` records an idempotent effect intent.
+- Checkpoint, effect intent, and Outbox events commit in one PostgreSQL
+  transaction. A failed transaction leaves none of them visible.
+- A stale expected version returns a conflict; replaying the same key and
+  exact payload returns the original version; reusing a key with changed
+  payload is rejected.
+
+Public REST surface: `POST/GET /v1/tasks`,
+`GET /v1/tasks/{task_id}`,
+`POST /v1/tasks/{task_id}/checkpoints`, and
+`POST /v1/tasks/{task_id}/status`. The Python SDK exposes matching task
+methods. All reads and writes derive tenant scope from authenticated request
+context, never from a tenant field in the body.
+
+**Important execution boundary:** recording an effect intent does not claim
+that an external provider side effect has completed. The Outbox consumer must
+use `effect_key` as a destination idempotency key, reconcile ambiguous
+provider outcomes, and only then record a committed result. Exactly-once
+execution across an arbitrary external API is not promised.
+
+The first acceptance scenario is batch memory organization: persist the
+cursor/checkpoint after each bounded batch, commit any canonical memory
+mutation and its outbox intent atomically, then resume from the last committed
+checkpoint after a Worker restart. Large intermediate artifacts belong in
+tenant-owned Object Storage; PostgreSQL stores their SHA-256 digest.

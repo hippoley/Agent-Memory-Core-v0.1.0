@@ -552,6 +552,30 @@ STORIES: dict[tuple[str, str], Story] = {
                "随后用 GET 同一路径确认最终状态。"),
         example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/cancel",
     ),
+    ("GET", "/v1/workflows/{workflow_id}/progress"): Story(
+        persona="任务发起者",
+        goal="读取持久化的工作阶段、已完成步骤和进度百分比",
+        value="服务重启后仍能从工作流历史还原任务进度，而不是依赖浏览器内存",
+        steps=("工作流 id 必须带本租户前缀，否则 404。",
+               "当前 VerifyMemoryWorkflow 暴露阶段和两步完成计数；这不是任意 Activity 的字节级检查点。"),
+        example=CURL + " $API/v1/workflows/t:memory-verify-<uuid>/progress",
+    ),
+    ("POST", "/v1/workflows/{workflow_id}/pause"): Story(
+        persona="任务发起者",
+        goal="请求工作流在下一个安全阶段边界暂停",
+        value="维护人员可以暂缓后续步骤而不丢失已经完成的工作",
+        steps=("暂停通过 Temporal Signal 持久化。",
+               "正在执行的 Activity 不会被强制中断；暂停在下一个阶段边界生效。"),
+        example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/pause",
+    ),
+    ("POST", "/v1/workflows/{workflow_id}/resume"): Story(
+        persona="任务发起者",
+        goal="继续执行此前暂停的工作流",
+        value="从 Temporal 已记录的阶段继续，而不是创建一条新的任务",
+        steps=("工作流 id 必须带本租户前缀，否则 404。",
+               "恢复通过 Temporal Signal 发送；重复请求不会创建新的 Workflow ID。"),
+        example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/resume",
+    ),
 }
 
 

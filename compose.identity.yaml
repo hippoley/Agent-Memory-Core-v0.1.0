@@ -1,0 +1,22 @@
+# Local-only identity overlay. Use with compose.yaml, compose.app.yaml,
+# and compose.keycloak.yaml through scripts/launch_local.py --identity.
+services:
+  memory-api:
+    depends_on:
+      memory-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      # Local development only: control plane shares the isolated local DB.
+      # Production must use the dedicated memory_identity_service LOGIN.
+      MEMORY_IDENTITY_DSN: postgresql://memory:local-dev-only@memory-db:5432/memory
+      MEMORY_LOCAL_IDENTITY_MIGRATE: "1"
+      MEMORY_OIDC_ISSUER: http://keycloak.localhost:8081/realms/agent-memory
+      MEMORY_OIDC_CLIENT_ID: agent-memory-local
+      MEMORY_OIDC_CLIENT_SECRET: local-only-change-me
+      MEMORY_OIDC_REDIRECT_URI: http://127.0.0.1:8765/v1/auth/oidc/callback
+      MEMORY_OIDC_STATE_SECRET: local-development-state-secret-change-before-deploy-2026
+      MEMORY_OIDC_ALLOW_SIGNUP: "1"
+      MEMORY_OIDC_ALLOW_INSECURE_HTTP: "1"
+      MEMORY_COOKIE_SECURE: "0"

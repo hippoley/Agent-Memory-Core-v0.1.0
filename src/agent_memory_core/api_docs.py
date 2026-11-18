@@ -135,6 +135,15 @@ CURL = 'curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/js
 
 STORIES: dict[tuple[str, str], Story] = {
     # --------------------------------------------------------------- Identity
+    ("GET", "/v1/identity/tenants"): Story(
+        persona="已登录开发者",
+        goal="列出当前 Session 能访问的全部租户及角色",
+        value="登录后可以选择工作区，不必把租户 ID 写死在客户端配置里",
+        steps=("只返回当前有效 Session 的 active Membership。",
+               "已撤销、暂停的 Membership 和租户不会出现在列表中。",
+               "API Credential 只返回它绑定的单个租户。"),
+        example='curl -H "Authorization: Bearer $SESSION" $API/v1/identity/tenants',
+    ),
     ("GET", "/v1/identity/me"): Story(
         persona="已登录开发者",
         goal="读取当前请求实际生效的 Principal、租户和角色",

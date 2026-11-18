@@ -109,6 +109,14 @@ python scripts/smoke_local.py
 
 A successful run ends with `LOCAL_MEMORY_RUNTIME_ACCEPTED`. It first authenticates the PostgreSQL readiness probe, then exercises the object-store upload/download round-trip, binds the evidence digest to a claim, revises that claim, and verifies current recall, retained history, search, provenance and events. It talks only to the local HTTP API through the public SDK; it does not connect to PostgreSQL directly. It leaves uniquely named demo records in the local database so they can be inspected in Observatory.
 
+For durable local Temporal execution (separate server + Worker, Workflow History retained in a named Docker volume across container replacement), use the extended profile:
+
+```bash
+python scripts/launch_local.py up --profile extended
+```
+
+See [Temporal Durable Execution and Recovery](docs/TEMPORAL-DURABLE-EXECUTION.md) for restart, backup, restore boundaries and the exact distinction between Workflow replay and resuming an interrupted Activity.
+
 Then connect to the local API using the development key from `.env.local`:
 
 ```python

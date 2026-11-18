@@ -1,0 +1,50 @@
+name: Product E2E — Identity to Memory Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  product-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install product test dependencies
+        run: python -m pip install -e '.[dev,postgres,temporal]'
+
+      - name: Start the real product stack
+        run: |
+          python scripts/launch_local.py up --profile extended --identity
+          sleep 8
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run the complete browser product lifecycle
+        env:
+          MEMORY_KEYCLOAK_E2E: "1"
+          MEMORY_E2E_BASE_URL: "http://127.0.0.1:8765"
+          MEMORY_KEYCLOAK_BASE_URL: "http://keycloak.localhost:8081"
+          KEYCLOAK_ADMIN: "admin"
+          KEYCLOAK_ADMIN_PASSWORD: "local-keycloak-admin-change-me"
+        run: python -m pytest -q tests/test_oidc_keycloak_browser.py
+
+      - name: Run queued-work revocation lifecycle
+        env:
+          MEMORY_TEST_DSN: "postgresql://memory:local-dev-only@127.0.0.1:55432/memory"
+        run: python -m pytest -q tests/test_temporal_identity_e2e.py
+
+      - name: Capture product stack logs
+        if: always()
+        run: docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml -f compose.worker.yaml -f compose.temporal.yaml -f compose.keycloak.yaml -f compose.identity.yaml logs --tail=200
+
+      - name: Tear down product stack
+        if: always()
+        run: python scripts/launch_local.py down

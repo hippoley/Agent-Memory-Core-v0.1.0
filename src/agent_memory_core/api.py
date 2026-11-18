@@ -407,8 +407,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         scopes = identity.get("scopes") or []
         if identity.get("auth_type") != "api_credential":
             raise HTTPException(status_code=403, detail="Dedicated task worker credential required")
-        if "tasks:execute" not in scopes and "memory:*" not in scopes:
-            raise HTTPException(status_code=403, detail="tasks:execute scope required")
+        if "tasks:execute" not in scopes:
+            raise HTTPException(status_code=403, detail="Dedicated tasks:execute scope required")
         return t
 
     @app.get("/v1/auth/oidc/login", tags=["Identity"], summary="Start OIDC browser login")

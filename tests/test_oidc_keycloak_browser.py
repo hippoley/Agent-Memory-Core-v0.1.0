@@ -263,6 +263,20 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             assert len(revision_state["history"]["items"]) == 2, revision_state
             assert {item["value"]["language"] for item in revision_state["history"]["items"]} == {"English","Chinese"}
 
+            # Product E2E mode extends the same browser lifecycle into the real
+            # Temporal worker. The regular Keycloak job intentionally stays
+            # focused on identity + memory and does not require Temporal.
+            if os.getenv("MEMORY_TEMPORAL_E2E") == "1":
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function("!document.querySelector('#writePanel').hidden")
+                page.wait_for_function("""id => Array.from(document.querySelector('#claimPicker').options)
+                    .some(option => option.value === id)""", revision_two["body"]["id"])
+                page.locator("#claimPicker").select_option(revision_two["body"]["id"])
+                page.locator("#verifySelected").click()
+                expect(page.locator("#workflowNote")).to_contain_text(
+                    "Temporal verification: COMPLETED.", timeout=30000
+                )
+
             forgotten = page.evaluate("""async (memoryId) => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));

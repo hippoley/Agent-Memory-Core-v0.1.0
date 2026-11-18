@@ -158,3 +158,38 @@ API, checks cross-tenant read and workspace-switch denial, verifies session
 persistence after reload, and confirms logout revokes the Session. The separate
 [Observatory Browser Acceptance run](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515160)
 also passed Chromium and Keycloak jobs on the same candidate SHA.
+
+## Standalone Projection and Webhook Worker tenant binding
+
+Production standalone workers are **single-tenant** processes until a separate
+tenant-aware credentials router has been reviewed. Run a distinct worker
+process and database LOGIN for each tenant, where the operator-installed
+`memory_rls_principals` maps that LOGIN to exactly one tenant.
+
+```bash
+export MEMORY_DSN="$TENANT_BOUND_DATABASE_DSN"
+export MEMORY_WORKER_TENANT="the-mapped-tenant-id"
+export MEMORY_WORKER_REQUIRE_RLS=1
+python -m agent_memory_core.projection_worker
+# Or, with webhook credentials and an outbound allowlist configured:
+python -m agent_memory_core.webhook_worker
+```
+
+The worker verifies `session_user` against the PostgreSQL RLS registry before
+it consumes any tasks. An absent registry, privileged database role, wrong
+tenant or missing tenant selection in strict mode stops the process instead
+of falling back to application filtering. The Webhook Worker consumes only
+that tenant's events and does not attempt administrator migrations as a
+restricted tenant login. Run schema migrations out of band as an operator.
+
+Projection deliveries are still independently tracked per channel. **AGE graph
+projection is deliberately not consumed by the tenant-bound worker** because
+the RLS+AGE security boundary is not independently accepted. Graph deliveries
+remain pending rather than being marked successful. Do not enable the graph
+channel on a shared-tenant privileged worker as a workaround.
+
+The legacy no-scope worker mode remains for disposable local development and
+backward compatibility; it is **not** approval for public multi-tenant service.
+The `MEMORY_WORKER_REQUIRE_RLS=1` mode and the existing
+`MEMORY_TEMPORAL_REQUIRE_RLS=1` mode are separate operational controls.
+Both must be enabled for their corresponding production workers.

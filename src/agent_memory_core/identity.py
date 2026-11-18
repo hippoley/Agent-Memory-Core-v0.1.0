@@ -44,14 +44,13 @@ class IdentityStore:
         identity key; email is profile metadata and is never used for account
         linking.
         """
+        issuer_host = urlparse(issuer).hostname if isinstance(issuer, str) else None
         local_http_issuer = (
             isinstance(issuer, str) and issuer.startswith("http://")
             and os.getenv("MEMORY_OIDC_ALLOW_INSECURE_HTTP", "0") == "1"
-            and urlparse(issuer).hostname is not None
-            and (
-                __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname in {"localhost", "127.0.0.1", "::1"}
-                or __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname.endswith(".localhost")
-            )
+            and issuer_host is not None
+            and (issuer_host in {"localhost", "127.0.0.1", "::1"}
+                 or issuer_host.endswith(".localhost"))
         )
         if not isinstance(issuer, str) or (not issuer.startswith("https://") and not local_http_issuer):
             raise ValueError("OIDC issuer must use HTTPS except explicit localhost development")

@@ -141,3 +141,58 @@ def test_oidc_first_login_bootstraps_owner_workspace_atomically_and_reuses_ident
                 issuer=issuer, subject="unknown-subject", allow_signup=False)
     finally:
         store.close()
+
+
+def test_queued_execution_is_denied_after_session_or_membership_revocation():
+    dsn = os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("MEMORY_TEST_DSN required")
+    from agent_memory_core.identity import IdentityStore
+
+    store = IdentityStore(dsn)
+    try:
+        suffix = uuid4().hex
+        principal = store.create_principal(display_name="Queued Worker User")
+        tenant = "tenant-queued-" + suffix
+        store.create_tenant(
+            tenant_id=tenant, display_name="Queued Tenant",
+            owner_principal_id=principal)
+        session = store.issue_session(principal_id=principal)
+        membership = store.authenticate_session(
+            token=session["token"], tenant_id=tenant)
+        assert membership["membership_version"] == 1
+        assert store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session["session_id"],
+            membership_version=membership["membership_version"])
+
+        # Already queued work must stop when the session is revoked.
+        assert store.revoke_session(
+            session_id=session["session_id"], principal_id=principal)
+        assert not store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session["session_id"],
+            membership_version=membership["membership_version"])
+
+        session2 = store.issue_session(principal_id=principal)
+        membership2 = store.authenticate_session(
+            token=session2["token"], tenant_id=tenant)
+        assert store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session2["session_id"],
+            membership_version=membership2["membership_version"])
+
+        # Version changes invalidate a task carrying the old membership version.
+        new_version = store.set_membership_role(
+            tenant_id=tenant, principal_id=principal, role="admin")
+        assert new_version == membership2["membership_version"] + 1
+        assert not store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session2["session_id"],
+            membership_version=membership2["membership_version"])
+        assert store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session2["session_id"],
+            membership_version=new_version)
+    finally:
+        store.close()

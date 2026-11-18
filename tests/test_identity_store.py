@@ -37,7 +37,6 @@ def test_identity_store_session_membership_and_credential_lifecycle():
             tenant_id="tenant-a-" + suffix, principal_id=principal_b, role="reader")
 
         session = store.issue_session(principal_id=principal_a)
-        assert session["token"].startswith("")
         assert len(session["token"]) >= 40
         assert store.authenticate_session(
             token=session["token"], tenant_id="tenant-a-" + suffix)["role"] == "owner"

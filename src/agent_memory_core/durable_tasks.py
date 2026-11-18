@@ -250,4 +250,14 @@ class DurableTaskStore:
                 (status,_canonical(result) if result is not None else None,
                  _canonical(error) if error is not None else None,terminal,tenant_id,task_id),
             ).fetchone()
+            if row is not None:
+                self.conn.execute(
+                    """INSERT INTO memory_outbox
+                       (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                       VALUES (%s,%s,'task',%s,'memory.task.status.changed',%s::jsonb)""",
+                    (uuid4(),tenant_id,task_id,_canonical({
+                        "task_id":task_id,"status":status,
+                        "terminal":terminal,
+                    })),
+                )
             return row is not None

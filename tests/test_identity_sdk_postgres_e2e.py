@@ -64,10 +64,14 @@ def test_external_sdk_credential_full_memory_lifecycle_against_real_postgres():
     issued=issue.json()
     assert issued["tenant_id"]==tenant and issued["secret"].startswith("amc_")
 
+    # Use a separate HTTP client with no session cookies. Otherwise the
+    # authentication middleware would prioritize the browser's session over
+    # the SDK Bearer credential, silently invalidating this acceptance test.
+    external=TestClient(app)
     # The network adapter forwards genuine HTTP requests into the actual
     # ASGI service. No in-memory fake IdentityStore or fake Postgres is used.
     def transport(request):
-        response=browser.request(
+        response=external.request(
             request.method,str(request.url),
             headers=dict(request.headers),
             content=request.content if request.content else None,

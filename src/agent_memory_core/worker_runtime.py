@@ -7,7 +7,10 @@ handlers must use durable effect keys and provider-side idempotency/reconcile.
 """
 from __future__ import annotations
 
+import importlib
 import logging
+import os
+import signal
 import threading
 import time
 from typing import Callable
@@ -168,3 +171,46 @@ class DurableTaskWorker:
             except Exception:
                 log.exception("worker loop iteration failed")
                 stop.wait(poll_interval)
+
+
+def main() -> None:
+    """Run a standalone worker process configured entirely by environment."""
+    from .postgres import PostgresMemory
+    from .worker_identity import assert_worker_tenant, configured_worker_tenant
+
+    dsn=os.getenv("MEMORY_DSN")
+    tenant_id=configured_worker_tenant()
+    handler_module=os.getenv("MEMORY_WORKER_HANDLER_MODULE")
+    if not dsn or not tenant_id or not handler_module:
+        raise SystemExit(
+            "MEMORY_DSN, MEMORY_WORKER_TENANT and MEMORY_WORKER_HANDLER_MODULE are required")
+    module=importlib.import_module(handler_module)
+    handlers=getattr(module,"HANDLERS",None)
+    if not isinstance(handlers,dict) or not handlers:
+        raise SystemExit("Worker handler module must export a non-empty HANDLERS dict")
+
+    def connect():
+        return PostgresMemory(dsn)
+
+    probe=connect()
+    try:
+        assert_worker_tenant(probe,tenant_id)
+    finally:
+        probe.close()
+
+    worker=DurableTaskWorker(
+        connection_factory=connect,tenant_id=tenant_id,handlers=handlers,
+        worker_id=os.getenv("MEMORY_WORKER_ID") or None,
+        lease_seconds=int(os.getenv("MEMORY_WORKER_LEASE_SECONDS","30")),
+    )
+    stop=threading.Event()
+    signal.signal(signal.SIGTERM,lambda *_:stop.set())
+    signal.signal(signal.SIGINT,lambda *_:stop.set())
+    worker.run_forever(
+        poll_interval=float(os.getenv("MEMORY_WORKER_POLL_SECONDS","1")),
+        stop_event=stop,
+    )
+
+
+if __name__ == "__main__":
+    main()

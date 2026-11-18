@@ -95,6 +95,8 @@ TAG_METADATA = [
      "description": "持久化事件日志：游标轮询、SSE 实时流、签名 webhook 与死信重放。"},
     {"name": "Workflows",
      "description": "可选的 Temporal 工作流生命周期；未配置时统一返回 503。"},
+    {"name": "Durable Tasks",
+     "description": "PostgreSQL 规范任务状态、版本化检查点、幂等副作用意图与事务性 Outbox。"},
 ]
 
 
@@ -575,6 +577,49 @@ STORIES: dict[tuple[str, str], Story] = {
         steps=("工作流 id 必须带本租户前缀，否则 404。",
                "恢复通过 Temporal Signal 发送；重复请求不会创建新的 Workflow ID。"),
         example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/resume",
+    ),
+    # ----------------------------------------------------------- Durable Tasks
+    ("POST", "/v1/tasks"): Story(
+        persona="第三方 Agent 开发者",
+        goal="创建一条有租户归属、输入快照和幂等键的长期业务任务",
+        value="HTTP 请求结束后任务仍有独立身份，可以被查询、恢复和审计",
+        steps=("tenant_id 从当前认证上下文取得，不接受请求体指定租户。",
+               "相同幂等键和相同请求返回原任务；相同键不同请求返回 409。",
+               "任务创建与 memory.task.created Outbox 事件在同一事务提交。"),
+        example=CURL + " -d '{\"task_type\":\"memory.batch.organize\",\"input\":{\"batch_size\":100},\"idempotency_key\":\"organize-001\"}' $API/v1/tasks",
+    ),
+    ("GET", "/v1/tasks"): Story(
+        persona="任务控制台",
+        goal="分页列出当前工作区的长期任务",
+        value="不访问数据库也能检查任务状态、进度和执行历史入口",
+        steps=("结果只包含当前认证租户的任务。",
+               "limit 为 1–100，offset 从 0 开始。"),
+        example=CURL + " '$API/v1/tasks?limit=50&offset=0'",
+    ),
+    ("GET", "/v1/tasks/{task_id}"): Story(
+        persona="任务发起者",
+        goal="读取任务的规范状态和最新业务检查点",
+        value="Worker 更换或 Temporal 重放后仍可从 PostgreSQL 还原业务游标",
+        steps=("task_id 必须是 UUID；跨租户资源统一返回 404。",
+               "响应包含 checkpoint_version、progress 与最新 checkpoint。"),
+        example=CURL + " $API/v1/tasks/<task-uuid>",
+    ),
+    ("POST", "/v1/tasks/{task_id}/checkpoints"): Story(
+        persona="长期 Agent Worker",
+        goal="以预期版本提交检查点、进度和可选副作用意图",
+        value="检查点与 Outbox 事件原子提交，旧 Worker 不能覆盖新 Worker 的进度",
+        steps=("expected_version 必须等于当前版本，否则 409。",
+               "相同幂等键与完全相同内容重放返回原版本；内容不同则 409。",
+               "effect_key 只记录副作用意图，不代表外部系统已经执行成功。"),
+        example=CURL + " -d '{\"expected_version\":0,\"checkpoint\":{\"last_completed\":100},\"idempotency_key\":\"cp-001\",\"progress_completed\":100,\"progress_total\":1000}' $API/v1/tasks/<task-uuid>/checkpoints",
+    ),
+    ("POST", "/v1/tasks/{task_id}/status"): Story(
+        persona="任务执行器",
+        goal="更新任务生命周期并留下可重放的状态变更事件",
+        value="暂停、运行、完成和失败等状态能被独立观察与审计",
+        steps=("仅能修改当前租户的任务；终态任务不可再次变更。",
+               "状态更新与 memory.task.status.changed Outbox 事件在同一事务提交。"),
+        example=CURL + " -d '{\"status\":\"completed\",\"result\":{\"organized\":1000}}' $API/v1/tasks/<task-uuid>/status",
     ),
 }
 

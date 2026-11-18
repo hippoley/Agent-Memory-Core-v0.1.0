@@ -45,9 +45,15 @@ def main() -> int:
     if not api_key or not tenant_id:
         raise SystemExit(".env.local must contain MEMORY_API_KEY and MEMORY_TENANT_ID")
 
-    # Fail fast with a useful message before attempting SDK operations.
+    # /v1/ready is intentionally authenticated: readiness must be checked
+    # with the same credential that will perform the product lifecycle.
     try:
-        with urllib.request.urlopen(base_url.rstrip("/") + "/v1/ready", timeout=5) as response:
+        readiness_request = urllib.request.Request(
+            base_url.rstrip("/") + "/v1/ready",
+            headers={"Authorization": f"Bearer {api_key}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(readiness_request, timeout=5) as response:
             readiness = json.loads(response.read().decode("utf-8"))
     except Exception as exc:
         raise SystemExit(

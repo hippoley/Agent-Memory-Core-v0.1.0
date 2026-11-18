@@ -107,7 +107,7 @@ This is an actual API/SDK smoke journey, not a CI status check. It creates a uni
 python scripts/smoke_local.py
 ```
 
-A successful run ends with `LOCAL_MEMORY_RUNTIME_ACCEPTED`. It talks only to the local HTTP API through the public SDK; it does not connect to PostgreSQL directly. It leaves the uniquely named demo records in the local database so they can be inspected in Observatory.
+A successful run ends with `LOCAL_MEMORY_RUNTIME_ACCEPTED`. It first authenticates the PostgreSQL readiness probe, then exercises the object-store upload/download round-trip, binds the evidence digest to a claim, revises that claim, and verifies current recall, retained history, search, provenance and events. It talks only to the local HTTP API through the public SDK; it does not connect to PostgreSQL directly. It leaves uniquely named demo records in the local database so they can be inspected in Observatory.
 
 Then connect to the local API using the development key from `.env.local`:
 

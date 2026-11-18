@@ -501,6 +501,8 @@ memory operations, SSE events, webhooks, objects and search. All
 HTTP endpoints are documented by the runtime's `/openapi.json` and
 `/docs/swagger`.
 
+A complete external consumer project, installable independently of the server source tree, is maintained at [`examples/third_party_memory_agent`](../examples/third_party_memory_agent/README.md). Its CLI uses only `agent_memory_core.sdk.MemoryClient`; the Product E2E workflow builds the distributable wheel, provisions a short-lived credential through the real OIDC browser Session, installs the wheel into a fresh virtual environment, and runs that external project against the live API stack. This is the acceptance route for the “no internal imports / no direct database” requirement.
+
 **Important release boundary:** this contract and the PostgreSQL-backed
 SDK round-trip are under PR #51 acceptance. It is not a public hosted
 multi-tenant SaaS yet. Temporal verification requires its Worker and

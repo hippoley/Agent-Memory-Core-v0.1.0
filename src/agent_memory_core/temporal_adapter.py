@@ -29,12 +29,35 @@ try:
 except ImportError as exc:
     raise RuntimeError("Install agent-memory-core[temporal]") from exc
 
+def _assert_live_execution_authorization(request: dict) -> None:
+    """Reject queued work whose principal/session/membership is no longer valid."""
+    principal_id=request.get("principal_id")
+    if not principal_id:
+        if os.getenv("MEMORY_TEMPORAL_REQUIRE_RLS", "0") == "1":
+            raise PermissionError("Identity-bound Temporal execution requires principal_id")
+        return
+    identity_dsn=os.getenv("MEMORY_IDENTITY_DSN") or _database_dsn()
+    from .identity import IdentityStore
+    store=IdentityStore(identity_dsn)
+    try:
+        allowed=store.authorize_background_execution(
+            principal_id=principal_id,
+            tenant_id=request["tenant_id"],
+            session_id=request.get("session_id"),
+            membership_version=request.get("membership_version"),
+        )
+    finally:
+        store.close()
+    if not allowed:
+        raise PermissionError("Queued work is no longer authorized")
+
 @activity.defn(name="verify_memory_record")
 def verify_memory_record(request: dict) -> dict:
     from .postgres import PostgresMemory
     db=PostgresMemory(_database_dsn())
     try:
         _assert_temporal_tenant(db, request["tenant_id"])
+        _assert_live_execution_authorization(request)
         row=db.conn.execute(
             """SELECT id::text,subject_id,predicate,source_id,superseded_at
                FROM memory_claims WHERE tenant_id=%s AND id=%s::uuid""",

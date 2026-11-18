@@ -49,10 +49,12 @@ class MemoryClient:
     def __exit__(self, *args):
         self.close()
 
-    def _request(self, method: str, path: str, *, params=None, json=None, headers=None) -> Any:
+    def _request(self, method: str, path: str, *, params=None, json=None,
+                 headers=None, content=None, raw: bool = False) -> Any:
         import httpx
         try:
-            response = self._http.request(method,path,params=params,json=json,headers=headers)
+            response = self._http.request(method,path,params=params,json=json,
+                                          headers=headers,content=content)
         except httpx.TimeoutException as exc:
             raise MemoryAPIError(0,"TIMEOUT","Memory service request timed out") from exc
         except httpx.RequestError as exc:
@@ -69,6 +71,8 @@ class MemoryClient:
                 429:"RATE_LIMITED",503:"UNAVAILABLE",
             }.get(response.status_code,"HTTP_ERROR")
             raise MemoryAPIError(response.status_code,code,str(detail))
+        if raw:
+            return response.content
         if not response.content:
             return None
         try:
@@ -137,6 +141,21 @@ class MemoryClient:
                                      "anchor_entity":anchor_entity}.items()
                      if v is not None})
         return self._request("POST","/v1/search",json=body)
+
+    def upload_object(self, data: bytes, *,
+                      content_type: str = "application/octet-stream"):
+        """Store tenant-owned binary evidence (maximum 10 MiB)."""
+        if not isinstance(data, bytes):
+            raise TypeError("data must be bytes")
+        return self._request("PUT","/v1/objects",content=data,
+                             headers={"Content-Type":content_type})
+
+    def download_object(self, sha256: str) -> bytes:
+        """Read a tenant-owned SHA-256 evidence object as raw bytes."""
+        if not isinstance(sha256,str) or len(sha256)!=64 or any(
+                c not in "0123456789abcdefABCDEF" for c in sha256):
+            raise ValueError("sha256 must be a 64-character hex digest")
+        return self._request("GET","/v1/objects/"+sha256.lower(),raw=True)
 
     def create_api_credential(self, *, name: str, scopes: list[str],
                               expires_in_days: int = 90):

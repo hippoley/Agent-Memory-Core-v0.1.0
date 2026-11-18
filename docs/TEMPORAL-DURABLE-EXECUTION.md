@@ -116,3 +116,19 @@ two-step workflow.
 | Host reboot | Expected to retain data if Docker volume survives; verify on the target host |
 | Docker volume deletion / host disk loss | Not protected without external backup |
 | Production HA / multi-node Temporal | Not provided by this local profile |
+
+
+## Worker process crash acceptance
+
+The dedicated Temporal CI workflow also runs
+`tests/test_temporal_worker_crash.py`. It starts a real Worker in a separate
+OS process, starts a long-running heartbeat-enabled Activity, sends SIGKILL to
+that process, then starts a replacement Worker on the same task queue. The
+acceptance requires Temporal to time out the lost Activity attempt, dispatch a
+retry to the replacement process, and complete the original Workflow ID with
+attempt 2.
+
+This proves process-level Activity retry and replacement-worker recovery. It
+does not yet prove arbitrary business checkpoint resume inside an Activity:
+the demo Activity is deliberately restartable and the workflow's idempotent
+side-effect requirements still apply to production Activities.

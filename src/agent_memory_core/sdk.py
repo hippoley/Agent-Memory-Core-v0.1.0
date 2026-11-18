@@ -21,17 +21,22 @@ class MemoryAPIError(Exception):
 
 
 class MemoryClient:
-    def __init__(self, base_url: str, api_key: str, *, timeout: float = 15.0,
-                 transport=None):
+    def __init__(self, base_url: str, api_key: str, *, tenant_id: str | None = None,
+                 timeout: float = 15.0, transport=None):
         if not base_url or not api_key or timeout <= 0:
             raise ValueError("Base URL, API key, and positive timeout required")
         try:
             import httpx
         except ImportError as exc:
             raise RuntimeError("Install agent-memory-core[api] to use MemoryClient") from exc
+        if tenant_id is not None and (not isinstance(tenant_id, str) or not tenant_id.strip()):
+            raise ValueError("tenant_id must be a non-empty string")
+        headers={"Authorization":f"Bearer {api_key}"}
+        if tenant_id is not None:
+            headers["X-Memory-Tenant"]=tenant_id
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"),
-            headers={"Authorization":f"Bearer {api_key}"},
+            headers=headers,
             timeout=timeout,transport=transport,
         )
 
@@ -132,6 +137,39 @@ class MemoryClient:
                                      "anchor_entity":anchor_entity}.items()
                      if v is not None})
         return self._request("POST","/v1/search",json=body)
+
+    def whoami(self):
+        """Return current principal, tenant and role when identity is enabled."""
+        return self._request("GET", "/v1/identity/me")
+
+    def workspaces(self):
+        """List workspaces available to the current identity credential."""
+        return self._request("GET", "/v1/identity/tenants")
+
+    def list_memories(self, *, limit: int = 100,
+                      include_superseded: bool = False,
+                      subject_id: str | None = None,
+                      predicate: str | None = None):
+        """Browse canonical claims and optionally retain superseded history."""
+        params={"limit":limit,"include_superseded":include_superseded}
+        if subject_id is not None:
+            params["subject_id"]=subject_id
+        if predicate is not None:
+            params["predicate"]=predicate
+        return self._request("GET", "/v1/memories", params=params)
+
+    def verify_memory_async(self, memory_id: str, *, workflow_id: str | None = None):
+        """Start a durable Temporal verification on the configured task queue."""
+        body={"memory_id":self._segment(memory_id)}
+        if workflow_id is not None:
+            body["workflow_id"]=workflow_id
+        return self._request("POST", "/v1/workflows/memory-verifications", json=body)
+
+    def workflow_status(self, workflow_id: str):
+        return self._request("GET",f"/v1/workflows/{self._segment(workflow_id)}")
+
+    def cancel_workflow(self, workflow_id: str):
+        return self._request("POST",f"/v1/workflows/{self._segment(workflow_id)}/cancel")
 
     def events(self, *, after: str | None = None, limit: int = 100):
         params={"limit":limit}

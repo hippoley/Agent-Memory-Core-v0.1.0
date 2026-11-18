@@ -21,7 +21,7 @@
 | S07 纠正 | 当前仅新事实；known_at=纠正前仍返回旧事实 | `test_user_story_e2e.py` | 真实数据库测试 |
 | S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_webhooks_integration.py`, `test_webhook_api_integration.py`, `test_s08_real_tls_receiver.py`, `test_sdk_contract.py` | 订阅、签名、退避、死信、重放已实现；独立进程 HTTPS 接收端与篡改签名的 401 见 `docs/S08-REAL-TLS-ACCEPTANCE.md`；真实公网接收端、证书轮换与接收端幂等**未验收** |
 | S09 故障恢复 | DB/Worker 故障后任务可重试、DLQ 重放、无静默丢数据 | `test_projection_deliveries.py`, `test_outbox_runtime.py`, `test_outbox_api_integration.py` | 投影与事务 Outbox 有界重试、死信、事务回滚和租户级 API 重放已有真实 PG 测试；真实进程杀死、数据库重启、积压恢复与备份恢复**未完成** |
-| S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py` | API 层已测；DB RLS **未实现** |
+| S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py`, `test_s10_principal_rls.py` | API 层已有测试；`001_principal_bound_rls.sql` 与双 LOGIN PostgreSQL 对抗测试已存在。当前是 opt-in 的 tenant-level DB fence；AGE 在 RLS 模式禁用，Worker/Temporal 身份及生产部署仍未完成独立验收。**不得标记 S10 完整 Done** |
 
 ## Provider 通道实测记录（2026-11-12，A100 单机）
 
@@ -98,3 +98,22 @@ Webhook、中文本地模型质量、DB RLS、备份恢复或 100 Agent 负载�
 - Real PostgreSQL checks live in `tests/test_predicate_cardinality.py`.
 - This domain-policy implementation does not replace the separate 200+ case
   Chinese extraction or retrieval-quality gates.
+
+
+## Identity Foundation — implementation slice 1 (2026-11-18)
+
+- Added `005_identity_foundation.sql` for principals, external OIDC identity references,
+  tenants, memberships, opaque-session hash records, scoped API credential hash records,
+  and identity audit events.
+- Session and API credential tables store only 32-byte hashes, never raw secrets.
+- Membership role/status/version and session revocation are persisted as control-plane
+  state. OIDC validation, session issuance/rotation, membership authorization middleware,
+  credential lifecycle APIs and Observatory integration are **not implemented by this
+  schema migration**.
+- The identity tables are intentionally not granted to `memory_tenant`; application
+  integration must use a separately provisioned control-plane connection and must never
+  expose its DSN to tenant/browser traffic.
+- Real PostgreSQL acceptance: `tests/test_identity_foundation.py`. It requires a
+  disposable privileged `MEMORY_TEST_DSN`; an unrun or skipped test is not a pass.
+- This is a schema foundation only. It does not enable multi-user mode or change the
+  current single-tenant Bearer API behavior.

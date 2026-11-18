@@ -196,7 +196,7 @@ def test_oidc_login_callback_sets_session_csrf_and_workspace_cookies(monkeypatch
         "/v1/auth/oidc/callback?code=authorization-code&state=state-1",
         follow_redirects=False)
     assert callback.status_code == 303
-    assert callback.headers["location"] == "/dashboard/"
+    assert callback.headers["location"] == "/dashboard/observatory.html"
     assert callback.cookies["amc_session"] == "new-session-token"
     assert callback.cookies["amc_tenant"] == "workspace-1"
     assert "amc_csrf" in callback.cookies

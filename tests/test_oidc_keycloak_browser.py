@@ -135,6 +135,17 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
               return {status:response.status,body:await response.json()};
             }""", memory_id)
             assert forgotten["status"] == 200, forgotten
+            active_after_forget = page.evaluate("""async () => {
+              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const response = await fetch('/v1/memories?limit=100', {
+                credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+              });
+              return {status:response.status,body:await response.json()};
+            }""")
+            assert active_after_forget["status"] == 200
+            assert not any(item.get("id") == memory_id for item in active_after_forget["body"]["items"]), (
+                "Forgotten claim remained in active memory listing"
+            )
 
             page.reload(wait_until="domcontentloaded")
             after_reload = page.evaluate("""async () => {

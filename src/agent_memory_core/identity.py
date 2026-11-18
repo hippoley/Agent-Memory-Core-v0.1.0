@@ -320,6 +320,41 @@ class IdentityStore:
                 "principal_type": row[2], "tenant_id": row[3],
                 "role": row[4], "membership_version": int(row[5])}
 
+    def authorize_background_execution(self, *, principal_id: str,
+                                      tenant_id: str, session_id: str | None = None,
+                                      membership_version: int | None = None) -> bool:
+        """Authorize queued work against current control-plane state.
+
+        This check runs immediately before a durable worker performs a side
+        effect. Revoked sessions, memberships, suspended principals/tenants,
+        and membership version changes therefore invalidate queued work.
+        """
+        if not principal_id or not tenant_id:
+            return False
+        sql = """SELECT 1
+                 FROM memory_principals p
+                 JOIN memory_tenant_memberships m
+                   ON m.principal_id=p.principal_id
+                  AND m.tenant_id=%s
+                  AND m.status='active'
+                 JOIN memory_tenants t
+                   ON t.tenant_id=m.tenant_id AND t.status='active'
+                 WHERE p.principal_id=%s AND p.status='active'"""
+        params=[tenant_id, principal_id]
+        if membership_version is not None:
+            sql += " AND m.version=%s"
+            params.append(int(membership_version))
+        if session_id is not None:
+            sql += """ AND EXISTS (
+                         SELECT 1 FROM memory_sessions s
+                         WHERE s.session_id=%s::uuid
+                           AND s.principal_id=p.principal_id
+                           AND s.revoked_at IS NULL
+                           AND s.expires_at>clock_timestamp()
+                       )"""
+            params.append(session_id)
+        return self.conn.execute(sql, params).fetchone() is not None
+
     def revoke_session(self, *, session_id: str, principal_id: str) -> bool:
         row = self.conn.execute(
             """UPDATE memory_sessions SET revoked_at=clock_timestamp()

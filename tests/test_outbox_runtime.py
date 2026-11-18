@@ -206,7 +206,7 @@ OutboxWorker(conn).consume(
         state = db.conn.execute(
             """SELECT processed_at, attempts FROM memory_outbox
                WHERE event_id=%s""",
-            (event_id,),
+            (str(event_id),),
         ).fetchone()
         assert state == (None, 0)
         assert db.conn.execute(

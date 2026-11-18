@@ -203,6 +203,24 @@ class DurableTaskEffectStore:
                          provider_reference=provider_reference,
                          provider_result=provider_result,error=error)
 
+    def list_effects(self, *, tenant_id: str, task_id: str) -> list[dict]:
+        rows=self.conn.execute(
+            """SELECT effect.effect_key,effect.request,effect.request_sha256,
+                      effect.status,effect.attempt_count,effect.execution_worker_id,
+                      effect.execution_lease_epoch,effect.provider_reference,
+                      effect.provider_result,effect.last_error,effect.created_at,
+                      effect.updated_at,effect.resolved_at
+               FROM memory_task_effects AS effect
+               JOIN memory_durable_tasks AS task ON task.task_id=effect.task_id
+               WHERE task.tenant_id=%s AND task.task_id=%s::uuid
+               ORDER BY effect.created_at,effect.effect_key""",
+            (tenant_id,task_id),
+        ).fetchall()
+        keys=("effect_key","request","request_sha256","status","attempt_count",
+              "execution_worker_id","execution_lease_epoch","provider_reference",
+              "provider_result","last_error","created_at","updated_at","resolved_at")
+        return [dict(zip(keys,row)) for row in rows]
+
     def get_effect(self, *, task_id: str, effect_key: str) -> dict | None:
         row=self.conn.execute(
             """SELECT effect_key,request,request_sha256,status,attempt_count,

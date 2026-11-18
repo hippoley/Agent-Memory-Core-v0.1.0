@@ -13,7 +13,7 @@
 [![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
 [![Development status](https://img.shields.io/badge/status-active%20development-orange)](docs/USER-STORY-ACCEPTANCE.md)
 
-[Quickstart](#quickstart) · [Third-party SDK](#connect-an-agent-with-the-python-sdk) · [API & Swagger](#api-and-observability) · [Architecture](#architecture) · [中文导览](docs/START-HERE.zh-CN.md)
+[Quickstart](#quickstart) · [Third-party SDK](#connect-an-agent-with-the-python-sdk) · [API & Swagger](#api-and-observability) · [Architecture](#architecture) · [Observatory](#memory-observatory--see-memory-not-just-messages) · [中文导览](docs/START-HERE.zh-CN.md)
 
 </div>
 
@@ -180,6 +180,27 @@ For Temporal verification, set `MEMORY_RUN_TEMPORAL=1` only when the deployment 
 
 The independent consumer has completed its real API lifecycle in the PR #51 Product E2E environment, including loading the SDK from the clean virtual environment's `site-packages`. The broader Product E2E job also contains a queued-work revocation check; its latest executor fix is awaiting a fresh run. See [PR #51](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/51) for current evidence. This is not a claim that the full release gate or production deployment is complete.
 
+## Memory Observatory — see memory, not just messages
+
+**Memory Observatory** is the visual inspection surface for the memory runtime: browse claims, inspect provenance, filter the records currently loaded, and follow durable events.
+
+- [Open the Observatory source](src/agent_memory_core/resources/dashboard/observatory.html)
+- [Open the interactive Memory Atlas](docs/demo/index.html) — a local, credential-free conceptual walkthrough using illustrative data.
+- [Design system and visual semantics](docs/DESIGN-SYSTEM.md)
+- [Architecture review and trust boundaries](docs/ARCHITECTURE-REVIEW.md)
+
+The Observatory work originated in **PR #30**; the API-first identity and third-party integration work continues in **PR #51**. Local Chromium acceptance passed on 2026-11-18 for the documented browser path. This does not mean a public hosted service exists: **no public hosted deployment is claimed**. The Atlas is explanatory and synthetic; it is not a live tenant dashboard or a screenshot of production data.
+
+To inspect the UI locally, start the stack and open `http://127.0.0.1:8765/dashboard/observatory.html`. For a credential-free public preview, use the committed [Memory Atlas](docs/demo/index.html). For a local authenticated API walkthrough, replace the placeholder below with the key generated in your own ignored `.env.local` file; never paste a real key into README or commit it:
+
+```bash
+export MEMORY_API_KEY='YOUR_LOCAL_API_KEY'
+curl http://127.0.0.1:8765/v1/ready \
+  -H "Authorization: Bearer $MEMORY_API_KEY"
+```
+
+The current visual preview does not yet guarantee complete-tenant visualization, graph-edge truth, or production authorization semantics. See [the architecture review](docs/ARCHITECTURE-REVIEW.md) for the explicit boundaries.
+
 ## API and observability
 
 The REST API is the product boundary. OpenAPI is the interface contract; the Python SDK is a client, not a second implementation of business logic.
@@ -280,7 +301,7 @@ Lite still uses the PostgreSQL database image; it is not SQLite-only or a measur
 - External OIDC provider compatibility, production secret rotation, rate limiting, TLS deployment hardening and independent security review.
 - Cross-domain model extraction/retrieval quality and measured load/latency/recovery targets.
 
-The repository is active development software. It is not yet a hosted public SaaS or a security-reviewed multi-tenant production service. Do not expose the local development stack directly to the Internet or put regulated/production secrets into a demo deployment.
+The repository is active development software. It does not yet guarantee production-grade multi-tenant isolation or operational recovery. It is not yet a hosted public SaaS or a security-reviewed multi-tenant production service. Do not expose the local development stack directly to the Internet or put regulated/production secrets into a demo deployment.
 
 ## Evaluation and engineering evidence
 

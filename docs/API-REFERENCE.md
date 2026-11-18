@@ -452,10 +452,12 @@ required for issuance, and only the issuing Principal may revoke it using
 `DELETE /v1/identity/api-credentials/{credential_id}` with the same Session and
 CSRF protection. An API Credential cannot mint a second API Credential.
 
-**Third-party SDK integration** (no browser or direct database access needed):
+**Third-party SDK integration** (no browser or direct database access needed). The package has not yet been published to PyPI; for PR #51 verification, install the branch build. After publication, switch to the versioned PyPI command:
 
 ```bash
-pip install 'agent-memory-core[api]'
+pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@feat/identity-foundation-schema-20261118'
+# After public release:
+# pip install 'agent-memory-core[api]>=0.1.0'
 export MEMORY_BASE_URL='https://your-memory-host.example'
 export MEMORY_TENANT_ID='<the-workspace-id>'
 export MEMORY_AGENT_TOKEN='<the-once-returned-amc-secret>'

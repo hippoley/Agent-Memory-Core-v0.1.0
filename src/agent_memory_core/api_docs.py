@@ -188,7 +188,7 @@ STORIES: dict[tuple[str, str], Story] = {
         goal="通过受 CSRF 保护的浏览器 Session 创建租户限定的开发者 API 凭据",
         value="第三方 SDK 可以按当前 Workspace 权限调用记忆和异步工作流",
         steps=("必须使用 Owner/Admin Session，API Credential 不能再次签发 API Credential。",
-               "只接受 memory:read、memory:write、memory:*，默认 90 天有效。",
+               "支持 memory:read、memory:write、memory:* 与专用 tasks:execute；Worker 权限必须显式签发。默认 90 天有效。",
                "secret 只在创建响应中返回一次，服务端只保存哈希；使用时携带 X-Memory-Tenant。"),
         example='curl -X POST -b cookies.txt -H "X-Memory-Tenant: $TENANT" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" -d \'{"name":"my-agent","scopes":["memory:read","memory:write"]}\' $API/v1/identity/api-credentials',
     ),

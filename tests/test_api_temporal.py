@@ -63,7 +63,11 @@ def test_temporal_workflow_start_describe_cancel_and_tenant_scope():
     assert workflow_id=="tenant-a:check-001"
     assert body["status"]=="STARTED"
     assert fake.started[0][0]=="VerifyMemoryWorkflow"
-    assert fake.started[0][1]=={"tenant_id":"tenant-a","memory_id":memory_id}
+    assert fake.started[0][1]=={
+        "tenant_id":"tenant-a","memory_id":memory_id,
+        "principal_id":None,"session_id":None,"credential_id":None,
+        "membership_version":None,
+    }
     assert fake.started[0][3]=="agent-memory-core"
 
     described=client.get("/v1/workflows/"+workflow_id,headers=headers)

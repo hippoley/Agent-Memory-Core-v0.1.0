@@ -45,3 +45,12 @@ def test_third_party_consumer_result_has_no_unbound_identifiers():
     root = Path(__file__).resolve().parents[1]
     source = (root / 'examples/third_party_memory_agent/src/third_party_memory_agent/__main__.py').read_text(encoding='utf-8')
     assert 'object_digest' not in source, 'Evidence digest must be defined by an actual upload or omitted.'
+
+
+def test_external_consumer_installs_the_exact_ci_built_wheel():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / '.github/workflows/product-e2e.yaml').read_text(encoding='utf-8')
+    assert 'wheel="$(find /tmp/amc-wheel' in workflow
+    assert 'pip install "${wheel}[api]"' in workflow
+    assert "pip install --find-links /tmp/amc-wheel 'agent-memory-core[api]==0.1.0'" not in workflow
+    assert "(cd /tmp && /tmp/amc-consumer-venv/bin/python -m third_party_memory_agent)" in workflow

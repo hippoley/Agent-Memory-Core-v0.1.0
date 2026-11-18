@@ -38,13 +38,18 @@ Cookie-authenticated mutations require a matching `amc_csrf` cookie and
 `GET /v1/identity/me` returns the authenticated principal context.
 `POST /v1/auth/logout` revokes the current session and clears session cookies.
 
-## Not yet an open registration deployment
+## Current release boundary
 
-This slice does not implement OIDC authorization-code + PKCE, provider discovery,
-JWKS signature verification, login/callback routes, initial-owner bootstrap,
-tenant administration UI, or browser cookie issuance. Do not expose public
-registration until those pieces and the browser end-to-end flow are complete.
+OIDC Authorization Code + PKCE, provider discovery, JWKS verification,
+login/callback routes, first-Owner workspace bootstrap and browser Session
+cookies are implemented on PR #51. The Keycloak local profile and a real
+Chromium acceptance workflow are included.
 
+This is not yet approval for public registration or production SaaS. Real
+external-provider deployment, workspace administration, invitations, full
+resource-level authorization, production data-plane isolation, rate limiting,
+secret rotation, provider logout and independent security review remain
+separate release gates.
 
 ## OIDC browser login (first-provider implementation)
 
@@ -87,3 +92,30 @@ This is a single-provider browser-login slice; provider logout, account linking,
 MFA policy, invitation flow, and external-browser production acceptance remain
 separate delivery work. Do not treat passing unit tests as production deployment
 approval.
+
+
+## Local Keycloak integration
+
+For a reproducible local provider, run:
+
+```bash
+python scripts/launch_local.py up --profile lite --identity
+```
+
+The identity overlay starts Keycloak at `http://127.0.0.1:8081`, configures
+the `agent-memory` realm and `agent-memory-local` client, applies the identity
+schema to the isolated local database, and wires the API to the control plane.
+Open the Observatory at `http://127.0.0.1:8765/dashboard/observatory.html`
+and select **Sign in with organization**.
+
+The local-only profile sets `MEMORY_OIDC_ALLOW_INSECURE_HTTP=1`. HTTP is
+accepted only for loopback and `*.localhost` hosts. The local profile shares
+the development database login for migration and identity access; it is not
+the production privilege model. Never expose this profile to a network.
+
+The real-provider CI acceptance is
+`tests/test_oidc_keycloak_browser.py`, run by
+`.github/workflows/keycloak-oidc-e2e.yml`. It creates an IdP user, completes
+the actual Keycloak login in Chromium, verifies first-Owner provisioning,
+creates and withdraws a memory through the real API, checks session persistence
+after reload, and verifies logout revokes the Session.

@@ -188,9 +188,9 @@ class DurableTaskStore:
                 if previous and previous[0] != effect_hash:
                     raise TaskConflict("Effect key was reused with a different request")
                 self.conn.execute(
-                    """INSERT INTO memory_task_effects(task_id,effect_key,request_sha256)
-                       VALUES (%s::uuid,%s,%s) ON CONFLICT(task_id,effect_key) DO NOTHING""",
-                    (task_id,effect_key,effect_hash),
+                    """INSERT INTO memory_task_effects(task_id,effect_key,request_sha256,request)
+                       VALUES (%s::uuid,%s,%s,%s::jsonb) ON CONFLICT(task_id,effect_key) DO NOTHING""",
+                    (task_id,effect_key,effect_hash,_canonical(effect_request)),
                 )
                 if not previous:
                     self.conn.execute(

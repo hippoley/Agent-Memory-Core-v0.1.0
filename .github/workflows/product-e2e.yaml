@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install product test dependencies
-        run: python -m pip install -e '.[dev,postgres,temporal]'
+        run: python -m pip install -e '.[dev,postgres,temporal,api,oidc]' playwright
 
       - name: Build the distributable SDK wheel
         run: python -m pip wheel --no-deps . --wheel-dir /tmp/amc-wheel

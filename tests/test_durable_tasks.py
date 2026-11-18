@@ -13,6 +13,7 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
         pytest.skip("MEMORY_TEST_DSN required")
     from agent_memory_core.postgres import PostgresMemory
     from agent_memory_core.durable_tasks import DurableTaskStore,TaskConflict
+    from agent_memory_core.worker_leases import DurableTaskLeaseStore
 
     db=PostgresMemory(dsn)
     tenant="durable-task-"+uuid4().hex
@@ -90,8 +91,12 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
             "memory.task.checkpoint.committed":2,
             "memory.task.effect.requested":1,
         }
-        assert tasks.set_status(tenant_id=tenant,task_id=task_id,status="completed",
-                                result={"organized":50})
+        owner=DurableTaskLeaseStore(db.conn).claim(
+            tenant_id=tenant,worker_id="task-store-test-worker",lease_seconds=30)
+        assert owner and owner["task_id"]==task_id
+        assert tasks.set_status(tenant_id=tenant,task_id=task_id,
+            worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],
+            status="completed",result={"organized":50})
         assert db.conn.execute(
             """SELECT count(*) FROM memory_outbox
                WHERE tenant_id=%s AND aggregate_id=%s

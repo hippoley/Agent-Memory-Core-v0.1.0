@@ -182,6 +182,10 @@ def test_queued_execution_is_denied_after_session_or_membership_revocation():
             session_id=session2["session_id"],
             membership_version=membership2["membership_version"])
 
+        # The final Owner must never be demoted. Add an independent Owner
+        # before exercising role downgrade and queued-work invalidation.
+        other_owner = store.create_principal(display_name="Queued Worker Co-Owner")
+        store.add_membership(tenant_id=tenant, principal_id=other_owner, role="owner")
         # Version changes invalidate a task carrying the old membership version.
         new_version = store.set_membership_role(
             tenant_id=tenant, principal_id=principal, role="admin")

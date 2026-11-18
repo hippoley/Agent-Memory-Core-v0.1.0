@@ -42,9 +42,14 @@ class DurableTaskStore:
         })
         with self.conn.transaction():
             if idempotency_key:
+                self.conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s),hashtext(%s))",
+                    (tenant_id,idempotency_key),
+                )
                 existing = self.conn.execute(
                     """SELECT task_id::text,tenant_id,task_type,input,workflow_id,status,
-                              checkpoint_version,progress_completed,progress_total,created_at
+                              checkpoint_version,progress_completed,progress_total,created_at,
+                              created_by_principal_id::text
                        FROM memory_durable_tasks
                        WHERE tenant_id=%s AND idempotency_key=%s FOR UPDATE""",
                     (tenant_id, idempotency_key),
@@ -52,11 +57,11 @@ class DurableTaskStore:
                 if existing:
                     if _digest({
                         "task_type": existing[2], "input": existing[3],
-                        "created_by_principal_id": created_by_principal_id,
+                        "created_by_principal_id": existing[10],
                         "workflow_id": existing[4],
                     }) != request_hash:
                         raise TaskConflict("Idempotency key was used for a different task request")
-                    return self._task_row(existing)
+                    return self._task_row(existing[:10])
             task_id = uuid4()
             row = self.conn.execute(
                 """INSERT INTO memory_durable_tasks

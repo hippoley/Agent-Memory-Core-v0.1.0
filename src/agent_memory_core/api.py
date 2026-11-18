@@ -1486,6 +1486,61 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         except Exception:
             raise HTTPException(status_code=503,detail="Temporal workflow service is unavailable")
 
+    @app.get(
+        "/v1/workflows/{workflow_id}/progress", tags=["Workflows"],
+        summary="Read durable workflow progress",
+    )
+    async def workflow_progress(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            progress=await client.get_workflow_handle(workflow_id).query("progress")
+            return {"workflow_id":workflow_id,**progress}
+        except (KeyError, LookupError):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow progress is unavailable")
+
+    @app.post(
+        "/v1/workflows/{workflow_id}/pause", tags=["Workflows"],
+        summary="Pause a workflow at its next safe stage boundary",
+    )
+    async def pause_workflow(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            await client.get_workflow_handle(workflow_id).signal("pause")
+            return {"workflow_id":workflow_id,"pause_requested":True,
+                    "semantics":"takes effect at the next safe stage boundary"}
+        except (KeyError, LookupError):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow pause is unavailable")
+
+    @app.post(
+        "/v1/workflows/{workflow_id}/resume", tags=["Workflows"],
+        summary="Resume a paused workflow",
+    )
+    async def resume_workflow(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            await client.get_workflow_handle(workflow_id).signal("resume")
+            return {"workflow_id":workflow_id,"resume_requested":True}
+        except (KeyError, LookupError):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow resume is unavailable")
+
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",
         response_model=SearchResponse,

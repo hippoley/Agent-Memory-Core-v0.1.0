@@ -122,3 +122,30 @@ def test_dedicated_worker_credential_claim_checkpoint_and_finish():
             assert loaded["status"]=="completed"
         finally:
             verify.close()
+
+
+def test_memory_wildcard_credential_cannot_claim_tasks_without_explicit_scope():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+
+    tenant="task-worker-deny-"+uuid4().hex
+    token="memory-wildcard-"+uuid4().hex
+    class IdentityStore:
+        def authenticate_api_credential(self,secret):
+            if secret!=token:
+                return None
+            return {"tenant_id":tenant,"principal_id":str(uuid4()),
+                    "role":"editor","scopes":["memory:*"]}
+        def authenticate_session(self,token,tenant_id):
+            return None
+        def close(self):
+            pass
+
+    app=create_app(store_factory=lambda:None,identity_store_factory=IdentityStore)
+    with TestClient(app) as client:
+        denied=client.post("/v1/tasks/worker/claim",
+            headers={"Authorization":"Bearer "+token,"X-Memory-Tenant":tenant},
+            json={"worker_id":"ordinary-memory-client","lease_seconds":30})
+        assert denied.status_code==403,denied.text
+        assert "tasks:execute" in denied.text

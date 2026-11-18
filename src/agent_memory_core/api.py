@@ -332,6 +332,32 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             )
         raise HTTPException(status_code=403, detail="Invalid credential")
 
+    @app.get("/v1/identity/tenants", tags=["Identity"], summary="List active tenant memberships")
+    def identity_tenants(request: Request,
+                         credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        token = request.cookies.get("amc_session")
+        if not token and credentials and credentials.scheme.lower() == "bearer":
+            token = credentials.credentials
+        if not token or identity_store_factory is None:
+            raise HTTPException(status_code=401, detail="Identity session or API credential required")
+        identity_store = identity_store_factory()
+        try:
+            tenants = identity_store.list_session_tenants(token=token)
+            if not tenants:
+                credential = identity_store.authenticate_api_credential(secret=token)
+                if credential is not None:
+                    tenants = [{
+                        "tenant_id": credential["tenant_id"],
+                        "display_name": credential["tenant_id"],
+                        "role": credential["role"],
+                        "membership_version": credential["membership_version"],
+                    }]
+            if not tenants:
+                raise HTTPException(status_code=401, detail="Invalid or expired identity")
+            return {"items": tenants, "count": len(tenants)}
+        finally:
+            identity_store.close()
+
     @app.get("/v1/identity/me", tags=["Identity"], summary="Get the authenticated principal and tenant membership")
     def identity_me(request: Request, t: str = Depends(auth)):
         identity = getattr(request.state, "identity", None) or {}

@@ -168,18 +168,6 @@ class MemoryClient:
             raise ValueError("sha256 must be a 64-character hex digest")
         return self._request("GET","/v1/objects/"+sha256.lower(),raw=True)
 
-    def create_api_credential(self, *, name: str, scopes: list[str],
-                              expires_in_days: int = 90):
-        """Bootstrap via an owner/admin human session, never an API credential."""
-        return self._request("POST", "/v1/identity/api-credentials",
-                             json={"name":name,"scopes":scopes,
-                                   "expires_in_days":expires_in_days})
-
-    def revoke_api_credential(self, credential_id: str):
-        """Revoke the calling Principal's credential with a human Session."""
-        return self._request("DELETE", "/v1/identity/api-credentials/"
-                             +self._segment(credential_id))
-
     def predicate_policies(self):
         return self._request("GET","/v1/predicate-policies")
 

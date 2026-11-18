@@ -46,8 +46,10 @@ curl -s -H "Authorization: Bearer $KEY" "$API/v1/memories?limit=20"
 
 ## 认证与租户
 
-所有 `/v1/*`（除 `/v1/health`）都要求 `Authorization: Bearer <MEMORY_API_KEY>`。
-**租户身份来自凭据，永远不从请求体读取**，因此客户端无法通过改 JSON 越权。
+所有 `/v1/*`（除 `/v1/health`）都必须通过认证。兼容模式可使用
+`Authorization: Bearer <MEMORY_API_KEY>`；身份模式使用 Opaque Session 或有 Scope 的
+API Credential，并通过 `X-Memory-Tenant` 选择已加入的租户。
+**租户身份必须由服务端验证当前 Membership，永远不从请求体读取**。
 
 ## 响应与错误约定
 
@@ -75,6 +77,8 @@ TAG_METADATA = [
     {"name": "System",
      "description": "探活、就绪与能力发现。接入方应当先调用 `/v1/capabilities`，"
                     "再决定是否使用向量、图谱、Temporal 等可选通道。"},
+    {"name": "Identity",
+     "description": "当前身份、租户 Membership、Opaque Session 撤销与 API Credential 授权。"},
     {"name": "Memory",
      "description": "记忆的主体：写入、浏览、回忆、软遗忘，以及控制"
                     "“一个主体一个谓词能存几条”的可信基数策略。"},
@@ -130,6 +134,25 @@ class Story:
 CURL = 'curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"'
 
 STORIES: dict[tuple[str, str], Story] = {
+    # --------------------------------------------------------------- Identity
+    ("GET", "/v1/identity/me"): Story(
+        persona="已登录开发者",
+        goal="读取当前请求实际生效的 Principal、租户和角色",
+        value="客户端能展示当前身份与权限，不需要信任本地缓存的角色",
+        steps=("每次请求都重新检查 Session/API Credential 与当前 Membership。",
+               "租户通过 X-Memory-Tenant 选择，必须是该 Principal 当前加入的租户。",
+               "兼容旧 Bearer Key 时返回 legacy 身份，不伪装成多用户 Principal。"),
+        example='curl -H "Authorization: Bearer $SESSION" -H "X-Memory-Tenant: $TENANT" $API/v1/identity/me',
+    ),
+    ("POST", "/v1/auth/logout"): Story(
+        persona="已登录开发者",
+        goal="立即撤销当前登录 Session",
+        value="退出后旧 Session 不能继续访问任何租户资源",
+        steps=("Session 通过服务端存储的 Token Hash 定位并撤销。",
+               "Cookie 模式的写请求必须提供匹配的 CSRF Cookie 与 X-CSRF-Token。",
+               "该接口不撤销独立签发的 API Credential。"),
+        example='curl -X POST -H "Authorization: Bearer $SESSION" -H "X-Memory-Tenant: $TENANT" $API/v1/auth/logout',
+    ),
     # ---------------------------------------------------------------- System
     ("GET", "/v1/health"): Story(
         persona="平台运维",

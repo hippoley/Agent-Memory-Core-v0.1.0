@@ -54,6 +54,16 @@ class DurableTaskEffectStore:
                              "message":"Previous execution epoch no longer owns the task"},
                             sort_keys=True),task_id,lease_epoch,worker_id),
             ).fetchall()
+            for (key,) in rows:
+                self.conn.execute(
+                    """INSERT INTO memory_outbox
+                       (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
+                       VALUES (%s,%s,'task',%s,'memory.task.effect.unknown',%s::jsonb)""",
+                    (uuid4(),tenant_id,task_id,json.dumps({
+                        "task_id":task_id,"effect_key":key,
+                        "status":"unknown","reason":"WORKER_LEASE_LOST",
+                        "new_lease_epoch":lease_epoch},sort_keys=True)),
+                )
             return len(rows)
 
     def begin_execution(self, *, tenant_id: str, task_id: str, effect_key: str,

@@ -7,6 +7,8 @@ from agent_memory_core.api import create_app
 
 EXPECTED={
     "/v1/health":{"get"},
+    "/v1/identity/me":{"get"},
+    "/v1/auth/logout":{"post"},
     "/v1/ready":{"get"},
     "/v1/capabilities":{"get"},
     "/v1/evaluation/search-config":{"get"},

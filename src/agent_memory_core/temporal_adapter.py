@@ -132,10 +132,60 @@ def write_memory_verification_receipt(verified: dict) -> dict:
 
 @workflow.defn
 class VerifyMemoryWorkflow:
+    """Durable verification with queryable progress and cooperative pause/resume.
+
+    Pause takes effect at stage boundaries; it does not interrupt a database
+    transaction or an Activity already in flight. Temporal cancellation remains
+    the separate mechanism for stopping an execution.
+    """
+    def __init__(self):
+        self._paused = False
+        self._stage = "QUEUED"
+        self._completed_steps = 0
+        self._total_steps = 2
+        self._failure = None
+
+    @workflow.signal
+    def pause(self) -> None:
+        self._paused = True
+
+    @workflow.signal
+    def resume(self) -> None:
+        self._paused = False
+
+    @workflow.query
+    def progress(self) -> dict:
+        return {
+            "stage": self._stage,
+            "paused": self._paused,
+            "completed_steps": self._completed_steps,
+            "total_steps": self._total_steps,
+            "progress_percent": int(self._completed_steps * 100 / self._total_steps),
+            "failure": self._failure,
+        }
+
+    async def _pause_gate(self) -> None:
+        if self._paused:
+            self._stage = "PAUSED"
+            await workflow.wait_condition(lambda: not self._paused)
+
     @workflow.run
     async def run(self, request: dict) -> dict:
-        verified=await workflow.execute_activity(
-            "verify_memory_record",request,start_to_close_timeout=timedelta(seconds=20))
-        return await workflow.execute_activity(
-            "write_memory_verification_receipt",verified,
-            start_to_close_timeout=timedelta(seconds=20))
+        try:
+            await self._pause_gate()
+            self._stage = "VERIFYING_MEMORY"
+            verified=await workflow.execute_activity(
+                "verify_memory_record",request,start_to_close_timeout=timedelta(seconds=20))
+            self._completed_steps = 1
+            await self._pause_gate()
+            self._stage = "WRITING_RECEIPT"
+            result=await workflow.execute_activity(
+                "write_memory_verification_receipt",verified,
+                start_to_close_timeout=timedelta(seconds=20))
+            self._completed_steps = 2
+            self._stage = "COMPLETED"
+            return result
+        except Exception as exc:
+            self._failure = type(exc).__name__
+            self._stage = "FAILED"
+            raise

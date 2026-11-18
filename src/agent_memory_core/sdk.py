@@ -231,6 +231,18 @@ class MemoryClient:
     def cancel_workflow(self, workflow_id: str):
         return self._request("POST",f"/v1/workflows/{self._segment(workflow_id)}/cancel")
 
+    def workflow_progress(self, workflow_id: str):
+        """Read durable stage, pause state and completed-step count."""
+        return self._request("GET",f"/v1/workflows/{self._segment(workflow_id)}/progress")
+
+    def pause_workflow(self, workflow_id: str):
+        """Request cooperative pause at the next safe workflow stage boundary."""
+        return self._request("POST",f"/v1/workflows/{self._segment(workflow_id)}/pause")
+
+    def resume_workflow(self, workflow_id: str):
+        """Resume a workflow paused at a safe stage boundary."""
+        return self._request("POST",f"/v1/workflows/{self._segment(workflow_id)}/resume")
+
     def events(self, *, after: str | None = None, limit: int = 100):
         params={"limit":limit}
         if after is not None:

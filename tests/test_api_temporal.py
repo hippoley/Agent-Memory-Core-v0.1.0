@@ -101,6 +101,12 @@ def test_temporal_workflow_start_describe_cancel_and_tenant_scope():
     assert other.get("/v1/workflows/"+workflow_id,headers=other_headers).status_code==404
     assert other.post("/v1/workflows/"+workflow_id+"/cancel",
                       headers=other_headers).status_code==404
+    assert other.get("/v1/workflows/"+workflow_id+"/progress",
+                     headers=other_headers).status_code==404
+    assert other.post("/v1/workflows/"+workflow_id+"/pause",
+                      headers=other_headers).status_code==404
+    assert other.post("/v1/workflows/"+workflow_id+"/resume",
+                      headers=other_headers).status_code==404
 
 
 def test_temporal_api_returns_503_when_worker_runtime_not_configured():

@@ -100,7 +100,7 @@ class IdentityStore:
                    ORDER BY m.created_at,m.tenant_id""",
                 (principal_id,)).fetchall()
 
-            if not active_memberships and bootstrap_workspace:
+            if not active_memberships and bootstrap_workspace and is_new_principal:
                 tenant_id = "ws-" + uuid4().hex
                 self.conn.execute(
                     "INSERT INTO memory_tenants(tenant_id,display_name) VALUES (%s,%s)",

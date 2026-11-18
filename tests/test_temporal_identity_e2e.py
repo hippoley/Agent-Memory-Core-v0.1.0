@@ -19,7 +19,8 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_queued_temporal_work_is_rejected_after_session_revoke():
+@pytest.mark.parametrize("revocation_kind", ["session", "api_credential"])
+def test_queued_temporal_work_is_rejected_after_identity_revoke(revocation_kind):
     dsn = os.getenv("MEMORY_TEST_DSN")
     if not dsn:
         pytest.skip("MEMORY_TEST_DSN required")
@@ -63,6 +64,13 @@ def test_queued_temporal_work_is_rejected_after_session_revoke():
             )
             assert membership is not None
 
+            credential = identity.issue_api_credential(
+                principal_id=principal,
+                tenant_id=tenant,
+                name="Temporal E2E queued credential",
+                scopes=["memory:write"],
+            )
+
             memory_id = db.remember(
                 tenant_id=tenant,
                 subject_id="e2e",
@@ -81,7 +89,8 @@ def test_queued_temporal_work_is_rejected_after_session_revoke():
                         "tenant_id": tenant,
                         "memory_id": memory_id,
                         "principal_id": principal,
-                        "session_id": session["session_id"],
+                        "session_id": session["session_id"] if revocation_kind == "session" else None,
+                        "credential_id": credential["credential_id"] if revocation_kind == "api_credential" else None,
                         "membership_version": membership["membership_version"],
                     },
                     id=workflow_id,
@@ -91,10 +100,16 @@ def test_queued_temporal_work_is_rejected_after_session_revoke():
                 # The workflow is durably queued, but no Worker has been
                 # started yet. Revocation therefore happens deterministically
                 # before either activity can produce a side effect.
-                assert identity.revoke_session(
-                    session_id=session["session_id"],
-                    principal_id=principal,
-                )
+                if revocation_kind == "session":
+                    assert identity.revoke_session(
+                        session_id=session["session_id"],
+                        principal_id=principal,
+                    )
+                else:
+                    assert identity.revoke_api_credential(
+                        credential_id=credential["credential_id"],
+                        principal_id=principal,
+                    )
 
                 # These activities intentionally remain synchronous because they
                 # perform blocking PostgreSQL work. Temporal requires an executor

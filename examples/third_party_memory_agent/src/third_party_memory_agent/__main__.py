@@ -44,13 +44,13 @@ def main() -> None:
         )
         first_id = first["id"]
 
-        second = memory.remember(
+        second = memory.revise(
+            first_id,
             subject_id=subject,
             predicate="preferred_language",
             value={"language": "Chinese"},
             source_id="third-party-agent:" + suffix + ":source-2",
             valid_from=later,
-            replaces_id=first_id,
             idempotency_key="third-party-agent:" + suffix + ":write-2",
         )
         second_id = second["id"]

@@ -1,4 +1,5 @@
 -- Worker ownership and fencing for PostgreSQL-backed durable tasks.
+-- Idempotent: PostgresMemory.migrate() reapplies all packaged migrations.
 BEGIN;
 
 ALTER TABLE memory_durable_tasks
@@ -8,13 +9,23 @@ ALTER TABLE memory_durable_tasks
     CHECK (lease_epoch >= 0),
   ADD COLUMN IF NOT EXISTS heartbeat_at timestamptz;
 
-ALTER TABLE memory_durable_tasks
-  ADD CONSTRAINT memory_durable_tasks_lease_shape
-  CHECK (
-    (lease_owner IS NULL AND lease_expires_at IS NULL)
-    OR
-    (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'memory_durable_tasks_lease_shape'
+      AND conrelid = 'memory_durable_tasks'::regclass
+  ) THEN
+    ALTER TABLE memory_durable_tasks
+      ADD CONSTRAINT memory_durable_tasks_lease_shape
+      CHECK (
+        (lease_owner IS NULL AND lease_expires_at IS NULL)
+        OR
+        (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
+      );
+  END IF;
+END
+$$;
 
 CREATE INDEX IF NOT EXISTS memory_durable_tasks_claimable
   ON memory_durable_tasks(tenant_id,status,lease_expires_at,created_at)

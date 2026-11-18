@@ -98,6 +98,34 @@ MFA policy, invitation flow, and external-browser production acceptance remain
 separate delivery work. Do not treat passing unit tests as production deployment
 approval.
 
+## Temporal worker tenant boundary
+
+Temporal workflow payloads contain a `tenant_id`, but that value is a resource
+selector, not an authorization credential. Both PostgreSQL-backed Temporal
+Activities now call `PostgresMemory.assert_database_tenant()` before reading a
+claim or writing its verification receipt. If the operator-installed
+principal-bound RLS registry exists, an unbound, privileged or wrong-tenant
+PostgreSQL login is rejected.
+
+Production workers must set:
+
+```bash
+export MEMORY_TEMPORAL_REQUIRE_RLS=1
+export MEMORY_DSN="$TENANT_BOUND_DATABASE_DSN"
+```
+
+The RLS SQL is operator-installed, not an automatic application migration.
+The PostgreSQL login in `MEMORY_DSN` must be a distinct non-owner,
+non-superuser LOGIN mapped to exactly one tenant in
+`memory_rls_principals`. Do not use the API migration/admin login.
+
+**Current limitation:** the Temporal worker currently has one configured
+database DSN. It is therefore safe to bind that worker to one tenant, but it is
+not yet a complete shared multi-tenant worker deployment. Before one worker
+serves multiple tenants, implement and adversarially test a tenant-aware
+connection/credential router (or isolate workers and task queues per tenant).
+The production multi-tenant Worker/Temporal rollout remains a release gate.
+
 
 ## Local Keycloak integration
 

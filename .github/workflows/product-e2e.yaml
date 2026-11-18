@@ -30,6 +30,7 @@ jobs:
       - name: Run the complete browser product lifecycle
         env:
           MEMORY_KEYCLOAK_E2E: "1"
+          MEMORY_TEMPORAL_E2E: "1"
           MEMORY_E2E_BASE_URL: "http://127.0.0.1:8765"
           MEMORY_KEYCLOAK_BASE_URL: "http://keycloak.localhost:8081"
           KEYCLOAK_ADMIN: "admin"

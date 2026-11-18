@@ -1,0 +1,102 @@
+name: Keycloak OIDC Browser Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/agent_memory_core/oidc.py'
+      - 'src/agent_memory_core/identity.py'
+      - 'src/agent_memory_core/api.py'
+      - 'src/agent_memory_core/server.py'
+      - 'src/agent_memory_core/local_entrypoint.py'
+      - 'identity/keycloak/**'
+      - 'compose.keycloak.yaml'
+      - 'compose.identity.yaml'
+      - 'tests/test_oidc*.py'
+      - 'scripts/launch_local.py'
+      - '.github/workflows/keycloak-oidc-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keycloak-oidc-e2e
+  cancel-in-progress: true
+
+jobs:
+  real-keycloak-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: local-keycloak-admin-change-me
+      MEMORY_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
+      MEMORY_IDENTITY_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
+      MEMORY_LOCAL_IDENTITY_MIGRATE: "1"
+      MEMORY_OIDC_ISSUER: http://keycloak.localhost:8081/realms/agent-memory
+      MEMORY_OIDC_CLIENT_ID: agent-memory-local
+      MEMORY_OIDC_CLIENT_SECRET: local-only-change-me
+      MEMORY_OIDC_REDIRECT_URI: http://127.0.0.1:8765/v1/auth/oidc/callback
+      MEMORY_OIDC_STATE_SECRET: local-development-state-secret-change-before-deploy-2026
+      MEMORY_OIDC_ALLOW_SIGNUP: "1"
+      MEMORY_OIDC_ALLOW_INSECURE_HTTP: "1"
+      MEMORY_COOKIE_SECURE: "0"
+      MEMORY_ENABLE_VECTOR: "0"
+      MEMORY_ENABLE_AGE: "0"
+      MEMORY_EXTRACTOR_PROVIDER: rule
+      MEMORY_OBJECT_BACKEND: local
+      MEMORY_OBJECT_ROOT: /tmp/amc-keycloak-objects
+      MEMORY_DB_RLS_MODE: "0"
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Resolve the local-only Keycloak hostname on the runner
+        run: echo "127.0.0.1 keycloak.localhost" | sudo tee -a /etc/hosts
+      - name: Start PostgreSQL and Keycloak with imported realm
+        run: docker compose -f compose.yaml -f compose.keycloak.yaml up -d --build --wait
+      - name: Install API, OIDC verifier and Chromium
+        run: |
+          python -m pip install -e '.[dev,api,postgres,oidc]' 'playwright>=1.45'
+          python -m playwright install --with-deps chromium
+      - name: Wait for imported Keycloak realm discovery
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$MEMORY_OIDC_ISSUER/.well-known/openid-configuration" > /tmp/oidc-discovery.json; then
+              python -c "import json; d=json.load(open('/tmp/oidc-discovery.json')); assert d['issuer']=='$MEMORY_OIDC_ISSUER'; print('OIDC realm ready:', d['issuer'])"
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose -f compose.yaml -f compose.keycloak.yaml logs --tail=200 keycloak
+          exit 1
+      - name: Start API and apply isolated local identity migration
+        run: |
+          nohup python -m agent_memory_core.local_entrypoint >/tmp/amc-api.log 2>&1 &
+          echo $! >/tmp/amc-api.pid
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8765/v1/health >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/amc-api.log
+          exit 1
+      - name: Run real Keycloak browser and memory lifecycle acceptance
+        env:
+          MEMORY_KEYCLOAK_E2E: "1"
+          MEMORY_E2E_BASE_URL: http://127.0.0.1:8765
+          MEMORY_KEYCLOAK_BASE_URL: http://keycloak.localhost:8081
+        run: pytest -q tests/test_oidc.py tests/test_oidc_keycloak_browser.py
+      - name: Capture API and identity-provider logs on failure
+        if: failure()
+        run: |
+          cat /tmp/amc-api.log || true
+          docker compose -f compose.yaml -f compose.keycloak.yaml logs --tail=200
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/amc-api.pid ]; then kill "$(cat /tmp/amc-api.pid)" || true; fi
+      - name: Destroy isolated test services and volumes
+        if: always()
+        run: docker compose -f compose.yaml -f compose.keycloak.yaml down -v

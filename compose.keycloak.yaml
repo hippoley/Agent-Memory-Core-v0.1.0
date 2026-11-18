@@ -1,0 +1,27 @@
+# Local-only Keycloak identity provider for OIDC integration testing.
+# Start with:
+#   docker compose -f compose.keycloak.yaml up -d --wait
+# Keycloak is bound to loopback and uses HTTP only for local development.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.5
+    command: ["start-dev", "--import-realm", "--http-port=8080", "--hostname=http://127.0.0.1:8081", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-keycloak-admin-change-me}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./identity/keycloak/realm-agent-memory.json:/opt/keycloak/data/import/realm-agent-memory.json:ro
+      - keycloak_local_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "{ echo > /dev/tcp/127.0.0.1/9000; }"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  keycloak_local_data: {}

@@ -92,6 +92,11 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
         }
         assert tasks.set_status(tenant_id=tenant,task_id=task_id,status="completed",
                                 result={"organized":50})
+        assert db.conn.execute(
+            """SELECT count(*) FROM memory_outbox
+               WHERE tenant_id=%s AND aggregate_id=%s
+                 AND event_type='memory.task.status.changed'""",
+            (tenant,task_id)).fetchone()[0]==1
         with pytest.raises(TaskConflict,match="terminal task"):
             tasks.commit_checkpoint(
                 tenant_id=tenant,task_id=task_id,expected_version=2,

@@ -9,6 +9,9 @@ from pathlib import Path
 import secrets
 import subprocess
 import sys
+import json
+import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV = ROOT / ".env.local"
@@ -99,8 +102,55 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not ENV.exists():
         p.error(".env.local missing; run 'up' first")
-    call(compose_args(profile, identity) + (["ps"] if args.command == "status" else ["down"]))
-    return 0
+    if args.command == "down":
+        return call(compose_args(profile, identity) + ["down"])
+
+    # A running container is not the same as a usable product. Report Compose
+    # state, unauthenticated API liveness, and authenticated PostgreSQL readiness.
+    compose_status = call(compose_args(profile, identity) + ["ps"], check=False)
+    base_url = os.getenv("MEMORY_BASE_URL", "http://127.0.0.1:8765").rstrip("/")
+    healthy = True
+
+    try:
+        with urllib.request.urlopen(base_url + "/v1/health", timeout=4) as response:
+            health = json.loads(response.read().decode("utf-8"))
+        if health.get("status") != "alive":
+            raise RuntimeError(f"unexpected liveness response: {health!r}")
+        print(f"API liveness:  OK ({base_url}/v1/health)")
+    except Exception as exc:
+        healthy = False
+        print(f"API liveness:  FAILED ({exc})", file=sys.stderr)
+
+    api_key = settings.get("MEMORY_API_KEY", "")
+    if not api_key:
+        healthy = False
+        print("PostgreSQL:    UNKNOWN (.env.local has no MEMORY_API_KEY)", file=sys.stderr)
+    else:
+        request = urllib.request.Request(
+            base_url + "/v1/ready",
+            headers={"Authorization": f"Bearer {api_key}"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=6) as response:
+                readiness = json.loads(response.read().decode("utf-8"))
+            if readiness.get("status") != "ready" or readiness.get("checks", {}).get("postgresql") != "ready":
+                raise RuntimeError(f"unexpected readiness response: {readiness!r}")
+            print("PostgreSQL:    OK (authenticated SELECT 1)")
+        except Exception as exc:
+            healthy = False
+            print(f"PostgreSQL:    FAILED ({exc})", file=sys.stderr)
+
+    if compose_status != 0:
+        healthy = False
+    if healthy:
+        print("PRODUCT STATUS: READY")
+        print("Console:       http://127.0.0.1:8765/dashboard/")
+        print("Observatory:   http://127.0.0.1:8765/dashboard/observatory.html")
+        print("Swagger:       http://127.0.0.1:8765/docs/swagger")
+        return 0
+    print("PRODUCT STATUS: NOT READY — inspect Docker Compose output and service logs.", file=sys.stderr)
+    return 1
 
 if __name__ == "__main__":
     try:

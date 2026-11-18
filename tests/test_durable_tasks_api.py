@@ -67,14 +67,23 @@ def test_dedicated_worker_credential_claim_checkpoint_and_finish():
     from agent_memory_core.api import create_app
     from agent_memory_core.postgres import PostgresMemory
 
+    from agent_memory_core.durable_tasks import DurableTaskStore
     tenant="task-worker-api-"+uuid4().hex
     token="dedicated-worker-token-"+uuid4().hex
+    db=PostgresMemory(dsn)
+    try:
+        task=DurableTaskStore(db.conn).create_task(
+            tenant_id=tenant,task_type="memory.batch.organize",input={"batch_size":1},
+            idempotency_key="worker-create-"+uuid4().hex)
+        task_id=task["task_id"]
+    finally:
+        db.close()
     class IdentityStore:
         def authenticate_api_credential(self,secret):
             if secret!=token:
                 return None
             return {"tenant_id":tenant,"principal_id":str(uuid4()),
-                    "role":"editor","scopes":["memory:*","tasks:execute"]}
+                    "role":"editor","scopes":["tasks:execute"]}
         def authenticate_session(self,token,tenant_id):
             return None
         def close(self):
@@ -86,11 +95,6 @@ def test_dedicated_worker_credential_claim_checkpoint_and_finish():
                    identity_store_factory=IdentityStore)
     headers={"Authorization":"Bearer "+token,"X-Memory-Tenant":tenant}
     with TestClient(app) as client:
-        created=client.post("/v1/tasks",headers=headers,json={
-            "task_type":"memory.batch.organize","input":{"batch_size":1},
-            "idempotency_key":"worker-create-"+uuid4().hex})
-        assert created.status_code==201,created.text
-        task_id=created.json()["task_id"]
         worker_id="worker-"+uuid4().hex
 
         claimed=client.post("/v1/tasks/worker/claim",headers=headers,
@@ -112,6 +116,9 @@ def test_dedicated_worker_credential_claim_checkpoint_and_finish():
             json={"worker_id":worker_id,"lease_epoch":task["lease_epoch"],
                   "status":"completed","result":{"processed":1}})
         assert finished.status_code==200,finished.text
-        loaded=client.get(f"/v1/tasks/{task_id}",headers=headers)
-        assert loaded.status_code==200
-        assert loaded.json()["status"]=="completed"
+        verify=PostgresMemory(dsn)
+        try:
+            loaded=DurableTaskStore(verify.conn).get_task(tenant_id=tenant,task_id=task_id)
+            assert loaded["status"]=="completed"
+        finally:
+            verify.close()

@@ -256,7 +256,7 @@ def test_browser_session_can_create_and_switch_only_its_own_workspaces():
     assert create.status_code == 201, create.text
     new_tenant = create.json()["tenant_id"]
     assert create.json()["role"] == "owner"
-    assert client.cookies.get("amc_tenant") == new_tenant
+    assert create.cookies.get("amc_tenant") == new_tenant
 
     switch_back = client.post(
         "/v1/identity/select-tenant",
@@ -265,7 +265,7 @@ def test_browser_session_can_create_and_switch_only_its_own_workspaces():
     )
     assert switch_back.status_code == 200, switch_back.text
     assert switch_back.json()["selected"] is True
-    assert client.cookies.get("amc_tenant") == TENANT
+    assert switch_back.cookies.get("amc_tenant") == TENANT
 
     denied = client.post(
         "/v1/identity/select-tenant",

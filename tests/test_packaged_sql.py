@@ -22,7 +22,8 @@ def test_migration_runner_discovers_ordered_sql_resources():
         if x.name.endswith(".sql") and x.name[:3].isdigit())
     assert migrations==[
         "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql",
-        "004_predicate_cardinality.sql","005_identity_foundation.sql"
+        "004_predicate_cardinality.sql","005_identity_foundation.sql",
+        "006_durable_tasks.sql"
     ]
 
 def test_packaged_predicate_policy_migration_matches_repository_sql():
@@ -47,3 +48,11 @@ def test_packaged_identity_foundation_migration_matches_repository_sql():
     assert packaged==canonical
     assert "memory_tenant_memberships" in packaged
     assert "token_hash" in packaged
+
+
+def test_packaged_durable_task_migration_matches_repository_sql():
+    packaged=resources.files("agent_memory_core").joinpath("resources/006_durable_tasks.sql").read_text()
+    canonical=(Path(__file__).resolve().parents[1]/"sql/postgresql/006_durable_tasks.sql").read_text()
+    assert packaged==canonical
+    assert "memory_task_checkpoints" in packaged
+    assert "memory_task_effects" in packaged

@@ -42,8 +42,17 @@ class IdentityStore:
         identity key; email is profile metadata and is never used for account
         linking.
         """
-        if not isinstance(issuer, str) or not issuer.startswith("https://"):
-            raise ValueError("OIDC issuer must be an HTTPS URL")
+        local_http_issuer = (
+            isinstance(issuer, str) and issuer.startswith("http://")
+            and os.getenv("MEMORY_OIDC_ALLOW_INSECURE_HTTP", "0") == "1"
+            and __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname is not None
+            and (
+                __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname in {"localhost", "127.0.0.1", "::1"}
+                or __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname.endswith(".localhost")
+            )
+        )
+        if not isinstance(issuer, str) or (not issuer.startswith("https://") and not local_http_issuer):
+            raise ValueError("OIDC issuer must use HTTPS except explicit localhost development")
         if not isinstance(subject, str) or not subject or len(subject) > 1024:
             raise ValueError("OIDC subject is required")
         if email is not None and len(email) > 320:

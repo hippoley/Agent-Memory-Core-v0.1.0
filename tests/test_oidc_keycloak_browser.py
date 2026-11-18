@@ -331,9 +331,9 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 github_env = os.getenv("GITHUB_ENV")
                 if github_env:
                     with open(github_env, "a", encoding="utf-8") as env_file:
-                        env_file.write("MEMORY_API_KEY=" + secret + "\\n")
-                        env_file.write("MEMORY_TENANT_ID=" + external_credential["tenant"] + "\\n")
-                        env_file.write("MEMORY_BASE_URL=" + BASE_URL + "\\n")
+                        env_file.write("MEMORY_API_KEY=" + secret + "\n")
+                        env_file.write("MEMORY_TENANT_ID=" + external_credential["tenant"] + "\n")
+                        env_file.write("MEMORY_BASE_URL=" + BASE_URL + "\n")
                         env_file.write("MEMORY_RUN_TEMPORAL=1\\n")
 
             logout = page.evaluate("""async () => {

@@ -120,11 +120,11 @@ Implemented on the PR #51 branch:
 - Automated tests: `tests/test_identity_foundation.py`,
   `tests/test_identity_store.py`, `tests/test_identity_api.py`.
 
-Still not implemented: OIDC discovery/PKCE/JWKS/callback, browser session-cookie
-issuance, invitation onboarding/first-owner bootstrap, complete resource-level RBAC,
-and arbitrary multi-tenant data-plane PostgreSQL isolation. This branch is not yet
-a public registration release. CI must pass on the latest head; skipped PostgreSQL
-or browser tests do not count as passes.
+The subsequent OIDC onboarding slice below implements discovery/PKCE/JWKS/callback,
+browser session-cookie issuance and first-owner bootstrap. Invitation onboarding,
+complete resource-level RBAC and arbitrary multi-tenant data-plane PostgreSQL
+isolation remain separate release gates. CI must pass on the latest head; skipped
+PostgreSQL or browser tests do not count as passes.
 
 
 ## OIDC onboarding slice — implementation 2026-11-18
@@ -142,4 +142,33 @@ Implemented on PR #51:
 - Observatory uses the browser session, tenant header and CSRF header; API Credential flow remains available.
 - Unit tests cover transaction tampering, expiry and state mismatch; API tests cover callback cookie issuance; PostgreSQL integration covers first login and identity reuse.
 
-Not yet accepted: live external OIDC provider interoperability, real Chromium sign-in and write/reload/forget journey, logout UX, tenant switch UX, invitation onboarding, provider logout, multi-provider account linking, and production security review. Do not mark the public multi-user User Story complete until the browser acceptance is run against a real provider and deployed PostgreSQL.
+### Unified browser-to-database acceptance (active PR #51 work)
+
+The Keycloak 26.2.5 test is the integration spine, not a second identity demo:
+real public self-registration → OIDC callback → atomic Principal/Workspace/Owner/
+Session provisioning → Observatory session restoration → live memory create →
+revision → active/history readback → soft-forget → reload → logout revocation.
+The same run then registers a second IdP user and checks distinct Principal and
+Workspace identity, cross-tenant read denial, cross-tenant switch denial, and
+empty active/history results in the second user's own workspace.
+
+The Observatory claim picker now updates the actual selected Memory ID used by
+revision and forget actions. Browser acceptance exercises the UI controls for
+create/revise/forget, then independently reads PostgreSQL-backed API results.
+This closes a prior UI-to-state gap where the picker changed presentation but did
+not update the mutation target.
+
+The first attempt at public self-registration exposed a false selector assumption:
+Keycloak 26.2.5's default registration template submits through an input inside
+#kc-register-form and does not provide #kc-register. The test now uses the form's
+actual submit semantics. Revision timestamps are generated independently and
+monotonically rather than reusing one timestamp for both versions.
+
+Latest run on the current branch head is pending/running; do not mark this gate
+passed until the real Keycloak and Observatory Chromium jobs finish successfully.
+
+Still separate release gates: live external-provider interoperability beyond
+Keycloak, invitation onboarding, member administration, provider logout,
+multi-provider account linking, complete resource-level RBAC, arbitrary
+multi-tenant data-plane PostgreSQL isolation including Worker/Temporal identity,
+production secret rotation/rate limiting, and independent security review.

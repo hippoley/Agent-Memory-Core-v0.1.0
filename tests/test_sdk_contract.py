@@ -217,3 +217,31 @@ def test_scoped_sdk_tenant_is_required_by_identity_gateway():
     with MemoryClient("http://memory.local","amc_key",tenant_id="tenant-a",
                       transport=httpx.MockTransport(server)) as sdk:
         assert sdk.whoami()["tenant_id"] == "tenant-a"
+
+
+def test_sdk_evidence_objects_are_binary_and_tenant_scoped():
+    import hashlib
+    binary = b"floorplan-evidence-\x00\x01"
+    digest = hashlib.sha256(binary).hexdigest()
+    calls = []
+    def server(request):
+        calls.append(request)
+        assert request.headers["x-memory-tenant"] == "tenant-evidence"
+        if request.method == "PUT":
+            assert request.url.path == "/v1/objects"
+            assert request.headers["content-type"] == "application/octet-stream"
+            assert request.content == binary
+            return httpx.Response(201,json={"sha256":digest,"size":len(binary)})
+        assert request.method == "GET"
+        assert request.url.path == "/v1/objects/"+digest
+        return httpx.Response(200,content=binary,
+                              headers={"content-type":"application/octet-stream"})
+
+    with MemoryClient("https://memory.example","amc_evidence",
+                      tenant_id="tenant-evidence",
+                      transport=httpx.MockTransport(server)) as sdk:
+        assert sdk.upload_object(binary)["sha256"] == digest
+        assert sdk.download_object(digest) == binary
+        with pytest.raises(ValueError):
+            sdk.download_object("../invalid")
+    assert len(calls) == 2

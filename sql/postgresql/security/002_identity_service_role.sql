@@ -10,6 +10,8 @@ BEGIN
 END
 $role$;
 
+GRANT USAGE ON SCHEMA public TO memory_identity_service;
+
 GRANT SELECT,INSERT,UPDATE ON
   public.memory_principals,
   public.memory_external_identities,

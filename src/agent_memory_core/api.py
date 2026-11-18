@@ -1369,9 +1369,20 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             memory_id=str(UUID(item.memory_id))
             client=await temporal_client_factory()
             workflow_id=t+":"+(item.workflow_id or "memory-verify-"+str(uuid4()))
+            identity = getattr(request.state, "identity", None) or {}
+            if identity.get("auth_type") == "legacy":
+                if os.getenv("MEMORY_TEMPORAL_REQUIRE_RLS", "0") == "1":
+                    raise HTTPException(status_code=403, detail="Legacy credentials cannot enqueue revocable identity-bound work")
+            workflow_request = {
+                "tenant_id": t,
+                "memory_id": memory_id,
+                "principal_id": identity.get("principal_id"),
+                "session_id": identity.get("session_id"),
+                "membership_version": identity.get("membership_version"),
+            }
             handle=await client.start_workflow(
                 "VerifyMemoryWorkflow",
-                {"tenant_id":t,"memory_id":memory_id},
+                workflow_request,
                 id=workflow_id,task_queue=temporal_task_queue,
             )
             return {"workflow_id":handle.id,"run_id":getattr(handle,"result_run_id",None),

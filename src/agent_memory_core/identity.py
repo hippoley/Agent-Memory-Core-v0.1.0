@@ -158,21 +158,19 @@ class IdentityStore:
             raise ValueError("Credential TTL must be between 0 and 365 days")
         secret = "amc_" + secrets.token_urlsafe(32)
         credential_id = uuid4()
+        expires_at = datetime.now(timezone.utc) + ttl if ttl else None
         row = self.conn.execute(
             """INSERT INTO memory_api_credentials
                (credential_id,principal_id,tenant_id,name,secret_hash,
                 secret_prefix,scopes,expires_at)
-               SELECT %s,m.principal_id,m.tenant_id,%s,%s,%s,%s,
-                      CASE WHEN %s IS NULL THEN NULL
-                           ELSE clock_timestamp()+(%s * interval '1 second') END
+               SELECT %s,m.principal_id,m.tenant_id,%s,%s,%s,%s,%s
                FROM memory_tenant_memberships m
                JOIN memory_principals p ON p.principal_id=m.principal_id
                WHERE m.tenant_id=%s AND m.principal_id=%s
                  AND m.status='active' AND p.status='active'
                RETURNING credential_id""",
             (credential_id,name,self._hash(secret),secret[:12],scopes,
-             int(ttl.total_seconds()) if ttl else None,
-             int(ttl.total_seconds()) if ttl else None,tenant_id,principal_id)
+             expires_at,tenant_id,principal_id)
         ).fetchone()
         if row is None:
             raise LookupError("Active tenant membership not found")

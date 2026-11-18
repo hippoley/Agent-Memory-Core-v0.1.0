@@ -34,6 +34,7 @@ class OIDCConfig:
     state_secret: bytes
     allow_signup: bool = False
     cookie_secure: bool = True
+    allow_insecure_http: bool = False
 
     @classmethod
     def from_env(cls) -> "OIDCConfig":

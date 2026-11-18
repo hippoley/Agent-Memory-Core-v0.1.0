@@ -150,7 +150,9 @@ Session provisioning → Observatory session restoration → live memory create 
 revision → active/history readback → soft-forget → reload → logout revocation.
 The same run then registers a second IdP user and checks distinct Principal and
 Workspace identity, cross-tenant read denial, cross-tenant switch denial, and
-empty active/history results in the second user's own workspace.
+empty active/history results in the second user's own workspace. The self-registered
+user also completes the Observatory UI create → revise → active/history readback →
+soft-forget flow in that newly provisioned workspace.
 
 The Observatory claim picker now updates the actual selected Memory ID used by
 revision and forget actions. Browser acceptance exercises the UI controls for

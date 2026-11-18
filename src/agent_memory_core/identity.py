@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from urllib.parse import urlparse
 
 
 class IdentityStore:
@@ -45,7 +47,7 @@ class IdentityStore:
         local_http_issuer = (
             isinstance(issuer, str) and issuer.startswith("http://")
             and os.getenv("MEMORY_OIDC_ALLOW_INSECURE_HTTP", "0") == "1"
-            and __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname is not None
+            and urlparse(issuer).hostname is not None
             and (
                 __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname in {"localhost", "127.0.0.1", "::1"}
                 or __import__("urllib.parse", fromlist=["urlparse"]).urlparse(issuer).hostname.endswith(".localhost")

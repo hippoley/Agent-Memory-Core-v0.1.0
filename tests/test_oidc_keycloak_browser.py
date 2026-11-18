@@ -309,6 +309,33 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             }""")
             assert after_reload == 200, "Browser session did not survive reload"
 
+            # Product E2E exports a short-lived, tenant-scoped credential
+            # for a separate Python project installed from the built wheel.
+            # The consumer runs in a fresh venv in the next CI step and has no
+            # browser cookies, server imports, or database connection.
+            if os.getenv("MEMORY_EXTERNAL_SDK_E2E") == "1":
+                external_credential = page.evaluate("""async () => {
+                  const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+                  const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
+                  const response = await fetch('/v1/identity/api-credentials', {
+                    method:'POST', credentials:'same-origin',
+                    headers:{'Content-Type':'application/json','X-Memory-Tenant':tenant,'X-CSRF-Token':csrf},
+                    body:JSON.stringify({name:'Independent third-party E2E',
+                      scopes:['memory:read','memory:write'],expires_in_days:1})
+                  });
+                  return {status:response.status,body:await response.json(),tenant};
+                }""")
+                assert external_credential["status"] == 201, external_credential
+                secret = external_credential["body"]["secret"]
+                print("::add-mask::" + secret)
+                github_env = os.getenv("GITHUB_ENV")
+                if github_env:
+                    with open(github_env, "a", encoding="utf-8") as env_file:
+                        env_file.write("MEMORY_API_KEY=" + secret + "\\n")
+                        env_file.write("MEMORY_TENANT_ID=" + external_credential["tenant"] + "\\n")
+                        env_file.write("MEMORY_BASE_URL=" + BASE_URL + "\\n")
+                        env_file.write("MEMORY_RUN_TEMPORAL=1\\n")
+
             logout = page.evaluate("""async () => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));

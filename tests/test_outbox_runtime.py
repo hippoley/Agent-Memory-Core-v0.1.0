@@ -159,7 +159,7 @@ def test_outbox_process_sigkill_rolls_back_claim_and_recovers():
         # the downstream event inside that same transaction, then blocks before
         # acknowledging the outbox row. SIGKILL must roll back both operations.
         child_code = r'''
-import os, sys, time
+import json, os, sys, time
 import psycopg
 conn = psycopg.connect(os.environ["MEMORY_TEST_DSN"])
 with conn.transaction():
@@ -173,7 +173,7 @@ with conn.transaction():
         """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
            VALUES (%s,%s,'memory.claim.verified',%s::jsonb)
            ON CONFLICT(tenant_id,event_id) DO NOTHING""",
-        (row[1], row[0], row[2]),
+        (row[1], row[0], json.dumps(row[2])),
     )
     print("LOCKED_WITH_UNCOMMITTED_EFFECT", flush=True)
     time.sleep(120)

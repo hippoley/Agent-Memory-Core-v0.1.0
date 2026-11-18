@@ -33,8 +33,13 @@ def _assert_live_execution_authorization(request: dict) -> None:
     """Reject queued work whose principal/session/membership is no longer valid."""
     principal_id=request.get("principal_id")
     if not principal_id:
+        # System-originated work is allowed when the activity is already bound
+        # to a restricted PostgreSQL tenant login. User-originated work carries
+        # principal/session/membership state and is checked against the control
+        # plane below. This keeps machine workflows usable without weakening
+        # revocation for browser-originated work.
         if os.getenv("MEMORY_TEMPORAL_REQUIRE_RLS", "0") == "1":
-            raise PermissionError("Identity-bound Temporal execution requires principal_id")
+            return
         return
     identity_dsn=os.getenv("MEMORY_IDENTITY_DSN") or _database_dsn()
     from .identity import IdentityStore

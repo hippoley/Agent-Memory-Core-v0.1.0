@@ -1429,6 +1429,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 "memory_id": memory_id,
                 "principal_id": identity.get("principal_id"),
                 "session_id": identity.get("session_id"),
+                "credential_id": identity.get("credential_id"),
                 "membership_version": identity.get("membership_version"),
             }
             handle=await client.start_workflow(

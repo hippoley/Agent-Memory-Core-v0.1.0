@@ -67,7 +67,7 @@ class OIDCClient:
             import httpx
         except ImportError as exc:
             raise RuntimeError("Install the oidc extra: pip install -e '.[oidc]'") from exc
-        url = self.config.issuer + "/.well-known/openid-configuration"
+        url = self.config.issuer.rstrip("/") + "/.well-known/openid-configuration"
         with httpx.Client(timeout=10.0, follow_redirects=False) as client:
             response = client.get(url)
             response.raise_for_status()

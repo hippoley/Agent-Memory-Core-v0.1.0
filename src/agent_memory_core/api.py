@@ -222,6 +222,33 @@ class MemoryVerificationRequest(BaseModel):
     workflow_id: str | None = Field(default=None, min_length=1, max_length=255, description="Optional stable Temporal workflow ID; generated if omitted.")
 
 
+class DurableTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_type: str = Field(min_length=1, max_length=120)
+    input: dict[str, Any]
+    workflow_id: str | None = Field(default=None, max_length=255)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class DurableCheckpointWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=0)
+    checkpoint: dict[str, Any]
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    progress_completed: int = Field(default=0, ge=0)
+    progress_total: int = Field(default=0, ge=0)
+    artifact_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    effect_key: str | None = Field(default=None, min_length=1, max_length=255)
+    effect_request: dict[str, Any] | None = None
+
+
+class DurableTaskStatusWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
@@ -1540,6 +1567,109 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
         except Exception:
             raise HTTPException(status_code=503,detail="Temporal workflow resume is unavailable")
+
+    @app.post("/v1/tasks", status_code=201, tags=["Durable Tasks"],
+                  summary="Create an idempotent durable business task")
+    def create_durable_task(item: DurableTaskCreate, request: Request,
+                            t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore, TaskConflict
+        db=store_factory()
+        try:
+            identity=getattr(request.state,"identity",None) or {}
+            tasks=DurableTaskStore(db.conn)
+            return tasks.create_task(
+                tenant_id=t,task_type=item.task_type,input=item.input,
+                created_by_principal_id=identity.get("principal_id"),
+                workflow_id=item.workflow_id,idempotency_key=item.idempotency_key,
+            )
+        except TaskConflict as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.get("/v1/tasks", tags=["Durable Tasks"],
+             summary="List durable tasks in the authenticated tenant")
+    def list_durable_tasks(limit: int = 50, offset: int = 0,
+                           t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        db=store_factory()
+        try:
+            return {"items":DurableTaskStore(db.conn).list_tasks(
+                tenant_id=t,limit=limit,offset=offset)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.get("/v1/tasks/{task_id}", tags=["Durable Tasks"],
+             summary="Read a durable task and its latest checkpoint")
+    def get_durable_task(task_id: str, t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            task=DurableTaskStore(db.conn).get_task(tenant_id=t,task_id=task_id)
+            if task is None:
+                raise HTTPException(status_code=404,detail="Task not found")
+            return task
+        finally:
+            db.close()
+
+    @app.post("/v1/tasks/{task_id}/checkpoints", status_code=201,
+              tags=["Durable Tasks"],
+              summary="Commit a versioned checkpoint and Outbox intents atomically")
+    def commit_durable_checkpoint(task_id: str, item: DurableCheckpointWrite,
+                                   t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore, TaskConflict
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            return DurableTaskStore(db.conn).commit_checkpoint(
+                tenant_id=t,task_id=task_id,expected_version=item.expected_version,
+                checkpoint=item.checkpoint,idempotency_key=item.idempotency_key,
+                progress_completed=item.progress_completed,
+                progress_total=item.progress_total,
+                artifact_sha256=item.artifact_sha256,
+                effect_key=item.effect_key,effect_request=item.effect_request,
+            )
+        except LookupError:
+            raise HTTPException(status_code=404,detail="Task not found")
+        except TaskConflict as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.post("/v1/tasks/{task_id}/status", tags=["Durable Tasks"],
+              summary="Advance a durable task lifecycle state")
+    def update_durable_task_status(task_id: str, item: DurableTaskStatusWrite,
+                                   t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            updated=DurableTaskStore(db.conn).set_status(
+                tenant_id=t,task_id=task_id,status=item.status,
+                result=item.result,error=item.error)
+            if not updated:
+                raise HTTPException(status_code=404,detail="Task not found or already terminal")
+            return {"task_id":task_id,"status":item.status}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

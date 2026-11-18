@@ -138,6 +138,48 @@ class MemoryClient:
                      if v is not None})
         return self._request("POST","/v1/search",json=body)
 
+    def create_api_credential(self, *, name: str, scopes: list[str],
+                              expires_in_days: int = 90):
+        """Bootstrap via an owner/admin human session, never an API credential."""
+        return self._request("POST", "/v1/identity/api-credentials",
+                             json={"name":name,"scopes":scopes,
+                                   "expires_in_days":expires_in_days})
+
+    def revoke_api_credential(self, credential_id: str):
+        """Revoke the calling Principal's credential with a human Session."""
+        return self._request("DELETE", "/v1/identity/api-credentials/"
+                             +self._segment(credential_id))
+
+    def predicate_policies(self):
+        return self._request("GET","/v1/predicate-policies")
+
+    def set_predicate_policy(self, predicate: str, *, cardinality: str):
+        if cardinality not in ("one","many"):
+            raise ValueError("cardinality must be one or many")
+        return self._request("PUT","/v1/predicate-policies/"+self._segment(predicate),
+                             json={"cardinality":cardinality})
+
+    def resolve_entity(self, name: str):
+        return self._request("GET","/v1/entities/resolve",params={"name":name})
+
+    def observations(self, device_id: str, *, property: str, limit: int = 100,
+                     start_at: str | None = None, end_at: str | None = None):
+        params={"property":property,"limit":limit}
+        if start_at is not None:
+            params["start_at"]=start_at
+        if end_at is not None:
+            params["end_at"]=end_at
+        return self._request("GET","/v1/observations/"+self._segment(device_id),
+                             params=params)
+
+    def aggregate_observations(self, device_id: str, *, property: str,
+                               start_at: str, end_at: str):
+        return self._request("GET","/v1/observations/"+self._segment(device_id)+"/aggregate",
+                             params={"property":property,"start_at":start_at,"end_at":end_at})
+
+    def search_config(self):
+        return self._request("GET","/v1/evaluation/search-config")
+
     def whoami(self):
         """Return current principal, tenant and role when identity is enabled."""
         return self._request("GET", "/v1/identity/me")

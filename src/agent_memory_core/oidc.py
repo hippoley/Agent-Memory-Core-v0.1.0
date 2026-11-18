@@ -46,15 +46,23 @@ class OIDCConfig:
             raise RuntimeError("OIDC provider configuration is incomplete")
         if len(raw_secret.encode("utf-8")) < 32:
             raise RuntimeError("MEMORY_OIDC_STATE_SECRET must contain at least 32 bytes")
+        allow_insecure_http = os.getenv("MEMORY_OIDC_ALLOW_INSECURE_HTTP", "0") == "1"
         for value, name in ((issuer, "issuer"), (redirect_uri, "redirect URI")):
             parsed = urlparse(value)
-            if parsed.scheme != "https" or not parsed.netloc:
-                raise RuntimeError(f"OIDC {name} must use HTTPS")
+            local_http = (
+                allow_insecure_http and parsed.scheme == "http"
+                and parsed.hostname is not None
+                and (parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+                     or parsed.hostname.endswith(".localhost"))
+            )
+            if not parsed.netloc or (parsed.scheme != "https" and not local_http):
+                raise RuntimeError(f"OIDC {name} must use HTTPS (HTTP is allowed only for explicit localhost development)")
         return cls(
             issuer=issuer, client_id=client_id, client_secret=client_secret,
             redirect_uri=redirect_uri, state_secret=raw_secret.encode("utf-8"),
             allow_signup=os.getenv("MEMORY_OIDC_ALLOW_SIGNUP", "0") == "1",
             cookie_secure=os.getenv("MEMORY_COOKIE_SECURE", "1") == "1",
+            allow_insecure_http=allow_insecure_http,
         )
 
 
@@ -77,7 +85,13 @@ class OIDCClient:
         for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
             endpoint = metadata.get(key)
             parsed = urlparse(endpoint or "")
-            if parsed.scheme != "https" or not parsed.netloc:
+            local_http = (
+                self.config.allow_insecure_http and parsed.scheme == "http"
+                and parsed.hostname is not None
+                and (parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+                     or parsed.hostname.endswith(".localhost"))
+            )
+            if not parsed.netloc or (parsed.scheme != "https" and not local_http):
                 raise ValueError(f"OIDC discovery returned an invalid {key}")
         return metadata
 

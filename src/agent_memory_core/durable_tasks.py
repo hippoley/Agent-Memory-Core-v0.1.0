@@ -155,12 +155,22 @@ class DurableTaskStore:
             if task is None:
                 raise LookupError("Task not found")
             existing=self.conn.execute(
-                """SELECT version,checkpoint,artifact_sha256 FROM memory_task_checkpoints
+                """SELECT version,checkpoint,artifact_sha256,progress_completed,
+                          progress_total,effect_key,effect_request_sha256
+                   FROM memory_task_checkpoints
                    WHERE task_id=%s::uuid AND idempotency_key=%s""",
                 (task_id,idempotency_key),
             ).fetchone()
             if existing:
-                if _digest(existing[1]) != _digest(checkpoint) or existing[2] != artifact_sha256:
+                requested_effect_hash = _digest(effect_request) if effect_request is not None else None
+                if (
+                    _digest(existing[1]) != _digest(checkpoint)
+                    or existing[2] != artifact_sha256
+                    or existing[3] != progress_completed
+                    or existing[4] != progress_total
+                    or existing[5] != effect_key
+                    or existing[6] != requested_effect_hash
+                ):
                     raise TaskConflict("Checkpoint idempotency key was reused with different content")
                 return {"task_id":task_id,"version":existing[0],"replayed":True}
             current_version,status=task
@@ -195,9 +205,12 @@ class DurableTaskStore:
             next_version=current_version+1
             self.conn.execute(
                 """INSERT INTO memory_task_checkpoints
-                   (task_id,version,checkpoint,artifact_sha256,idempotency_key)
-                   VALUES (%s::uuid,%s,%s::jsonb,%s,%s)""",
-                (task_id,next_version,_canonical(checkpoint),artifact_sha256,idempotency_key),
+                   (task_id,version,checkpoint,artifact_sha256,idempotency_key,
+                    progress_completed,progress_total,effect_key,effect_request_sha256)
+                   VALUES (%s::uuid,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
+                (task_id,next_version,_canonical(checkpoint),artifact_sha256,idempotency_key,
+                 progress_completed,progress_total,effect_key,
+                 _digest(effect_request) if effect_request is not None else None),
             )
             self.conn.execute(
                 """UPDATE memory_durable_tasks

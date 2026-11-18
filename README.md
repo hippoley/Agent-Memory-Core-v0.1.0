@@ -99,6 +99,16 @@ source .venv/bin/activate
 python -m pip install -e '.[api,postgres]'
 ```
 
+### 4. Verify the running product end to end
+
+This is an actual API/SDK smoke journey, not a CI status check. It creates a uniquely named memory, revises it, verifies current recall and retained history, calls search, reads evidence and events, and exits non-zero on the first broken product operation:
+
+```bash
+python scripts/smoke_local.py
+```
+
+A successful run ends with `LOCAL_MEMORY_RUNTIME_ACCEPTED`. It talks only to the local HTTP API through the public SDK; it does not connect to PostgreSQL directly. It leaves the uniquely named demo records in the local database so they can be inspected in Observatory.
+
 Then connect to the local API using the development key from `.env.local`:
 
 ```python

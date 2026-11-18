@@ -322,6 +322,7 @@ class IdentityStore:
 
     def authorize_background_execution(self, *, principal_id: str,
                                       tenant_id: str, session_id: str | None = None,
+                                      credential_id: str | None = None,
                                       membership_version: int | None = None) -> bool:
         """Authorize queued work against current control-plane state.
 
@@ -353,6 +354,17 @@ class IdentityStore:
                            AND s.expires_at>clock_timestamp()
                        )"""
             params.append(session_id)
+        if credential_id is not None:
+            sql += """ AND EXISTS (
+                         SELECT 1 FROM memory_api_credentials c
+                         WHERE c.credential_id=%s::uuid
+                           AND c.principal_id=p.principal_id
+                           AND c.tenant_id=m.tenant_id
+                           AND c.revoked_at IS NULL
+                           AND (c.expires_at IS NULL OR c.expires_at>clock_timestamp())
+                           AND ('memory:write'=ANY(c.scopes) OR 'memory:*'=ANY(c.scopes))
+                       )"""
+            params.append(credential_id)
         return self.conn.execute(sql, params).fetchone() is not None
 
     def revoke_session(self, *, session_id: str, principal_id: str) -> bool:

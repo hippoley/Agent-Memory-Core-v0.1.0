@@ -168,7 +168,8 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             }""")
             assert logout["status"] == 200 and logout["body"]["logged_out"] is True
             after_logout = page.evaluate("""async () => {
-              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const item = document.cookie.split('; ').find(x => x.startsWith('amc_tenant='));
+              const tenant = item ? decodeURIComponent(item.split('=').slice(1).join('=')) : '';
               const response = await fetch('/v1/identity/me', {
                 credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
               });

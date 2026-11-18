@@ -244,6 +244,8 @@ class DurableTaskEffectRuntime:
         self.connection_factory=connection_factory
 
     def execute(self, *, context, effect_key: str, provider) -> dict:
+        from .provider_contract import validate_provider,ProviderContractError
+        capabilities=validate_provider(provider)
         context.assert_lease()
         db=self.connection_factory()
         try:
@@ -259,6 +261,8 @@ class DurableTaskEffectRuntime:
                                       idempotency_key=effect["idempotency_key"])
             if not isinstance(response,dict):
                 raise TypeError("Provider execute() must return an object")
+            if not response.get("provider_reference"):
+                raise ValueError("Provider execute() must return a durable provider_reference")
             db=self.connection_factory()
             try:
                 DurableTaskEffectStore(db.conn).mark_committed(
@@ -295,6 +299,8 @@ class DurableTaskEffectRuntime:
             return {"status":"unknown","error":str(exc)}
 
     def reconcile(self, *, context, effect_key: str, provider) -> dict:
+        from .provider_contract import validate_provider,validate_reconciliation_outcome
+        capabilities=validate_provider(provider)
         context.assert_lease()
         db=self.connection_factory()
         try:
@@ -308,10 +314,7 @@ class DurableTaskEffectRuntime:
             outcome=provider.reconcile(
                 effect["request"],idempotency_key=effect["idempotency_key"],
                 provider_reference=effect["provider_reference"])
-            if not isinstance(outcome,dict) or outcome.get("outcome") not in {
-                "committed","not_found","unknown","failed"
-            }:
-                raise ValueError("Provider reconcile() returned an invalid outcome")
+            outcome=validate_reconciliation_outcome(outcome,capabilities)
         except Exception as exc:
             outcome={"outcome":"unknown","error":{
                 "type":type(exc).__name__,"message":str(exc)[:2000]}}

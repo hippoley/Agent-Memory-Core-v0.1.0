@@ -118,6 +118,24 @@ class IdentityStore:
         return {"session_id": str(session_id), "token": token,
                 "expires_at": row[0]}
 
+    def list_session_tenants(self, *, token: str) -> list[dict]:
+        if not token:
+            return []
+        rows = self.conn.execute(
+            """SELECT m.tenant_id,t.display_name,m.role,m.version
+               FROM memory_sessions s
+               JOIN memory_principals p ON p.principal_id=s.principal_id
+               JOIN memory_tenant_memberships m ON m.principal_id=p.principal_id
+               JOIN memory_tenants t ON t.tenant_id=m.tenant_id
+               WHERE s.token_hash=%s AND s.revoked_at IS NULL
+                 AND s.expires_at>clock_timestamp()
+                 AND p.status='active' AND m.status='active' AND t.status='active'
+               ORDER BY t.display_name,m.tenant_id""",
+            (self._hash(token),)).fetchall()
+        return [{"tenant_id": r[0], "display_name": r[1],
+                 "role": r[2], "membership_version": int(r[3])}
+                for r in rows]
+
     def authenticate_session(self, *, token: str, tenant_id: str) -> dict | None:
         if not token or not tenant_id:
             return None

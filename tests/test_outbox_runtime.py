@@ -208,7 +208,7 @@ with conn.transaction():
         assert db.conn.execute(
             """SELECT count(*) FROM memory_events
                WHERE tenant_id=%s AND event_id=%s""",
-            (tenant, event_id),
+            (tenant, str(event_id)),
         ).fetchone()[0] == 0
         db.conn.commit()
 
@@ -229,7 +229,7 @@ with conn.transaction():
         assert db.conn.execute(
             """SELECT count(*) FROM memory_events
                WHERE tenant_id=%s AND event_id=%s""",
-            (tenant, event_id),
+            (tenant, str(event_id)),
         ).fetchone()[0] == 1
     finally:
         if child is not None:

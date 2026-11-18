@@ -411,7 +411,7 @@ in query strings.
 
 ## 10. Temporal workflow lifecycle
 
-The API can start, describe and request cancellation of the registered
+The API can start, describe, query progress, cooperatively pause/resume, and request cancellation of the registered
 `VerifyMemoryWorkflow`. The Temporal service and Worker are separate processes.
 
 Configure the API:
@@ -448,6 +448,14 @@ worker autoscaling and production Temporal cluster operations are not
 implemented. Cancellation is a request to Temporal, not proof that an
 external side effect was rolled back.
 
+
+The current verification workflow exposes:
+
+- `GET /v1/workflows/{workflow_id}/progress` — stage, completed steps and percentage.
+- `POST /v1/workflows/{workflow_id}/pause` — pause at the next safe stage boundary; an in-flight Activity is not interrupted.
+- `POST /v1/workflows/{workflow_id}/resume` — continue from the persisted workflow history.
+
+Pause/resume are cooperative workflow signals, not process suspension. Activity-level heartbeat checkpoints for long-running external work are not yet implemented.
 ## 11. Capability discovery and error semantics
 
 Call `GET /v1/capabilities` before using optional channels. A capability

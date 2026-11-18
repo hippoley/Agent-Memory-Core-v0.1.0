@@ -1,7 +1,8 @@
 """Typed synchronous HTTP client for third-party Agent integration.
 
 Optional dependency: pip install agent-memory-core[api].
-A MemoryClient never accesses PostgreSQL directly; tenant comes from server key.
+A MemoryClient never accesses PostgreSQL directly. In identity mode, pass the
+workspace ID explicitly; the server validates it against the scoped credential.
 """
 from __future__ import annotations
 
@@ -105,6 +106,16 @@ class MemoryClient:
         }.items() if val is not None})
         return self._request("POST","/v1/memories",json=body,
                              headers={"Idempotency-Key":idempotency_key} if idempotency_key is not None else None)
+
+    def revise(self, memory_id: str, *, subject_id: str, predicate: str,
+               value: dict, source_id: str, valid_from: str,
+               idempotency_key: str | None = None):
+        """Create a new canonical version and supersede the supplied claim."""
+        return self.remember(
+            subject_id=subject_id, predicate=predicate, value=value,
+            source_id=source_id, valid_from=valid_from, replaces_id=memory_id,
+            idempotency_key=idempotency_key,
+        )
 
     def recall(self, subject_id: str, *, predicate: str | None = None,
                valid_at: str | None = None, known_at: str | None = None):

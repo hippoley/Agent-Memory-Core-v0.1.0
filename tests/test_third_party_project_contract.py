@@ -54,3 +54,14 @@ def test_external_consumer_installs_the_exact_ci_built_wheel():
     assert 'pip install "${wheel}[api]"' in workflow
     assert "pip install --find-links /tmp/amc-wheel 'agent-memory-core[api]==0.1.0'" not in workflow
     assert "(cd /tmp && /tmp/amc-consumer-venv/bin/python -m third_party_memory_agent)" in workflow
+
+
+def test_external_consumer_capabilities_match_public_api_schema():
+    from agent_memory_core.contracts import capabilities
+    reported = capabilities(temporal=True)
+    assert reported
+    assert all(set(("name", "available", "reason")) <= item.keys() for item in reported)
+    root = Path(__file__).resolve().parents[1]
+    consumer = (root / 'examples/third_party_memory_agent/src/third_party_memory_agent/__main__.py').read_text(encoding='utf-8')
+    assert 'item["available"]' in consumer
+    assert 'item["enabled"]' not in consumer

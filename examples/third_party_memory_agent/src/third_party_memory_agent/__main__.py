@@ -24,8 +24,8 @@ def main() -> None:
     suffix = uuid.uuid4().hex
     subject = "third-party-agent-" + suffix
     now = datetime.now(timezone.utc)
-    earlier = now.isoformat()
-    later = (now + timedelta(seconds=1)).isoformat()
+    earlier = (now - timedelta(seconds=1)).isoformat()
+    later = now.isoformat()
 
     with MemoryClient(base_url, api_key, tenant_id=tenant_id) as memory:
         ready = memory.ready()

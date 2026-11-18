@@ -8,6 +8,7 @@ import os
 import asyncio
 import json
 import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -331,6 +332,70 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 headers={"WWW-Authenticate": "Bearer"},
             )
         raise HTTPException(status_code=403, detail="Invalid credential")
+
+    @app.get("/v1/auth/oidc/login", tags=["Identity"], summary="Start OIDC browser login")
+    def oidc_login():
+        from .oidc import OIDCClient, OIDCConfig
+        try:
+            config = OIDCConfig.from_env()
+            authorization_url, transaction_cookie = OIDCClient(config).begin()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="OIDC login is not configured") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="OIDC provider discovery failed") from exc
+        response = RedirectResponse(authorization_url, status_code=302)
+        response.set_cookie(
+            "amc_oidc_tx", transaction_cookie, max_age=600, path="/v1/auth/oidc",
+            httponly=True, secure=config.cookie_secure, samesite="lax")
+        return response
+
+    @app.get("/v1/auth/oidc/callback", tags=["Identity"], summary="Complete OIDC browser login")
+    def oidc_callback(request: Request, code: str | None = None, state: str | None = None):
+        from .oidc import OIDCClient, OIDCConfig
+        if not code or not state or not request.cookies.get("amc_oidc_tx"):
+            raise HTTPException(status_code=400, detail="OIDC callback is incomplete")
+        try:
+            config = OIDCConfig.from_env()
+            client = OIDCClient(config)
+            transaction = client.verify_transaction(request.cookies["amc_oidc_tx"], state)
+            claims = client.exchange_and_verify(code=code, transaction=transaction)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="OIDC login is not configured") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail="OIDC authentication failed") from exc
+
+        identity_store = identity_store_factory() if identity_store_factory else None
+        if identity_store is None:
+            raise HTTPException(status_code=503, detail="Identity control plane is unavailable")
+        try:
+            login = identity_store.complete_oidc_login(
+                issuer=config.issuer, subject=claims["sub"],
+                email=claims.get("email") if isinstance(claims.get("email"), str) else None,
+                email_verified=claims.get("email_verified") is True,
+                display_name=claims.get("name") or claims.get("preferred_username"),
+                allow_signup=config.allow_signup, bootstrap_workspace=True,
+                user_agent=request.headers.get("user-agent"))
+        except LookupError as exc:
+            raise HTTPException(status_code=403, detail="Account is not provisioned for this identity") from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail="Account is not active") from exc
+        finally:
+            identity_store.close()
+
+        csrf_token = secrets.token_urlsafe(24)
+        response = RedirectResponse("/dashboard/", status_code=303)
+        response.delete_cookie("amc_oidc_tx", path="/v1/auth/oidc",
+                               secure=config.cookie_secure, samesite="lax")
+        response.set_cookie(
+            "amc_session", login["token"], max_age=43200, path="/",
+            httponly=True, secure=config.cookie_secure, samesite="lax")
+        response.set_cookie(
+            "amc_csrf", csrf_token, max_age=43200, path="/",
+            httponly=False, secure=config.cookie_secure, samesite="lax")
+        response.set_cookie(
+            "amc_tenant", login["tenants"][0]["tenant_id"], max_age=43200, path="/",
+            httponly=False, secure=config.cookie_secure, samesite="lax")
+        return response
 
     @app.get("/v1/identity/tenants", tags=["Identity"], summary="List active tenant memberships")
     def identity_tenants(request: Request,

@@ -148,6 +148,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
 
             # Correct a canonical claim through the real browser session and
             # prove both the active value and superseded audit version survive.
+            revision_one_at = datetime.now(timezone.utc).isoformat()
             revision_one = page.evaluate("""async (now) => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
@@ -161,8 +162,10 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 })
               });
               return {status:response.status,body:await response.json()};
-            }""", now)
+            }""", revision_one_at)
             assert revision_one["status"] == 201, revision_one
+            revision_two_at = datetime.now(timezone.utc).isoformat()
+            assert revision_two_at > revision_one_at
             revision_two = page.evaluate("""async ({now, replacesId}) => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const csrf = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_csrf=')).split('=').slice(1).join('='));
@@ -176,7 +179,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 })
               });
               return {status:response.status,body:await response.json()};
-            }""", {"now":now,"replacesId":revision_one["body"]["id"]})
+            }""", {"now":revision_two_at,"replacesId":revision_one["body"]["id"]})
             assert revision_two["status"] == 201, revision_two
             revision_state = page.evaluate("""async () => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
@@ -262,13 +265,16 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 page2.locator("#kc-registration a").click()
                 page2.wait_for_url(re.compile(r".*/realms/agent-memory/login-actions/registration.*"),
                                    timeout=15000)
-                page2.locator("#firstName").fill("Self")
-                page2.locator("#lastName").fill("Registered")
-                page2.locator("#email").fill(username2 + "@example.test")
-                page2.locator("#username").fill(username2)
-                page2.locator("#password").fill(password2)
-                page2.locator("#password-confirm").fill(password2)
-                page2.locator("#kc-register").click()
+                page2.locator('input[name="firstName"]').fill("Self")
+                page2.locator('input[name="lastName"]').fill("Registered")
+                page2.locator('input[name="email"]').fill(username2 + "@example.test")
+                page2.locator('input[name="username"]').fill(username2)
+                page2.locator('input[name="password"]').fill(password2)
+                page2.locator('input[name="password-confirm"]').fill(password2)
+                # Keycloak 26.2.5 default registration theme has no kc-register id.
+                register_submit = page2.locator('#kc-register-form input[type="submit"], #kc-register-form button[type="submit"]')
+                expect(register_submit).to_have_count(1)
+                register_submit.click()
                 page2.wait_for_url(
                     re.compile(re.escape(BASE_URL) + r"/dashboard/observatory\.html"),
                     timeout=30000,

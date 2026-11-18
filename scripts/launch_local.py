@@ -35,13 +35,15 @@ def save_env(settings: dict[str, str]) -> None:
     if os.name != "nt":
         ENV.chmod(0o600)
 
-def compose_args(profile: str) -> list[str]:
+def compose_args(profile: str, identity: bool = False) -> list[str]:
     args = ["docker", "compose", "--env-file", str(ENV),
             "-f", "compose.yaml", "-f", "compose.app.yaml"]
     if profile in ("full", "extended"):
         args.extend(["-f", "compose.worker.yaml"])
     if profile == "extended":
         args.extend(["-f", "compose.temporal.yaml"])
+    if identity:
+        args.extend(["-f", "compose.keycloak.yaml", "-f", "compose.identity.yaml"])
     return args
 
 def call(args: list[str], *, check: bool = True) -> int:
@@ -51,11 +53,13 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("command", choices=["up", "down", "status"])
     p.add_argument("--profile", choices=sorted(PROFILES), default=None)
+    p.add_argument("--identity", action="store_true", help="Add the local Keycloak OIDC and identity control-plane stack")
     args = p.parse_args(argv)
 
     settings = parse_env(ENV)
     old_profile = settings.get("MEMORY_LOCAL_PROFILE", "lite")
     profile = args.profile or old_profile
+    identity = args.identity or settings.get("MEMORY_LOCAL_IDENTITY", "0") == "1"
     if args.command == "up":
         current_key = settings.get("MEMORY_API_KEY", "")
         if len(current_key) < 32 or current_key.startswith(("REPLACE", "CHANGE")):
@@ -64,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         settings["MEMORY_EXTRACTOR_PROVIDER"] = settings.get("MEMORY_EXTRACTOR_PROVIDER", "rule")
         settings["MEMORY_ENABLE_VECTOR"], settings["MEMORY_ENABLE_AGE"] = PROFILES[profile]
         settings["MEMORY_LOCAL_PROFILE"] = profile
+        settings["MEMORY_LOCAL_IDENTITY"] = "1" if identity else "0"
         # Ensure full-profile worker is removed when switching away, without
         # deleting DB/objects volumes.
         if old_profile == "extended" and profile != "extended":
@@ -77,20 +82,24 @@ def main(argv: list[str] | None = None) -> int:
             call(compose_args(old_profile) + ["stop", "memory-worker"])
             call(compose_args(old_profile) + ["rm", "-f", "memory-worker"])
         save_env(settings)
-        call(compose_args(profile) + ["up", "-d", "--build", "--wait", "--remove-orphans"])
+        call(compose_args(profile, identity) + ["up", "-d", "--build", "--wait", "--remove-orphans"])
         print("\nLocal services ready (loopback only):")
         print("  Console:     http://127.0.0.1:8765/dashboard/")
         print("  Swagger:     http://127.0.0.1:8765/docs/swagger")
         print("  API manual:  http://127.0.0.1:8765/docs")
         print("  Key:         .env.local → MEMORY_API_KEY (keep private)")
         print(f"  Profile:     {profile} (not a benchmark qualification)")
+        if identity:
+            print("  Keycloak:    http://127.0.0.1:8081 (realm agent-memory)")
+            print("  Login:       http://127.0.0.1:8765/v1/auth/oidc/login")
+            print("  Admin:       admin / local-keycloak-admin-change-me (local only)")
         if profile == "extended":
             print("  Temporal UI: http://127.0.0.1:8233 (development only)")
             print("  Temporal:    localhost:7233 (verification worker starts separately)")
         return 0
     if not ENV.exists():
         p.error(".env.local missing; run 'up' first")
-    call(compose_args(profile) + (["ps"] if args.command == "status" else ["down"]))
+    call(compose_args(profile, identity) + (["ps"] if args.command == "status" else ["down"]))
     return 0
 
 if __name__ == "__main__":

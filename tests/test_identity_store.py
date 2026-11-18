@@ -55,7 +55,7 @@ def test_identity_store_session_membership_and_credential_lifecycle():
 
         # Role downgrade is enforced on the next request, not after token expiry.
         store.set_membership_role(
-            tenant_id="tenant-b-" + suffix, principal_id=principal_b, role="reader")
+            tenant_id="tenant-a-" + suffix, principal_id=principal_a, role="reader")
         assert store.authenticate_session(
             token=session["token"], tenant_id="tenant-a-" + suffix)["role"] == "reader"
         assert store.revoke_membership(

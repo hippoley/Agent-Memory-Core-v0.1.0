@@ -135,6 +135,25 @@ CURL = 'curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/js
 
 STORIES: dict[tuple[str, str], Story] = {
     # --------------------------------------------------------------- Identity
+    ("GET", "/v1/auth/oidc/login"): Story(
+        persona="首次使用的开发者",
+        goal="通过已配置的 OpenID Connect 身份提供商安全登录",
+        value="不需要把密码交给记忆服务，且登录事务由短期 State、Nonce 与 PKCE 保护",
+        steps=("服务端从固定的 MEMORY_OIDC_ISSUER 获取 Discovery 元数据。",
+               "浏览器被重定向到授权端点，使用 Authorization Code + PKCE S256。",
+               "事务 Cookie 为 HttpOnly、签名保护且最多存活 10 分钟。"),
+        example='打开 $API/v1/auth/oidc/login',
+    ),
+    ("GET", "/v1/auth/oidc/callback"): Story(
+        persona="完成身份认证的开发者",
+        goal="验证 OIDC 回调并建立自己的记忆工作区",
+        value="首次登录可原子创建 Principal、External Identity、Owner Membership 和 Session",
+        steps=("服务端校验签名、Issuer、Audience、Expiry、Nonce 与 State。",
+               "账号关联只使用 issuer + subject，不使用未经验证的 Email 自动合并账号。",
+               "仅在 MEMORY_OIDC_ALLOW_SIGNUP=1 时允许新身份注册；新工作区与 Session 在同一数据库事务内创建。",
+               "Session 使用 HttpOnly Cookie，CSRF Token 单独设置；登录后进入 Observatory。"),
+        example='由身份提供商回调 $API/v1/auth/oidc/callback',
+    ),
     ("GET", "/v1/identity/tenants"): Story(
         persona="已登录开发者",
         goal="列出当前 Session 能访问的全部租户及角色",

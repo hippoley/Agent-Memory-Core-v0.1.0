@@ -10,6 +10,20 @@ def _database_dsn() -> str:
     if not dsn:
         raise RuntimeError("MEMORY_DSN is required by Temporal Activities")
     return dsn
+
+def _assert_temporal_tenant(db, tenant_id: str) -> None:
+    """Bind every Temporal activity to the PostgreSQL login's tenant identity.
+
+    Local development may run before operator-installed RLS exists. Once the
+    RLS registry is installed, an unbound/admin login is always rejected.
+    Production must set MEMORY_TEMPORAL_REQUIRE_RLS=1 so a missing RLS
+    installation also fails closed.
+    """
+    try:
+        db.assert_database_tenant(tenant_id)
+    except RuntimeError:
+        if os.getenv("MEMORY_TEMPORAL_REQUIRE_RLS", "0") == "1":
+            raise
 try:
     from temporalio import activity, workflow
 except ImportError as exc:
@@ -20,6 +34,7 @@ def verify_memory_record(request: dict) -> dict:
     from .postgres import PostgresMemory
     db=PostgresMemory(_database_dsn())
     try:
+        _assert_temporal_tenant(db, request["tenant_id"])
         row=db.conn.execute(
             """SELECT id::text,subject_id,predicate,source_id,superseded_at
                FROM memory_claims WHERE tenant_id=%s AND id=%s::uuid""",
@@ -40,6 +55,7 @@ def write_memory_verification_receipt(verified: dict) -> dict:
         "memory-verify:"+verified["tenant_id"]+":"+verified["memory_id"])
     db=PostgresMemory(_database_dsn())
     try:
+        _assert_temporal_tenant(db, verified["tenant_id"])
         with db.conn.transaction():
             db.conn.execute(
                 """INSERT INTO memory_outbox

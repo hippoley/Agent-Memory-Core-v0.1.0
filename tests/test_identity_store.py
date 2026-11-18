@@ -24,6 +24,7 @@ def test_identity_store_session_membership_and_credential_lifecycle():
         suffix = uuid4().hex
         principal_a = store.create_principal(display_name="Alice")
         principal_b = store.create_principal(display_name="Bob")
+        principal_c = store.create_principal(display_name="Carol")
         store.link_external_identity(
             principal_id=principal_a, issuer="https://issuer.example.test",
             subject="alice-" + suffix, email="alice@example.test", email_verified=True)
@@ -35,6 +36,15 @@ def test_identity_store_session_membership_and_credential_lifecycle():
             owner_principal_id=principal_b)
         store.add_membership(
             tenant_id="tenant-a-" + suffix, principal_id=principal_b, role="reader")
+        store.add_membership(
+            tenant_id="tenant-a-" + suffix, principal_id=principal_c, role="owner")
+
+        with pytest.raises(ValueError, match="last active tenant owner"):
+            store.set_membership_role(
+                tenant_id="tenant-a-" + suffix, principal_id=principal_a, role="reader")
+        with pytest.raises(ValueError, match="last active tenant owner"):
+            store.revoke_membership(
+                tenant_id="tenant-a-" + suffix, principal_id=principal_a)
 
         session = store.issue_session(principal_id=principal_a)
         assert len(session["token"]) >= 40

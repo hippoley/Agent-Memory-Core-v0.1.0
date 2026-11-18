@@ -498,6 +498,8 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         identity = getattr(request.state, "identity", None) or {}
         if identity.get("auth_type") != "session" or identity.get("role") not in ("owner", "admin"):
             raise HTTPException(status_code=403, detail="Owner/Admin browser session required")
+        if not item.name.strip():
+            raise HTTPException(status_code=422, detail="Credential name cannot be blank")
         allowed = {"memory:read", "memory:write", "memory:*"}
         if any(scope not in allowed for scope in item.scopes) or len(set(item.scopes)) != len(item.scopes):
             raise HTTPException(status_code=422, detail="Invalid or duplicate credential scope")

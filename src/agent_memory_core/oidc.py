@@ -37,7 +37,7 @@ class OIDCConfig:
 
     @classmethod
     def from_env(cls) -> "OIDCConfig":
-        issuer = os.getenv("MEMORY_OIDC_ISSUER", "").strip().rstrip("/")
+        issuer = os.getenv("MEMORY_OIDC_ISSUER", "").strip()
         client_id = os.getenv("MEMORY_OIDC_CLIENT_ID", "").strip()
         client_secret = os.getenv("MEMORY_OIDC_CLIENT_SECRET", "")
         redirect_uri = os.getenv("MEMORY_OIDC_REDIRECT_URI", "").strip()
@@ -72,7 +72,7 @@ class OIDCClient:
             response = client.get(url)
             response.raise_for_status()
             metadata = response.json()
-        if metadata.get("issuer", "").rstrip("/") != self.config.issuer:
+        if metadata.get("issuer") != self.config.issuer:
             raise ValueError("OIDC discovery issuer mismatch")
         for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
             endpoint = metadata.get(key)
@@ -111,13 +111,16 @@ class OIDCClient:
     def verify_transaction(self, cookie: str, returned_state: str) -> dict:
         try:
             raw, supplied = cookie.split(".", 1)
-            expected = _b64(hmac.new(
-                self.config.state_secret, raw.encode("ascii"), hashlib.sha256).digest())
-            if not hmac.compare_digest(supplied, expected):
-                raise ValueError("Invalid OIDC transaction signature")
-            transaction = json.loads(_unb64(raw))
-        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        except (AttributeError, ValueError) as exc:
             raise ValueError("Invalid OIDC transaction") from exc
+        expected = _b64(hmac.new(
+            self.config.state_secret, raw.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(supplied, expected):
+            raise ValueError("Invalid OIDC transaction signature")
+        try:
+            transaction = json.loads(_unb64(raw))
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid OIDC transaction payload") from exc
         if not hmac.compare_digest(str(transaction.get("state", "")), str(returned_state or "")):
             raise ValueError("OIDC state mismatch")
         if int(transaction.get("expires_at", 0)) < int(time.time()):

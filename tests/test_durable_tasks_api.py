@@ -104,6 +104,11 @@ def test_dedicated_worker_credential_claim_checkpoint_and_finish():
         assert task["task_id"]==task_id
         assert task["lease_epoch"]==1
 
+        renewed=client.post(f"/v1/tasks/{task_id}/lease/renew",headers=headers,
+            json={"worker_id":worker_id,"lease_epoch":task["lease_epoch"],
+                  "lease_seconds":30})
+        assert renewed.status_code==200,renewed.text
+
         checkpoint=client.post(f"/v1/tasks/{task_id}/checkpoints",
             headers=headers,json={"worker_id":worker_id,
                 "lease_epoch":task["lease_epoch"],"expected_version":0,
@@ -112,8 +117,26 @@ def test_dedicated_worker_credential_claim_checkpoint_and_finish():
         assert checkpoint.status_code==201,checkpoint.text
         assert checkpoint.json()["version"]==1
 
-        finished=client.post(f"/v1/tasks/{task_id}/status",headers=headers,
+        expire=PostgresMemory(dsn)
+        try:
+            expire.conn.execute(
+                "UPDATE memory_durable_tasks SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE tenant_id=%s AND task_id=%s::uuid",
+                (tenant,task_id))
+        finally:
+            expire.close()
+        takeover=client.post("/v1/tasks/worker/claim",headers=headers,
+            json={"worker_id":"worker-B","lease_seconds":30})
+        assert takeover.status_code==200,takeover.text
+        newer=takeover.json()["task"]
+        assert newer["lease_epoch"]==2
+
+        stale=client.post(f"/v1/tasks/{task_id}/status",headers=headers,
             json={"worker_id":worker_id,"lease_epoch":task["lease_epoch"],
+                  "status":"completed","result":{"forged":True}})
+        assert stale.status_code==409,stale.text
+
+        finished=client.post(f"/v1/tasks/{task_id}/status",headers=headers,
+            json={"worker_id":"worker-B","lease_epoch":newer["lease_epoch"],
                   "status":"completed","result":{"processed":1}})
         assert finished.status_code==200,finished.text
         verify=PostgresMemory(dsn)

@@ -19,7 +19,7 @@ services:
         aliases:
           - keycloak.localhost
     healthcheck:
-      test: ["CMD-SHELL", "{ echo > /dev/tcp/127.0.0.1/9000; }"]
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/9000"]
       interval: 5s
       timeout: 3s
       retries: 40

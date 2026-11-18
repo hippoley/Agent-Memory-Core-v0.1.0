@@ -49,6 +49,16 @@ class WorkerContext:
         finally:
             db.close()
 
+    def list_effects(self) -> list[dict]:
+        """Read this task's effect ledger to decide whether to execute or reconcile."""
+        from .durable_effects import DurableTaskEffectStore
+        db=self.connection_factory()
+        try:
+            return DurableTaskEffectStore(db.conn).list_effects(
+                tenant_id=self.tenant_id,task_id=self.task["task_id"])
+        finally:
+            db.close()
+
     def execute_effect(self, *, effect_key: str, provider) -> dict:
         """Execute one requested effect using provider idempotency; ambiguity stays UNKNOWN."""
         from .durable_effects import DurableTaskEffectRuntime

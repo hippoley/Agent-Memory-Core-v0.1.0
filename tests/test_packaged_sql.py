@@ -39,7 +39,8 @@ def test_migration_runner_discovers_predicate_policy_migration():
         if x.name.endswith(".sql") and x.name[:3].isdigit())
     assert migrations==[
         "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql",
-        "004_predicate_cardinality.sql","005_identity_foundation.sql"
+        "004_predicate_cardinality.sql","005_identity_foundation.sql",
+        "006_durable_tasks.sql"
     ]
 
 def test_packaged_identity_foundation_migration_matches_repository_sql():

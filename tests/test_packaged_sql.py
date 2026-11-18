@@ -42,7 +42,7 @@ def test_migration_runner_discovers_predicate_policy_migration():
         "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql",
         "004_predicate_cardinality.sql","005_identity_foundation.sql",
         "006_durable_tasks.sql","007_durable_task_worker_leases.sql",
-        "008_durable_task_effect_reconciliation.sql"
+        "008_durable_task_effect_reconciliation.sql","009_temporal_dispatch.sql"
     ]
 
 def test_packaged_identity_foundation_migration_matches_repository_sql():

@@ -192,6 +192,12 @@ def test_sdk_scoped_credential_can_call_full_memory_workflow():
             return httpx.Response(200, json={"workflow_id":tenant+":verify-1","status":"COMPLETED"})
         if request.url.path.endswith("/cancel"):
             return httpx.Response(200, json={"cancel_requested":True})
+        if request.url.path.endswith("/progress"):
+            return httpx.Response(200,json={"stage":"VERIFYING_MEMORY","progress_percent":50})
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(200,json={"pause_requested":True})
+        if request.url.path.endswith("/resume"):
+            return httpx.Response(200,json={"resume_requested":True})
         return httpx.Response(404, json={"detail":"missing"})
     with MemoryClient("https://memory.example.test","amc_scoped_key",
                       tenant_id=tenant,transport=httpx.MockTransport(server)) as sdk:
@@ -200,8 +206,11 @@ def test_sdk_scoped_credential_can_call_full_memory_workflow():
         assert sdk.list_memories(include_superseded=True)["items"][0]["id"] == memory_id
         started = sdk.verify_memory_async(memory_id,workflow_id="verify-1")
         assert sdk.workflow_status(started["workflow_id"])["status"] == "COMPLETED"
+        assert sdk.workflow_progress(started["workflow_id"])["progress_percent"] == 50
+        assert sdk.pause_workflow(started["workflow_id"])["pause_requested"]
+        assert sdk.resume_workflow(started["workflow_id"])["resume_requested"]
         assert sdk.cancel_workflow(started["workflow_id"])["cancel_requested"]
-    assert len(calls) == 6
+    assert len(calls) == 9
 
 
 def test_scoped_sdk_tenant_is_required_by_identity_gateway():

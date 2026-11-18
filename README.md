@@ -356,3 +356,22 @@ See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [User Story accept
 [中文导览](docs/START-HERE.zh-CN.md) · [Interactive Atlas](docs/demo/index.html) · [API reference](docs/API-REFERENCE.md) · [Report an issue](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues)
 
 </div>
+
+
+## Durable Task Worker Runtime (PR #52, Draft)
+
+The PostgreSQL task store now has an independent worker runtime with
+lease/heartbeat renewal, epoch-fenced checkpoint commits and process-level
+recovery. Worker credentials require the explicit `tasks:execute` scope;
+ordinary memory write credentials cannot claim or mutate durable tasks.
+
+- [Standalone worker handler example](examples/durable_task_worker/README.md)
+- [API and worker authorization contract](docs/API-REFERENCE.md)
+- Runtime entrypoint: `python -m agent_memory_core.worker_runtime`
+
+The SIGKILL acceptance test starts Worker A as a separate OS process, kills it
+after a durable checkpoint, then starts Worker B to reclaim the expired lease
+and resume from that checkpoint. The test is committed but is not considered
+passed until its PostgreSQL CI run is green. Provider-side idempotency and
+UNKNOWN reconciliation remain separate release gates; a database lease does
+not make a remote side effect exactly once.

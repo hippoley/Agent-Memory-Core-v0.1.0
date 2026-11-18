@@ -130,6 +130,22 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             "SELECT count(*) FROM memory_embeddings").fetchone()[0]==0
         assert db_b.conn.execute(
             "SELECT count(*) FROM memory_embeddings").fetchone()[0]==1
+        # Projection delivery consumption must follow database RLS, not an
+        # event-supplied tenant string. A's worker must never acknowledge B.
+        from agent_memory_core.projections import ProjectionWorker, PostgresProjectionHandlers
+        before_b=db_b.conn.execute(
+            """SELECT count(*) FROM memory_projection_deliveries d
+               JOIN memory_outbox o ON o.event_id=d.event_id
+               WHERE d.channel='fts' AND o.tenant_id=%s AND d.status='done'""",
+            (tenant_b,)).fetchone()[0]
+        ProjectionWorker(db_a.conn).consume(
+            channel="fts",handler=PostgresProjectionHandlers.full_text,limit=20)
+        after_b=db_b.conn.execute(
+            """SELECT count(*) FROM memory_projection_deliveries d
+               JOIN memory_outbox o ON o.event_id=d.event_id
+               WHERE d.channel='fts' AND o.tenant_id=%s AND d.status='done'""",
+            (tenant_b,)).fetchone()[0]
+        assert after_b==before_b, "Tenant-A projection worker acknowledged tenant-B deliveries"
         assert db_a.conn.execute(
             "SELECT object_sha256 FROM memory_objects").fetchall()==[("a"*64,)]
         assert db_a.conn.execute(

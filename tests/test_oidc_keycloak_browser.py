@@ -211,7 +211,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 page2.locator("#password").fill(password2)
                 page2.locator("#kc-login").click()
                 page2.wait_for_url(
-                    re.compile(re.escape(BASE_URL) + r"/dashboard/observatory\\.html"),
+                    re.compile(re.escape(BASE_URL) + r"/dashboard/observatory\.html"),
                     timeout=30000,
                 )
                 second_identity = page2.evaluate("""async () => {

@@ -66,7 +66,7 @@ def main() -> None:
 
         search = memory.search(query="preferred language Chinese", limit=10)
         assert any(
-            item.get("id") == second_id
+            item.get("memory_id") == second_id
             for item in search.get("items", [])
         ), search
 

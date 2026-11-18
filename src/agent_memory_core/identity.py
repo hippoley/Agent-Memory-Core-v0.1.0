@@ -27,6 +27,122 @@ class IdentityStore:
     def _hash(secret: str) -> bytes:
         return hashlib.sha256(secret.encode("utf-8")).digest()
 
+    def complete_oidc_login(self, *, issuer: str, subject: str,
+                            email: str | None = None,
+                            email_verified: bool = False,
+                            display_name: str | None = None,
+                            allow_signup: bool = False,
+                            bootstrap_workspace: bool = True,
+                            user_agent: str | None = None) -> dict:
+        """Atomically bind a verified OIDC subject, bootstrap its first workspace,
+        and issue a browser session.
+
+        Call only after the OIDC ID token has been fully verified (signature,
+        issuer, audience, expiry and nonce). The issuer/subject pair is the
+        identity key; email is profile metadata and is never used for account
+        linking.
+        """
+        if not isinstance(issuer, str) or not issuer.startswith("https://"):
+            raise ValueError("OIDC issuer must be an HTTPS URL")
+        if not isinstance(subject, str) or not subject or len(subject) > 1024:
+            raise ValueError("OIDC subject is required")
+        if email is not None and len(email) > 320:
+            email = None
+        label = (display_name or (email.split("@", 1)[0] if email and "@" in email else None)
+                 or "My Workspace").strip()[:255] or "My Workspace"
+        token = secrets.token_urlsafe(32)
+        session_id = uuid4()
+        user_agent_hash = self._hash(user_agent) if user_agent else None
+        is_new_principal = False
+        created_workspace = False
+
+        with self.conn.transaction():
+            # Serialize first-login races for the same issuer/subject pair.
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (issuer + "\\n" + subject,))
+            linked = self.conn.execute(
+                """SELECT p.principal_id::text,p.status
+                   FROM memory_external_identities e
+                   JOIN memory_principals p ON p.principal_id=e.principal_id
+                   WHERE e.issuer=%s AND e.subject=%s""",
+                (issuer, subject)).fetchone()
+
+            if linked is None:
+                if not allow_signup:
+                    raise LookupError("No account is linked to this OIDC identity")
+                principal_id = uuid4()
+                self.conn.execute(
+                    """INSERT INTO memory_principals
+                       (principal_id,principal_type,display_name)
+                       VALUES (%s,'human',%s)""", (principal_id, label))
+                self.conn.execute(
+                    """INSERT INTO memory_external_identities
+                       (identity_id,principal_id,issuer,subject,email,email_verified)
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (uuid4(), principal_id, issuer, subject, email, bool(email_verified)))
+                is_new_principal = True
+            else:
+                principal_id, principal_status = linked
+                if principal_status != "active":
+                    raise PermissionError("Principal is not active")
+                self.conn.execute(
+                    """UPDATE memory_external_identities
+                       SET email=%s,email_verified=%s,last_authenticated_at=clock_timestamp()
+                       WHERE issuer=%s AND subject=%s""",
+                    (email, bool(email_verified), issuer, subject))
+
+            active_memberships = self.conn.execute(
+                """SELECT m.tenant_id,t.display_name,m.role
+                   FROM memory_tenant_memberships m
+                   JOIN memory_tenants t ON t.tenant_id=m.tenant_id
+                   WHERE m.principal_id=%s AND m.status='active' AND t.status='active'
+                   ORDER BY m.created_at,m.tenant_id""",
+                (principal_id,)).fetchall()
+
+            if not active_memberships and bootstrap_workspace:
+                tenant_id = "ws-" + uuid4().hex
+                self.conn.execute(
+                    "INSERT INTO memory_tenants(tenant_id,display_name) VALUES (%s,%s)",
+                    (tenant_id, label))
+                self.conn.execute(
+                    """INSERT INTO memory_tenant_memberships
+                       (membership_id,tenant_id,principal_id,role)
+                       VALUES (%s,%s,%s,'owner')""",
+                    (uuid4(), tenant_id, principal_id))
+                active_memberships = [(tenant_id, label, "owner")]
+                created_workspace = True
+
+            if not active_memberships:
+                raise LookupError("OIDC principal has no active tenant membership")
+
+            expires = self.conn.execute(
+                """INSERT INTO memory_sessions
+                   (session_id,principal_id,token_hash,expires_at,user_agent_hash)
+                   VALUES (%s,%s,%s,clock_timestamp()+interval '12 hours',%s)
+                   RETURNING expires_at""",
+                (session_id, principal_id, self._hash(token), user_agent_hash)
+            ).fetchone()[0]
+            self.conn.execute(
+                """INSERT INTO memory_identity_audit_events
+                   (audit_id,correlation_id,principal_id,action,decision,reason_code,metadata)
+                   VALUES (%s,%s,%s,'identity.oidc.login','allow','oidc_verified',%s::jsonb)""",
+                (uuid4(), str(session_id), principal_id,
+                 '{"provider":"oidc","new_principal":' + ("true" if is_new_principal else "false") + '}'))
+
+        return {
+            "principal_id": str(principal_id),
+            "session_id": str(session_id),
+            "token": token,
+            "expires_at": expires,
+            "is_new_principal": is_new_principal,
+            "created_workspace": created_workspace,
+            "tenants": [
+                {"tenant_id": row[0], "display_name": row[1], "role": row[2]}
+                for row in active_memberships
+            ],
+        }
+
     def create_principal(self, *, principal_type: str = "human",
                          display_name: str | None = None) -> str:
         if principal_type not in ("human", "service"):

@@ -45,11 +45,16 @@ login/callback routes, first-Owner workspace bootstrap and browser Session
 cookies are implemented on PR #51. The Keycloak local profile and a real
 Chromium acceptance workflow are included.
 
-This is not yet approval for public registration or production SaaS. Real
-external-provider deployment, workspace administration, invitations, full
-resource-level authorization, production data-plane isolation, rate limiting,
-secret rotation, provider logout and independent security review remain
-separate release gates.
+The local Keycloak realm has now passed real Chromium acceptance for public
+self-registration of two independent users, first-Owner provisioning, Observatory
+create/revise/soft-forget, PostgreSQL-backed readback, tenant isolation, session
+restoration and logout revocation (PR #51 candidate `c74b689f`, 2026-11-18).
+
+This is local-provider integration evidence, not approval for an Internet-facing
+public signup service or production SaaS. Real external-provider deployment,
+workspace administration, invitations, full resource-level authorization,
+production data-plane isolation, rate limiting, secret rotation, provider logout
+and independent security review remain separate release gates.
 
 ## OIDC browser login (first-provider implementation)
 
@@ -115,7 +120,13 @@ the production privilege model. Never expose this profile to a network.
 
 The real-provider CI acceptance is
 `tests/test_oidc_keycloak_browser.py`, run by
-`.github/workflows/keycloak-oidc-e2e.yml`. It creates an IdP user, completes
-the actual Keycloak login in Chromium, verifies first-Owner provisioning,
-creates and withdraws a memory through the real API, checks session persistence
-after reload, and verifies logout revokes the Session.
+`.github/workflows/keycloak-oidc-e2e.yml`. The successful run
+[44231515276](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515276)
+creates two independent IdP users and completes actual Keycloak registration
+and login in Chromium. Both users receive separate Principal/Workspace/Owner/
+Session records. The test drives Observatory UI create, revision and soft-forget,
+independently reads active and historical records through the PostgreSQL-backed
+API, checks cross-tenant read and workspace-switch denial, verifies session
+persistence after reload, and confirms logout revokes the Session. The separate
+[Observatory Browser Acceptance run](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44231515160)
+also passed Chromium and Keycloak jobs on the same candidate SHA.

@@ -117,7 +117,11 @@ body{background-image:linear-gradient(90deg,rgba(36,93,203,.013) 1px,transparent
 <label class="micro" for="writeSource">SOURCE ID</label><input id="writeSource" class="query" maxlength="255" required placeholder="e.g. conversation:2026-11-17">
 <div class="auth-actions"><button class="primary" id="saveMemory" type="submit">Create memory →</button><button class="secondary" id="targetSelected" type="button">Use selected as revision target</button></div>
 </form>
+<div class="auth-actions">
 <button class="secondary" id="forgetSelected" type="button" disabled>Soft-forget selected memory</button>
+<button class="secondary" id="verifySelected" type="button" disabled>Verify asynchronously →</button>
+</div>
+<div class="result-note" id="workflowNote" role="status" aria-live="polite">Select a live memory to send it through the durable Temporal verification path.</div>
 <div class="result-note" id="mutationNote" role="status" aria-live="polite">Connect to the protected live API to enable writes. Demo mode is synthetic and read-only.</div>
 </section>
 </aside></div>
@@ -338,7 +342,40 @@ async function refreshLive(){let results=await Promise.all([api("/v1/memories?li
 $("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key&&!readCookie("amc_tenant")){$("authError").textContent="Sign in with your organization or enter an API credential.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";$("mutationNote").textContent="Live API connected. Writes affect only the authenticated tenant; revisions require an explicit selected Memory ID.";$("writePanel").hidden=false;render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
 
 let revisionTarget=null;
-$("claimPicker").addEventListener("change",()=>{state.selection=$("claimPicker").value||null;$("forgetSelected").disabled=state.mode!=="live"||!state.selection;render();draw()});
+$("claimPicker").addEventListener("change",()=>{
+ state.selection=$("claimPicker").value||null;
+ const live=state.mode==="live"&&!!state.selection;
+ $("forgetSelected").disabled=!live;
+ $("verifySelected").disabled=!live;
+ $("workflowNote").textContent=live?"Ready to run the selected memory through the durable Temporal verification path.":"Select a live memory first.";
+ render();draw()
+});
+$("verifySelected").onclick=async()=>{
+ const id=state.selection;
+ if(state.mode!=="live"||!id)return;
+ const btn=$("verifySelected");btn.disabled=true;
+ $("workflowNote").textContent="Queued in Temporal…";
+ try{
+  const started=await api("/v1/workflows/memory-verifications",state.key,{
+   method:"POST",body:JSON.stringify({memory_id:id})
+  });
+  if(!started.workflow_id)throw Error("Temporal did not return a workflow id");
+  $("workflowNote").textContent="Workflow "+started.workflow_id+" started. Waiting for durable completion…";
+  let finalStatus="STARTED";
+  for(let attempt=0;attempt<20;attempt++){
+   await new Promise(resolve=>setTimeout(resolve,500));
+   const status=await api("/v1/workflows/"+encodeURIComponent(started.workflow_id),state.key);
+   finalStatus=status.status||"UNKNOWN";
+   if(["COMPLETED","FAILED","CANCELED","TERMINATED","TIMED_OUT"].includes(finalStatus))break;
+  }
+  $("workflowNote").textContent="Temporal verification: "+finalStatus+". Refreshing canonical events…";
+  await refreshLive();render();draw();
+ }catch(err){
+  $("workflowNote").textContent="Temporal verification failed; no success claimed. "+(err.message||err);
+ }finally{
+  btn.disabled=!state.selection||state.mode!=="live";
+ }
+};
 $("targetSelected").onclick=()=>{
  const selected=state.items.find(x=>String(x.id||x.memory_id)===state.selection);
  if(!selected){$("mutationNote").textContent="Select a live memory first.";return}

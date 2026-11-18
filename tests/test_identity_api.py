@@ -141,3 +141,66 @@ def test_identity_tenant_discovery_does_not_require_preselected_tenant():
     assert response.status_code == 200
     assert response.json()["count"] == 1
     assert response.json()["items"][0]["tenant_id"] == TENANT
+
+
+def test_oidc_login_callback_sets_session_csrf_and_workspace_cookies(monkeypatch):
+    from agent_memory_core import oidc
+    from fastapi.testclient import TestClient
+
+    config = oidc.OIDCConfig(
+        issuer="https://issuer.example.test",
+        client_id="client-id",
+        client_secret="client-secret",
+        redirect_uri="https://memory.example.test/v1/auth/oidc/callback",
+        state_secret=b"x" * 32,
+        allow_signup=True,
+        cookie_secure=False,
+    )
+    monkeypatch.setattr(oidc.OIDCConfig, "from_env", classmethod(lambda cls: config))
+    monkeypatch.setattr(oidc.OIDCClient, "begin",
+                        lambda self: ("https://issuer.example.test/authorize", "signed-tx"))
+    monkeypatch.setattr(oidc.OIDCClient, "verify_transaction",
+                        lambda self, cookie, state: {"nonce": "nonce", "verifier": "verifier"})
+    monkeypatch.setattr(oidc.OIDCClient, "exchange_and_verify",
+                        lambda self, code, transaction: {
+                            "sub": "oidc-user-1", "email": "user@example.test",
+                            "email_verified": True, "name": "OIDC User"})
+
+    class OnboardingIdentity(IdentityStoreFake):
+        def __init__(self):
+            super().__init__()
+            self.closed = False
+            self.login_args = None
+
+        def complete_oidc_login(self, **kwargs):
+            self.login_args = kwargs
+            return {
+                "token": "new-session-token",
+                "tenants": [{"tenant_id": "workspace-1", "role": "owner"}],
+            }
+
+        def close(self):
+            self.closed = True
+
+    identity = OnboardingIdentity()
+    client = TestClient(create_app(
+        api_key=KEY, tenant_id="legacy-tenant", store_factory=MemoryStore,
+        identity_store_factory=lambda: identity))
+
+    start = client.get("/v1/auth/oidc/login", follow_redirects=False)
+    assert start.status_code == 302
+    assert start.headers["location"] == "https://issuer.example.test/authorize"
+    assert "amc_oidc_tx" in start.cookies
+
+    callback = client.get(
+        "/v1/auth/oidc/callback?code=authorization-code&state=state-1",
+        follow_redirects=False)
+    assert callback.status_code == 303
+    assert callback.headers["location"] == "/dashboard/"
+    assert callback.cookies["amc_session"] == "new-session-token"
+    assert callback.cookies["amc_tenant"] == "workspace-1"
+    assert "amc_csrf" in callback.cookies
+    assert identity.login_args["issuer"] == config.issuer
+    assert identity.login_args["subject"] == "oidc-user-1"
+    assert identity.login_args["allow_signup"] is True
+    assert identity.closed is True

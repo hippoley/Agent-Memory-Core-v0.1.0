@@ -34,11 +34,16 @@ def test_temporal_postgres_and_idempotent_receipt():
                 activity_executor=executor,workflows=[VerifyMemoryWorkflow],
                 activities=[verify_memory_record,write_memory_verification_receipt]):
                     request={"tenant_id":tenant,"memory_id":claim}
-                    a=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
+                    handle=await env.client.start_workflow(VerifyMemoryWorkflow.run,request,
                         id="verify-"+claim,task_queue=queue)
+                    a=await handle.result()
+                    progress=await handle.query(VerifyMemoryWorkflow.progress)
                     b=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
                         id="reverify-"+claim,task_queue=queue)
                     assert a==b and a["active"] and a["source_id"]=="user-1"
+                    assert progress["stage"]=="COMPLETED"
+                    assert progress["completed_steps"]==2
+                    assert progress["progress_percent"]==100
         db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
         try:
             n=db.conn.execute(

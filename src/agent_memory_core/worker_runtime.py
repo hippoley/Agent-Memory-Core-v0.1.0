@@ -1,0 +1,170 @@
+"""Independent PostgreSQL-backed durable business-task worker runtime.
+
+Handlers are application code. The runtime owns claim, heartbeat, fenced
+checkpoint commits, completion, and recovery from a previously committed
+checkpoint. It deliberately does not promise exactly-once external effects:
+handlers must use durable effect keys and provider-side idempotency/reconcile.
+"""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from typing import Callable
+from uuid import uuid4
+
+from .worker_leases import DurableTaskLeaseStore, LeaseConflict
+
+log = logging.getLogger(__name__)
+
+
+class WorkerContext:
+    """Fenced capabilities supplied to one handler invocation."""
+
+    def __init__(self, *, connection_factory: Callable, tenant_id: str,
+                 task: dict, worker_id: str, lease_seconds: int):
+        self.connection_factory = connection_factory
+        self.tenant_id = tenant_id
+        self.task = task
+        self.worker_id = worker_id
+        self.lease_seconds = lease_seconds
+        self.lease_epoch = int(task["lease_epoch"])
+        self.checkpoint_version = int(task["checkpoint_version"])
+        self.checkpoint = task.get("checkpoint")
+
+    def commit_checkpoint(self, *, checkpoint: dict, idempotency_key: str,
+                          progress_completed: int = 0, progress_total: int = 0,
+                          artifact_sha256: str | None = None,
+                          effect_key: str | None = None,
+                          effect_request: dict | None = None) -> dict:
+        db = self.connection_factory()
+        try:
+            result = DurableTaskLeaseStore(db).commit_checkpoint(
+                tenant_id=self.tenant_id, task_id=self.task["task_id"],
+                worker_id=self.worker_id, lease_epoch=self.lease_epoch,
+                expected_version=self.checkpoint_version, checkpoint=checkpoint,
+                idempotency_key=idempotency_key,
+                progress_completed=progress_completed, progress_total=progress_total,
+                artifact_sha256=artifact_sha256, effect_key=effect_key,
+                effect_request=effect_request,
+            )
+            self.checkpoint_version = int(result["version"])
+            self.checkpoint = checkpoint
+            return result
+        finally:
+            db.close()
+
+
+class DurableTaskWorker:
+    """A single worker process; run multiple instances for competing consumers."""
+
+    def __init__(self, *, connection_factory: Callable, tenant_id: str,
+                 handlers: dict[str, Callable], worker_id: str | None = None,
+                 lease_seconds: int = 30, heartbeat_interval: float | None = None):
+        if not tenant_id:
+            raise ValueError("tenant_id is required")
+        if not 1 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 1 and 3600")
+        self.connection_factory = connection_factory
+        self.tenant_id = tenant_id
+        self.handlers = dict(handlers)
+        self.worker_id = worker_id or f"worker-{uuid4()}"
+        self.lease_seconds = lease_seconds
+        self.heartbeat_interval = heartbeat_interval or max(0.5, lease_seconds / 3)
+        if self.heartbeat_interval <= 0 or self.heartbeat_interval >= lease_seconds:
+            raise ValueError("heartbeat_interval must be positive and shorter than the lease")
+
+    def _claim(self) -> dict | None:
+        db = self.connection_factory()
+        try:
+            return DurableTaskLeaseStore(db).claim(
+                tenant_id=self.tenant_id, worker_id=self.worker_id,
+                lease_seconds=self.lease_seconds)
+        finally:
+            db.close()
+
+    def _finish(self, task: dict, *, status: str, result=None, error=None) -> None:
+        db = self.connection_factory()
+        try:
+            DurableTaskLeaseStore(db).finish(
+                tenant_id=self.tenant_id, task_id=task["task_id"],
+                worker_id=self.worker_id, lease_epoch=task["lease_epoch"],
+                status=status, result=result, error=error)
+        finally:
+            db.close()
+
+    def run_once(self) -> bool:
+        task = self._claim()
+        if task is None:
+            return False
+        lost = threading.Event()
+        stop = threading.Event()
+
+        def heartbeat():
+            while not stop.wait(self.heartbeat_interval):
+                db = self.connection_factory()
+                try:
+                    renewed = DurableTaskLeaseStore(db).renew(
+                        tenant_id=self.tenant_id, task_id=task["task_id"],
+                        worker_id=self.worker_id, lease_epoch=task["lease_epoch"],
+                        lease_seconds=self.lease_seconds)
+                    if not renewed:
+                        lost.set()
+                        log.error("lease lost task=%s epoch=%s", task["task_id"], task["lease_epoch"])
+                        return
+                except Exception:
+                    lost.set()
+                    log.exception("heartbeat failed task=%s", task["task_id"])
+                    return
+                finally:
+                    db.close()
+
+        thread = threading.Thread(target=heartbeat, name="durable-task-heartbeat", daemon=True)
+        thread.start()
+        context = WorkerContext(
+            connection_factory=self.connection_factory, tenant_id=self.tenant_id,
+            task=task, worker_id=self.worker_id, lease_seconds=self.lease_seconds)
+        try:
+            handler = self.handlers.get(task["task_type"])
+            if handler is None:
+                raise LookupError(f"No handler registered for task_type={task['task_type']!r}")
+            result = handler(task, context)
+            if lost.is_set():
+                raise LeaseConflict("Worker lost its lease while the handler was running")
+            stop.set()
+            thread.join(timeout=max(1.0, self.heartbeat_interval * 2))
+            self._finish(task, status="completed", result=result or {})
+        except LeaseConflict:
+            log.exception("task execution fenced task=%s", task["task_id"])
+            raise
+        except Exception as exc:
+            log.exception("task handler failed task=%s", task["task_id"])
+            if not lost.is_set():
+                stop.set()
+                thread.join(timeout=max(1.0, self.heartbeat_interval * 2))
+                try:
+                    self._finish(task, status="failed",
+                                 error={"type": type(exc).__name__, "message": str(exc)[:2000]})
+                except LeaseConflict:
+                    log.exception("failure status rejected because worker was fenced")
+            raise
+        finally:
+            stop.set()
+            thread.join(timeout=max(1.0, self.heartbeat_interval * 2))
+        return True
+
+    def run_forever(self, *, poll_interval: float = 1.0,
+                    stop_event: threading.Event | None = None) -> None:
+        if poll_interval < 0.05:
+            raise ValueError("poll_interval must be at least 50ms")
+        stop = stop_event or threading.Event()
+        while not stop.is_set():
+            try:
+                if not self.run_once():
+                    stop.wait(poll_interval)
+            except LeaseConflict:
+                # A newer epoch owns the task. Never attempt a compensating write.
+                stop.wait(poll_interval)
+            except Exception:
+                log.exception("worker loop iteration failed")
+                stop.wait(poll_interval)

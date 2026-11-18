@@ -27,9 +27,10 @@ BEGIN
 END
 $$;
 
-CREATE INDEX IF NOT EXISTS memory_durable_tasks_claimable
+DROP INDEX IF EXISTS memory_durable_tasks_claimable;
+CREATE INDEX memory_durable_tasks_claimable
   ON memory_durable_tasks(tenant_id,status,lease_expires_at,created_at)
-  WHERE status IN ('queued','running');
+  WHERE status IN ('queued','running','paused');
 
 CREATE INDEX IF NOT EXISTS memory_durable_tasks_lease_expiry
   ON memory_durable_tasks(lease_expires_at)

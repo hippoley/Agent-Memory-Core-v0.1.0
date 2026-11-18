@@ -120,7 +120,8 @@ class DurableTaskLeaseStore:
             self.assert_current(tenant_id=tenant_id,task_id=task_id,
                                 worker_id=worker_id,lease_epoch=lease_epoch,lock=True)
             return DurableTaskStore(self.conn).commit_checkpoint(
-                tenant_id=tenant_id,task_id=task_id,expected_version=expected_version,
+                tenant_id=tenant_id,task_id=task_id,worker_id=worker_id,
+                lease_epoch=lease_epoch,expected_version=expected_version,
                 checkpoint=checkpoint,idempotency_key=idempotency_key,
                 progress_completed=progress_completed,progress_total=progress_total,
                 artifact_sha256=artifact_sha256,effect_key=effect_key,

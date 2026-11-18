@@ -26,6 +26,9 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
             idempotency_key="create-"+uuid4().hex,
         )
         task_id=task["task_id"]
+        owner=DurableTaskLeaseStore(db.conn).claim(
+            tenant_id=tenant,worker_id="task-store-test-worker",lease_seconds=30)
+        assert owner and owner["task_id"]==task_id
         replay=tasks.create_task(
             tenant_id=tenant,task_type="memory.batch.organize",
             input={"source":"acceptance","limit":100},
@@ -36,7 +39,7 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
         assert replay["task_id"]==task_id
 
         first=tasks.commit_checkpoint(
-            tenant_id=tenant,task_id=task_id,expected_version=0,
+            tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=0,
             checkpoint={"last_completed":25,"next_item":26},
             idempotency_key="checkpoint-1",
             progress_completed=25,progress_total=100,
@@ -45,7 +48,7 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
         )
         assert first=={"task_id":task_id,"version":1,"replayed":False}
         replayed=tasks.commit_checkpoint(
-            tenant_id=tenant,task_id=task_id,expected_version=0,
+            tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=0,
             checkpoint={"last_completed":25,"next_item":26},
             idempotency_key="checkpoint-1",
             progress_completed=25,progress_total=100,
@@ -56,18 +59,18 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
 
         with pytest.raises(TaskConflict,match="version conflict"):
             tasks.commit_checkpoint(
-                tenant_id=tenant,task_id=task_id,expected_version=0,
+                tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=0,
                 checkpoint={"last_completed":26},idempotency_key="checkpoint-2",
                 progress_completed=26,progress_total=100,
             )
         with pytest.raises(TaskConflict,match="different content"):
             tasks.commit_checkpoint(
-                tenant_id=tenant,task_id=task_id,expected_version=0,
+                tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=0,
                 checkpoint={"last_completed":999},idempotency_key="checkpoint-1",
             )
 
         current=tasks.commit_checkpoint(
-            tenant_id=tenant,task_id=task_id,expected_version=1,
+            tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=1,
             checkpoint={"last_completed":50,"next_item":51},
             idempotency_key="checkpoint-2",
             progress_completed=50,progress_total=100,
@@ -91,9 +94,6 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
             "memory.task.checkpoint.committed":2,
             "memory.task.effect.requested":1,
         }
-        owner=DurableTaskLeaseStore(db.conn).claim(
-            tenant_id=tenant,worker_id="task-store-test-worker",lease_seconds=30)
-        assert owner and owner["task_id"]==task_id
         from agent_memory_core.durable_effects import DurableTaskEffectStore
         effect_store=DurableTaskEffectStore(db.conn)
         effect_store.begin_execution(tenant_id=tenant,task_id=task_id,
@@ -113,7 +113,7 @@ def test_checkpoint_version_idempotency_effect_intent_and_outbox_are_atomic():
             (tenant,task_id)).fetchone()[0]==1
         with pytest.raises(TaskConflict,match="terminal task"):
             tasks.commit_checkpoint(
-                tenant_id=tenant,task_id=task_id,expected_version=2,
+                tenant_id=tenant,task_id=task_id,worker_id="task-store-test-worker",lease_epoch=owner["lease_epoch"],expected_version=2,
                 checkpoint={"last_completed":51},idempotency_key="checkpoint-3",
             )
     finally:

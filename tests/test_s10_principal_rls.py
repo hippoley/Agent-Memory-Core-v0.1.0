@@ -108,6 +108,12 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
                     os.environ.pop("MEMORY_TEMPORAL_REQUIRE_RLS",None)
                 else:
                     os.environ["MEMORY_TEMPORAL_REQUIRE_RLS"]=previous_required
+        from agent_memory_core.worker_identity import assert_worker_tenant
+        assert_worker_tenant(db_a, tenant_a)
+        with pytest.raises(PermissionError):
+            assert_worker_tenant(db_a, tenant_b)
+        with pytest.raises(PermissionError):
+            assert_worker_tenant(admin, tenant_a)
         db_a.assert_database_tenant(tenant_a)
         db_b.assert_database_tenant(tenant_b)
         with pytest.raises(PermissionError):
@@ -193,3 +199,36 @@ def test_rls_sql_is_operator_only_not_automatic_migration():
     assert "session_user::name" in ddl
     assert "current_setting('app.tenant_id'" not in ddl
     assert "CREATE POLICY memory_authenticated_tenant_policy" in ddl
+
+
+def test_standalone_worker_strict_mode_requires_scope_and_never_ignores_rls(monkeypatch):
+    from agent_memory_core.worker_identity import (
+        configured_worker_tenant, assert_worker_tenant)
+
+    class Database:
+        def __init__(self):
+            self.calls=[]
+        def assert_database_tenant(self, tenant):
+            self.calls.append(tenant)
+            if tenant!="tenant-a":
+                raise PermissionError("PostgreSQL login belongs to another tenant")
+
+    db=Database()
+    monkeypatch.setenv("MEMORY_WORKER_REQUIRE_RLS","1")
+    monkeypatch.delenv("MEMORY_WORKER_TENANT",raising=False)
+    with pytest.raises(RuntimeError,match="MEMORY_WORKER_TENANT"):
+        configured_worker_tenant()
+    monkeypatch.setenv("MEMORY_WORKER_TENANT","tenant-a")
+    assert configured_worker_tenant()=="tenant-a"
+    assert_worker_tenant(db,configured_worker_tenant())
+    assert db.calls==["tenant-a"]
+    with pytest.raises(PermissionError):
+        assert_worker_tenant(db,"tenant-b")
+    with pytest.raises(RuntimeError,match="Tenant-bound"):
+        assert_worker_tenant(db,None)
+    # A missing RLS installation must not silently degrade to application
+    # filtering when the worker is configured for tenant isolation.
+    db.assert_database_tenant=lambda _: (_ for _ in ()).throw(
+        RuntimeError("RLS registry is not installed"))
+    with pytest.raises(RuntimeError,match="RLS registry"):
+        assert_worker_tenant(db,configured_worker_tenant())

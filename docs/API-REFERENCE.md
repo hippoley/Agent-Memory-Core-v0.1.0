@@ -612,3 +612,41 @@ the integration selection). The skipped tests are not counted as passing.
 External effects remain a separate delivery boundary. A handler must persist
 an effect intent with the checkpoint and use provider-side idempotency plus
 UNKNOWN reconciliation. PostgreSQL fencing cannot roll back a remote action.
+
+
+## Durable external effects and UNKNOWN reconciliation (Migration 008)
+
+A checkpoint may atomically persist an effect intent. The intent stores its
+canonical request, SHA-256 digest, and stable effect key in PostgreSQL, while
+the same transaction emits `memory.task.effect.requested` to the Outbox.
+The provider request is not executed inside that database transaction.
+
+Effect states are:
+
+`requested → executing → committed`
+
+`executing → unknown → reconciling → committed`
+
+`reconciling → requested` is permitted only when the provider's reconciliation
+contract definitively reports `NOT_FOUND`. An ambiguous response stays
+`unknown`; it must not be retried automatically. A definitive provider
+rejection may become `failed`.
+
+Every transition is fenced by the current task Worker ID and Lease Epoch.
+When a new Worker claims a task, in-flight `executing` or `reconciling`
+effects from an older epoch are moved to `unknown` and an Outbox evidence
+event is emitted. Task completion is blocked while any effect is not
+`committed`; failure/cancellation is blocked while an effect is still
+`executing`, `unknown`, or `reconciling`.
+
+Provider adapters implement two methods:
+
+- `execute(request, idempotency_key) -> {provider_reference?, result?}`
+- `reconcile(request, idempotency_key, provider_reference) -> {outcome: committed|not_found|unknown|failed, ...}`
+
+The stable idempotency key is derived from tenant, task and effect identity.
+A provider must honor that key or provide a strongly consistent lookup before
+the adapter may treat `NOT_FOUND` as safe to retry. PostgreSQL fencing cannot
+prevent a remote provider from performing an operation after a delayed
+request; provider idempotency and reconciliation are mandatory. The runtime
+does not claim exactly-once external effects.

@@ -12,6 +12,8 @@ EXPECTED={
     "/v1/identity/me":{"get"},
     "/v1/identity/tenants":{"get","post"},
     "/v1/identity/select-tenant":{"post"},
+    "/v1/identity/api-credentials":{"post"},
+    "/v1/identity/api-credentials/{credential_id}":{"delete"},
     "/v1/auth/logout":{"post"},
     "/v1/ready":{"get"},
     "/v1/capabilities":{"get"},

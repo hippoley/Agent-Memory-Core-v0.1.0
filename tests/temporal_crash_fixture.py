@@ -1,10 +1,12 @@
 """Subprocess Worker fixture for SIGKILL recovery integration tests."""
 import asyncio
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from temporalio import activity, workflow
 from temporalio.client import Client
+from temporalio.common import RetryPolicy
 from temporalio.worker import Worker
 
 
@@ -25,9 +27,6 @@ async def crash_recovery_activity(request: dict) -> dict:
 class CrashRecoveryWorkflow:
     @workflow.run
     async def run(self, request: dict) -> dict:
-        from datetime import timedelta
-        from temporalio.common import RetryPolicy
-
         return await workflow.execute_activity(
             crash_recovery_activity,
             request,

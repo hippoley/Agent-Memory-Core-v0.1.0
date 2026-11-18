@@ -300,6 +300,7 @@ def test_owner_browser_session_mints_and_revokes_scoped_api_credential():
             return True
 
     identity = Issuer()
+    identity.tenants[0]["role"] = "editor"
     client = TestClient(_app(identity))
     client.cookies.set("amc_session","valid-session")
     client.cookies.set("amc_csrf","csrf-secret")

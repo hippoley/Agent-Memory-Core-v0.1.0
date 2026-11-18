@@ -605,8 +605,9 @@ tenant by changing the request body.
 The integration acceptance includes a real POSIX process test: Worker A
 commits a checkpoint and is killed with SIGKILL; after the PostgreSQL lease
 expires, Worker B claims a higher epoch, reads the checkpoint, resumes, and
-completes. This is a test definition until the corresponding CI job passes;
-do not treat a committed test as a passed result.
+completes. This acceptance passed in the PostgreSQL integration workflow on HEAD
+`3e1bce2db53e074baf0c7ba8d3755cc02b67341f` (62 passed, 7 skipped across
+the integration selection). The skipped tests are not counted as passing.
 
 External effects remain a separate delivery boundary. A handler must persist
 an effect intent with the checkpoint and use provider-side idempotency plus

@@ -86,6 +86,18 @@ class DurableTaskStore:
                 "checkpoint_version","progress_completed","progress_total","created_at")
         return dict(zip(keys,row))
 
+    def list_tasks(self, *, tenant_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("limit must be 1..100 and offset non-negative")
+        rows=self.conn.execute(
+            """SELECT task_id::text,tenant_id,task_type,input,workflow_id,status,
+                      checkpoint_version,progress_completed,progress_total,created_at
+               FROM memory_durable_tasks WHERE tenant_id=%s
+               ORDER BY created_at DESC,task_id LIMIT %s OFFSET %s""",
+            (tenant_id,limit,offset),
+        ).fetchall()
+        return [self._task_row(row) for row in rows]
+
     def get_task(self, *, tenant_id: str, task_id: str) -> dict | None:
         row = self.conn.execute(
             """SELECT task_id::text,tenant_id,task_type,input,workflow_id,status,

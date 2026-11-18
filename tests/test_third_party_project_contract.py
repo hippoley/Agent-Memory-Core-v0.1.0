@@ -65,3 +65,11 @@ def test_external_consumer_capabilities_match_public_api_schema():
     consumer = (root / 'examples/third_party_memory_agent/src/third_party_memory_agent/__main__.py').read_text(encoding='utf-8')
     assert 'item["available"]' in consumer
     assert 'item["enabled"]' not in consumer
+
+
+def test_external_consumer_revision_is_valid_at_immediate_readback():
+    root = Path(__file__).resolve().parents[1]
+    consumer = (root / 'examples/third_party_memory_agent/src/third_party_memory_agent/__main__.py').read_text(encoding='utf-8')
+    assert 'earlier = (now - timedelta(seconds=1)).isoformat()' in consumer
+    assert 'later = now.isoformat()' in consumer
+    assert 'later = (now + timedelta(seconds=1)).isoformat()' not in consumer

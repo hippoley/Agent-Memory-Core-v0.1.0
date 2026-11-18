@@ -4,7 +4,6 @@ import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -32,14 +31,14 @@ def test_sigkill_worker_a_and_resume_checkpoint_in_worker_b(tmp_path):
     finally:
         db.close()
 
-    common=`
+    common = """
 import os,time
 from agent_memory_core.postgres import PostgresMemory
 from agent_memory_core.worker_runtime import DurableTaskWorker
 def connect():
     return PostgresMemory(os.environ["MEMORY_TEST_DSN"])
-`
-    worker_a=common+`
+"""
+    worker_a=common+"""
 def handler(task,ctx):
     ctx.commit_checkpoint(checkpoint={"cursor":1},
         idempotency_key="sigkill-checkpoint-1",
@@ -50,7 +49,7 @@ worker=DurableTaskWorker(connection_factory=connect,tenant_id=os.environ["WORKER
     handlers={"test.sigkill.resume":handler},worker_id="worker-A",lease_seconds=2,
     heartbeat_interval=0.5)
 worker.run_once()
-`
+"""
     env=os.environ.copy()
     env.update({"WORKER_TENANT":tenant,"WORKER_MARKER":str(marker)})
     proc=subprocess.Popen([sys.executable,"-c",worker_a],env=env)
@@ -65,7 +64,7 @@ worker.run_once()
         proc.wait(timeout=10)
         time.sleep(2.5)  # PostgreSQL lease expiry; no worker clock participates in claim.
 
-        worker_b=common+`
+        worker_b=common+"""
 def handler(task,ctx):
     checkpoint=task.get("checkpoint") or {}
     assert checkpoint.get("cursor")==1, checkpoint
@@ -74,7 +73,7 @@ worker=DurableTaskWorker(connection_factory=connect,tenant_id=os.environ["WORKER
     handlers={"test.sigkill.resume":handler},worker_id="worker-B",lease_seconds=5,
     heartbeat_interval=1)
 assert worker.run_once() is True
-`
+"""
         completed=subprocess.run([sys.executable,"-c",worker_b],env=env,
                                  capture_output=True,text=True,timeout=30)
         assert completed.returncode==0,completed.stdout+"\\n"+completed.stderr

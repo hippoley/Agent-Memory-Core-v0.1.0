@@ -44,9 +44,13 @@ jobs:
       - name: Install and run the independent third-party Python project
         run: |
           python -m venv /tmp/amc-consumer-venv
-          /tmp/amc-consumer-venv/bin/python -m pip install --find-links /tmp/amc-wheel 'agent-memory-core[api]==0.1.0'
+          wheel="$(find /tmp/amc-wheel -maxdepth 1 -name 'agent_memory_core-0.1.0-*.whl' -print -quit)"
+          test -n "$wheel" || { echo 'Local SDK wheel not found'; exit 1; }
+          /tmp/amc-consumer-venv/bin/python -m pip install "${wheel}[api]"
           /tmp/amc-consumer-venv/bin/python -m pip install --no-deps ./examples/third_party_memory_agent
-          /tmp/amc-consumer-venv/bin/python -m third_party_memory_agent
+          # Verify the SDK came from this built wheel rather than the same-named PyPI package.
+          (cd /tmp && /tmp/amc-consumer-venv/bin/python -c 'import agent_memory_core.sdk as sdk; print("External SDK loaded from:", sdk.__file__)')
+          (cd /tmp && /tmp/amc-consumer-venv/bin/python -m third_party_memory_agent)
 
       - name: Run queued-work revocation lifecycle
         env:

@@ -630,7 +630,7 @@ STORIES: dict[tuple[str, str], Story] = {
                "服务端在同一事务内校验当前租约、Epoch 和 expected_version；旧 Worker 返回 409。",
                "相同幂等键与完全相同内容重放返回原版本；内容不同则 409。",
                "effect_key 只记录副作用意图，不代表外部系统已经执行成功。"),
-        example=CURL + " -d '{\"expected_version\":0,\"checkpoint\":{\"last_completed\":100},\"idempotency_key\":\"cp-001\",\"progress_completed\":100,\"progress_total\":1000}' $API/v1/tasks/<task-uuid>/checkpoints",
+        example=CURL + " -d '{\"worker_id\":\"worker-01\",\"lease_epoch\":1,\"expected_version\":0,\"checkpoint\":{\"last_completed\":100},\"idempotency_key\":\"cp-001\",\"progress_completed\":100,\"progress_total\":1000}' $API/v1/tasks/<task-uuid>/checkpoints",
     ),
     ("POST", "/v1/tasks/{task_id}/status"): Story(
         persona="任务执行器",
@@ -639,7 +639,7 @@ STORIES: dict[tuple[str, str], Story] = {
         steps=("必须使用专用 tasks:execute API Credential，并同时提交 worker_id 与 lease_epoch。",
                "服务端通过当前租约与 Epoch 校验后才能完成、失败、暂停或取消任务。",
                "状态更新与 memory.task.status.changed Outbox 事件在同一事务提交。"),
-        example=CURL + " -d '{\"status\":\"completed\",\"result\":{\"organized\":1000}}' $API/v1/tasks/<task-uuid>/status",
+        example=CURL + " -d '{\"worker_id\":\"worker-01\",\"lease_epoch\":1,\"status\":\"completed\",\"result\":{\"organized\":1000}}' $API/v1/tasks/<task-uuid>/status",
     ),
 }
 

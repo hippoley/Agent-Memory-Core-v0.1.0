@@ -48,6 +48,10 @@ EXPECTED={
     "/v1/workflows/{workflow_id}/progress":{"get"},
     "/v1/workflows/{workflow_id}/pause":{"post"},
     "/v1/workflows/{workflow_id}/resume":{"post"},
+    "/v1/tasks":{"get","post"},
+    "/v1/tasks/{task_id}":{"get"},
+    "/v1/tasks/{task_id}/checkpoints":{"post"},
+    "/v1/tasks/{task_id}/status":{"post"},
 }
 
 def spec():

@@ -44,3 +44,46 @@ This slice does not implement OIDC authorization-code + PKCE, provider discovery
 JWKS signature verification, login/callback routes, initial-owner bootstrap,
 tenant administration UI, or browser cookie issuance. Do not expose public
 registration until those pieces and the browser end-to-end flow are complete.
+
+
+## OIDC browser login (first-provider implementation)
+
+Install the optional verifier dependencies:
+
+```bash
+pip install -e '.[oidc]'
+```
+
+Configure one trusted OIDC issuer and register the exact callback URI with that
+provider:
+
+```bash
+export MEMORY_OIDC_ISSUER="https://id.example.com"
+export MEMORY_OIDC_CLIENT_ID="..."
+export MEMORY_OIDC_CLIENT_SECRET="..."
+export MEMORY_OIDC_REDIRECT_URI="https://memory.example.com/v1/auth/oidc/callback"
+export MEMORY_OIDC_STATE_SECRET="$(openssl rand -base64 48)"
+export MEMORY_OIDC_ALLOW_SIGNUP="0"
+export MEMORY_COOKIE_SECURE="1"
+```
+
+Set `MEMORY_OIDC_ALLOW_SIGNUP=1` only when public account creation is intended.
+With it disabled, only an already-linked issuer + subject can sign in. The
+callback never links accounts by email. A verified OIDC identity is atomically
+bound to a Principal; if it has no active Membership and workspace bootstrap is
+enabled by the application, a first workspace and Owner Membership are created
+in the same transaction as the 12-hour opaque Session.
+
+Browser entry point: `GET /v1/auth/oidc/login`. The callback validates the
+signed, ten-minute transaction cookie, State, PKCE S256 verifier, ID-token
+signature via provider JWKS, exact issuer, audience, expiry and nonce. Session
+tokens are HttpOnly cookies; the CSRF token and selected tenant are separate
+same-origin cookies. The Observatory sends the selected tenant and CSRF header
+for cookie-authenticated API calls.
+
+The provider issuer and all discovered authorization, token and JWKS endpoints
+must use HTTPS. Keep the client secret and state-signing secret server-side.
+This is a single-provider browser-login slice; provider logout, account linking,
+MFA policy, invitation flow, and external-browser production acceptance remain
+separate delivery work. Do not treat passing unit tests as production deployment
+approval.

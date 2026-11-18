@@ -145,6 +145,16 @@ class DurableTaskLeaseStore:
                 if unresolved:
                     raise LeaseConflict(
                         f"Cannot complete task: external effect {unresolved[0]!r} is {unresolved[1]!r}")
+            elif status in {"failed","cancelled"}:
+                unresolved = self.conn.execute(
+                    """SELECT effect_key,status FROM memory_task_effects
+                       WHERE task_id=%s::uuid
+                         AND status IN ('executing','unknown','reconciling')
+                       ORDER BY effect_key LIMIT 1""",(task_id,)
+                ).fetchone()
+                if unresolved:
+                    raise LeaseConflict(
+                        f"Cannot {status} task while external effect {unresolved[0]!r} is {unresolved[1]!r}")
             row = self.conn.execute(
                 """UPDATE memory_durable_tasks
                    SET status=%s,result=%s::jsonb,last_error=%s::jsonb,

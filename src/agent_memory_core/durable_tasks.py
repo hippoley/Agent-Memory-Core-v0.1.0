@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from uuid import uuid4
+
+from .temporal_dispatch import stable_workflow_id
 
 
 class TaskConflict(ValueError):
@@ -58,11 +61,12 @@ class DurableTaskStore:
                     if _digest({
                         "task_type": existing[2], "input": existing[3],
                         "created_by_principal_id": existing[10],
-                        "workflow_id": existing[4],
+                        "workflow_id": workflow_id,
                     }) != request_hash:
                         raise TaskConflict("Idempotency key was used for a different task request")
                     return self._task_row(existing[:10])
             task_id = uuid4()
+            workflow_id = workflow_id or stable_workflow_id(tenant_id, str(task_id))
             row = self.conn.execute(
                 """INSERT INTO memory_durable_tasks
                    (task_id,tenant_id,created_by_principal_id,task_type,workflow_id,
@@ -82,6 +86,16 @@ class DurableTaskStore:
                     "task_id": str(task_id), "task_type": task_type,
                     "workflow_id": workflow_id,
                 })),
+            )
+            # The dispatch intent is committed atomically with the task and
+            # creation outbox event. Temporal network calls happen later, outside
+            # this transaction, under a leased/fenced dispatcher claim.
+            self.conn.execute(
+                """INSERT INTO memory_temporal_dispatches
+                   (task_id,tenant_id,workflow_id,task_queue)
+                   VALUES (%s,%s,%s,%s)""",
+                (task_id,tenant_id,workflow_id,
+                 os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core")),
             )
             return self._task_row(row)
 

@@ -1362,6 +1362,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         responses={503: {"description": "Temporal client is not configured or unavailable."}},
     )
     async def start_memory_verification(item: MemoryVerificationRequest,
+                                        request: Request,
                                         t: str = Depends(auth)):
         if temporal_client_factory is None or not temporal_task_queue:
             raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")

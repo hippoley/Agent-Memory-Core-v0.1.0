@@ -97,8 +97,11 @@ def main(argv: list[str] | None = None) -> int:
             print("  Login:       http://127.0.0.1:8765/v1/auth/oidc/login")
             print("  Admin:       admin / local-keycloak-admin-change-me (local only)")
         if profile == "extended":
-            print("  Temporal UI: http://127.0.0.1:8233 (development only)")
-            print("  Temporal:    localhost:7233 (verification worker starts separately)")
+            print("  Temporal UI: http://127.0.0.1:8233 (local development)")
+            print("  Temporal:    localhost:7233")
+            print("  Worker:      managed by Docker Compose; see docker compose logs -f memory-temporal-worker")
+            print("  History:     named volume agent-memory-core-temporal-dev-data")
+            print("  Recovery:    docs/TEMPORAL-DURABLE-EXECUTION.md")
         return 0
     if not ENV.exists():
         p.error(".env.local missing; run 'up' first")

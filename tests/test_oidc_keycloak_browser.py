@@ -98,6 +98,71 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             assert identity["tenantId"]
             original_tenant = identity["tenantId"]
 
+            # Full product path: Observatory UI -> authenticated API -> PostgreSQL.
+            # Do not call the mutation endpoints directly for this lifecycle.
+            page.wait_for_function("!document.querySelector('#writePanel').hidden")
+            page.locator("#writeSubject").fill("observatory-ui-user")
+            page.locator("#writePredicate").fill("preferred_language")
+            page.locator("#writeValue").fill('{"language":"English"}')
+            page.locator("#writeSource").fill("observatory-ui:keycloak-e2e:create")
+            page.locator("#saveMemory").click()
+            expect(page.locator("#mutationNote")).to_contain_text("Memory created.", timeout=15000)
+            page.wait_for_function("""() => {
+              const picker = document.querySelector('#claimPicker');
+              return Array.from(picker.options).some(option =>
+                option.textContent.includes('observatory-ui-user / preferred_language'));
+            }""")
+            ui_created = page.evaluate("""() => {
+              const option = Array.from(document.querySelector('#claimPicker').options)
+                .find(item => item.textContent.includes('observatory-ui-user / preferred_language'));
+              return option.value;
+            }""")
+            assert ui_created
+
+            # The picker is the user's actual selection control; it must update
+            # the revision target rather than merely changing button decoration.
+            page.locator("#claimPicker").select_option(ui_created)
+            page.locator("#targetSelected").click()
+            expect(page.locator("#saveMemory")).to_contain_text("Replace selected memory")
+            page.locator("#writeValue").fill('{"language":"Chinese"}')
+            page.locator("#writeSource").fill("observatory-ui:keycloak-e2e:revision")
+            page.locator("#saveMemory").click()
+            expect(page.locator("#mutationNote")).to_contain_text("Revision committed.", timeout=15000)
+            ui_revision = page.evaluate("""async () => {
+              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const [activeResponse, historyResponse] = await Promise.all([
+                fetch('/v1/memories?subject_id=observatory-ui-user&predicate=preferred_language', {
+                  credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                }),
+                fetch('/v1/memories?subject_id=observatory-ui-user&predicate=preferred_language&include_superseded=true', {
+                  credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                })
+              ]);
+              return {active:await activeResponse.json(),history:await historyResponse.json()};
+            }""")
+            assert len(ui_revision["active"]["items"]) == 1, ui_revision
+            assert ui_revision["active"]["items"][0]["value"]["language"] == "Chinese"
+            assert len(ui_revision["history"]["items"]) == 2, ui_revision
+            assert {item["value"]["language"] for item in ui_revision["history"]["items"]} == {"English","Chinese"}
+
+            page.once("dialog", lambda dialog: dialog.accept())
+            page.locator("#forgetSelected").click()
+            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed.", timeout=15000)
+            ui_forgotten = page.evaluate("""async () => {
+              const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
+              const [activeResponse, historyResponse] = await Promise.all([
+                fetch('/v1/memories?subject_id=observatory-ui-user&predicate=preferred_language', {
+                  credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                }),
+                fetch('/v1/memories?subject_id=observatory-ui-user&predicate=preferred_language&include_superseded=true', {
+                  credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+                })
+              ]);
+              return {active:await activeResponse.json(),history:await historyResponse.json()};
+            }""")
+            assert ui_forgotten["active"]["items"] == [], ui_forgotten
+            assert len(ui_forgotten["history"]["items"]) == 2, ui_forgotten
+
             page.wait_for_function("document.querySelector('#workspaceSelect').options.length === 1")
             page.once("dialog", lambda dialog: dialog.accept("Second Workspace"))
             page.locator("#createWorkspaceBtn").click()

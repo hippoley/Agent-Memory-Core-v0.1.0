@@ -301,6 +301,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             identity_store = identity_store_factory()
             try:
                 identity = identity_store.authenticate_api_credential(secret=token) if presented and not session_cookie else None
+                auth_type = "api_credential" if identity is not None else "session"
                 if identity is None:
                     identity = identity_store.authenticate_session(
                         token=token, tenant_id=selected_tenant)
@@ -318,6 +319,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     required_scope = "memory:read" if safe_method else "memory:write"
                     if required_scope not in scopes and "memory:*" not in scopes:
                         raise HTTPException(status_code=403, detail="Credential scope is insufficient")
+                identity["auth_type"] = auth_type
                 request.state.identity = identity
                 return selected_tenant
             finally:
@@ -329,6 +331,36 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 headers={"WWW-Authenticate": "Bearer"},
             )
         raise HTTPException(status_code=403, detail="Invalid credential")
+
+    @app.get("/v1/identity/me", tags=["Identity"], summary="Get the authenticated principal and tenant membership")
+    def identity_me(request: Request, t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") == "legacy":
+            return {"tenant_id": t, "auth_type": "legacy_bearer"}
+        return {
+            "principal_id": identity.get("principal_id"),
+            "tenant_id": t,
+            "role": identity.get("role"),
+            "membership_version": identity.get("membership_version"),
+            "auth_type": identity.get("auth_type"),
+        }
+
+    @app.post("/v1/auth/logout", tags=["Identity"], summary="Revoke the current session")
+    def identity_logout(request: Request, response: Response,
+                        t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") == "session" and identity_store_factory is not None:
+            identity_store = identity_store_factory()
+            try:
+                identity_store.revoke_session(
+                    session_id=identity["session_id"],
+                    principal_id=identity["principal_id"])
+            finally:
+                identity_store.close()
+        response.delete_cookie("amc_session", path="/", httponly=True,
+                                secure=True, samesite="lax")
+        response.delete_cookie("amc_csrf", path="/", secure=True, samesite="lax")
+        return {"logged_out": True}
 
     @app.get(
         "/v1/health", tags=["System"], summary="Health check", response_model=HealthResponse,

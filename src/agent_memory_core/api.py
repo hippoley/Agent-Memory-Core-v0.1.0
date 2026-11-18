@@ -449,9 +449,13 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     principal_id=identity["principal_id"])
             finally:
                 identity_store.close()
+        secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
         response.delete_cookie("amc_session", path="/", httponly=True,
-                                secure=True, samesite="lax")
-        response.delete_cookie("amc_csrf", path="/", secure=True, samesite="lax")
+                                secure=secure_cookie, samesite="lax")
+        response.delete_cookie("amc_csrf", path="/", secure=secure_cookie, samesite="lax")
+        response.delete_cookie("amc_tenant", path="/", secure=secure_cookie, samesite="lax")
+        response.delete_cookie("amc_oidc_tx", path="/v1/auth/oidc", httponly=True,
+                                secure=secure_cookie, samesite="lax")
         return {"logged_out": True}
 
     @app.get(

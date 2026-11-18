@@ -159,27 +159,31 @@ def test_outbox_process_sigkill_rolls_back_claim_and_recovers():
         # the downstream event inside that same transaction, then blocks before
         # acknowledging the outbox row. SIGKILL must roll back both operations.
         child_code = r'''
-import json, os, sys, time
+import json, os, time
 import psycopg
+from agent_memory_core.outbox import OutboxWorker
+
 conn = psycopg.connect(os.environ["MEMORY_TEST_DSN"])
-with conn.transaction():
-    row = conn.execute(
-        "SELECT event_id, tenant_id, payload FROM memory_outbox "
-        "WHERE event_id=%s FOR UPDATE",
-        (os.environ["OUTBOX_EVENT_ID"],),
-    ).fetchone()
-    assert row is not None
+def blocking_handler(conn, tenant_id, event_id, aggregate_id, payload):
     conn.execute(
         """INSERT INTO memory_events(tenant_id,event_id,event_type,payload)
            VALUES (%s,%s,'memory.claim.verified',%s::jsonb)
            ON CONFLICT(tenant_id,event_id) DO NOTHING""",
-        (row[1], row[0], json.dumps(row[2])),
+        (tenant_id, event_id, json.dumps(payload)),
     )
-    print("LOCKED_WITH_UNCOMMITTED_EFFECT", flush=True)
+    print("WORKER_LOCKED_WITH_UNCOMMITTED_EFFECT", flush=True)
     time.sleep(120)
+
+OutboxWorker(conn).consume(
+    event_type="memory.claim.verified",
+    handler=blocking_handler,
+    limit=1,
+    tenant_id=os.environ["OUTBOX_TENANT_ID"],
+)
 '''
         env = dict(os.environ)
         env["OUTBOX_EVENT_ID"] = str(event_id)
+        env["OUTBOX_TENANT_ID"] = tenant
         child = subprocess.Popen(
             [sys.executable, "-c", child_code],
             env=env,
@@ -188,7 +192,7 @@ with conn.transaction():
             text=True,
         )
         ready = child.stdout.readline().strip()
-        assert ready == "LOCKED_WITH_UNCOMMITTED_EFFECT", (
+        assert ready == "WORKER_LOCKED_WITH_UNCOMMITTED_EFFECT", (
             f"Child failed before acquiring the transaction: {ready!r}; "
             f"stderr={child.stderr.read() if child.poll() is not None else ''}"
         )

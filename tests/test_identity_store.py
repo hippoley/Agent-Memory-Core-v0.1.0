@@ -128,6 +128,14 @@ def test_oidc_first_login_bootstraps_owner_workspace_atomically_and_reuses_ident
         assert second["tenants"] == first["tenants"]
         assert second["token"] != first["token"]
 
+        orphan = store.create_principal(display_name="Unassigned")
+        store.link_external_identity(
+            principal_id=orphan, issuer=issuer, subject="unassigned-subject")
+        with pytest.raises(LookupError, match="no active tenant membership"):
+            store.complete_oidc_login(
+                issuer=issuer, subject="unassigned-subject", allow_signup=False,
+                bootstrap_workspace=True)
+
         with pytest.raises(LookupError, match="No account is linked"):
             store.complete_oidc_login(
                 issuer=issuer, subject="unknown-subject", allow_signup=False)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -66,7 +67,7 @@ def main() -> None:
         assert current["items"][0]["value"]["language"] == "Chinese", current
         assert len(history["items"]) == 2, history
 
-        search = memory.search(query="preferred language Chinese", limit=10)
+        search = memory.search(query="Chinese", limit=10)
         assert any(
             item.get("memory_id") == second_id
             for item in search.get("items", [])
@@ -80,8 +81,14 @@ def main() -> None:
         workflow = None
         if os.getenv("MEMORY_RUN_TEMPORAL") == "1":
             workflow = memory.verify_memory_async(second_id)
+            deadline = time.monotonic() + 60
             status = memory.workflow_status(workflow["workflow_id"])
-            assert status["status"] in {"STARTED", "RUNNING", "COMPLETED"}, status
+            while status["status"] not in {"COMPLETED", "FAILED", "CANCELED"}:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Temporal verification did not finish within 60 seconds")
+                time.sleep(1)
+                status = memory.workflow_status(workflow["workflow_id"])
+            assert status["status"] == "COMPLETED", status
 
         forgotten = memory.forget(second_id)
         assert forgotten.get("forgotten") == [second_id], forgotten

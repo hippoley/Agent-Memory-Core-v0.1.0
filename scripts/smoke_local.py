@@ -98,7 +98,7 @@ def main() -> int:
             subject_id=subject,
             predicate="preferred_temperature",
             value={"celsius": 20},
-            source_id="local-smoke:initial",
+            source_id=f"{subject}:source-initial",
             valid_from=now,
             object_sha256=object_digest,
             idempotency_key=f"{subject}:v1",
@@ -113,7 +113,7 @@ def main() -> int:
             subject_id=subject,
             predicate="preferred_temperature",
             value={"celsius": 21},
-            source_id="local-smoke:correction",
+            source_id=f"{subject}:source-correction",
             valid_from=datetime.now(timezone.utc).isoformat(),
             idempotency_key=f"{subject}:v2",
         )

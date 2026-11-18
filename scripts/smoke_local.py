@@ -78,12 +78,29 @@ def main() -> int:
         capabilities = client.capabilities()
         print("CAPABILITIES_READ")
 
+        # Exercise the actual object store and bind the returned digest to the
+        # canonical claim. The SDK owns the full round-trip; no DB shortcuts.
+        evidence_blob = (
+            f"Agent Memory Core local smoke evidence\\n"
+            f"subject={subject}\\nobserved_at={now}\\n"
+        ).encode("utf-8")
+        object_ref = client.upload_object(
+            evidence_blob, content_type="text/plain; charset=utf-8"
+        )
+        object_digest = object_ref.get("sha256") if isinstance(object_ref, dict) else None
+        if not object_digest:
+            raise RuntimeError(f"Object upload did not return a SHA-256 digest: {object_ref!r}")
+        if client.download_object(object_digest) != evidence_blob:
+            raise RuntimeError("Object storage round-trip returned different bytes")
+        print(f"OBJECT_STORAGE_ROUNDTRIP_VERIFIED sha256={object_digest}")
+
         first = client.remember(
             subject_id=subject,
             predicate="preferred_temperature",
             value={"celsius": 20},
             source_id="local-smoke:initial",
             valid_from=now,
+            object_sha256=object_digest,
             idempotency_key=f"{subject}:v1",
         )
         first_id = first.get("id") if isinstance(first, dict) else None
@@ -141,6 +158,7 @@ def main() -> int:
             "subject_id": subject,
             "created_memory_id": first_id,
             "revised_memory_id": revised_id,
+            "evidence_object_sha256": object_digest,
             "capabilities": capabilities,
             "history_count": len(history),
             "search_count": len(search["items"]),

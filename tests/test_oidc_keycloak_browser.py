@@ -96,6 +96,27 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             assert identity["body"]["role"] == "owner"
             assert identity["body"]["auth_type"] == "session"
             assert identity["tenantId"]
+            original_tenant = identity["tenantId"]
+
+            page.wait_for_function("document.querySelector('#workspaceSelect').options.length === 1")
+            page.once("dialog", lambda dialog: dialog.accept("Second Workspace"))
+            page.locator("#createWorkspaceBtn").click()
+            page.wait_for_function("document.querySelector('#workspaceSelect').options.length === 2")
+            second_tenant = page.evaluate("document.querySelector('#workspaceSelect').value")
+            assert second_tenant and second_tenant != original_tenant
+            page.locator("#workspaceSelect").select_option(original_tenant)
+            page.wait_for_function(
+                "id => document.cookie.split('; ').some(x => x.trim() === 'amc_tenant=' + id)",
+                original_tenant,
+            )
+            switched_identity = page.evaluate("""async (tenant) => {
+              const response = await fetch('/v1/identity/me', {
+                credentials:'same-origin', headers:{'X-Memory-Tenant':tenant}
+              });
+              return {status:response.status,body:await response.json()};
+            }""", original_tenant)
+            assert switched_identity["status"] == 200
+            assert switched_identity["body"]["tenant_id"] == original_tenant
 
             now = datetime.now(timezone.utc).isoformat()
             created = page.evaluate("""async (now) => {

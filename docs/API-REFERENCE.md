@@ -421,3 +421,90 @@ rate limiting, audit logs, object ownership metadata, backup/restore, object
 lifecycle, outbox DLQ and per-projection task accounting, Temporal worker
 operations, memory-processing concurrency controls, Chinese retrieval and
 extraction evaluation, and measured p50/p95/load/failure-recovery results.
+
+
+## 2026-11-18 — Multi-user developer API onboarding (PR #51, Draft)
+
+The original single-process `MEMORY_API_KEY` setup above is a **legacy
+compatibility mode**, not the identity model for external developers. On an
+identity-enabled instance, developers first log in using the configured OIDC
+provider, choose a Workspace and use their authenticated Owner/Admin browser
+Session to create a scoped credential. This returns a secret **once only**;
+the database persists its hash, not the raw secret.
+
+**Bootstrap with the browser's authenticated Session** (send the HttpOnly
+session cookie plus the double-submit CSRF token, not the user password):
+
+```http
+POST /v1/identity/api-credentials
+X-Memory-Tenant: <your-workspace-id>
+X-CSRF-Token: <matching amc_csrf cookie>
+Cookie: amc_session=...; amc_csrf=...
+Content-Type: application/json
+
+{"name":"my-local-agent","scopes":["memory:read","memory:write"],
+ "expires_in_days":30}
+```
+
+Response 201 includes `credential_id`, `tenant_id` and `secret`. Save the
+secret privately: it will not be returned again. Owner/Admin Session is
+required for issuance, and only the issuing Principal may revoke it using
+`DELETE /v1/identity/api-credentials/{credential_id}` with the same Session and
+CSRF protection. An API Credential cannot mint a second API Credential.
+
+**Third-party SDK integration** (no browser or direct database access needed):
+
+```bash
+pip install 'agent-memory-core[api]'
+export MEMORY_BASE_URL='https://your-memory-host.example'
+export MEMORY_TENANT_ID='<the-workspace-id>'
+export MEMORY_AGENT_TOKEN='<the-once-returned-amc-secret>'
+```
+
+```python
+import os
+from datetime import datetime, timezone
+from agent_memory_core.sdk import MemoryClient
+
+with MemoryClient(
+    os.environ["MEMORY_BASE_URL"],
+    os.environ["MEMORY_AGENT_TOKEN"],
+    tenant_id=os.environ["MEMORY_TENANT_ID"],
+) as memory:
+    print(memory.whoami())             # Current tenant and role
+    print(memory.capabilities())       # Do not assume optional channels
+    claim = memory.remember(
+        subject_id="user-1", predicate="preferred_language",
+        value={"language": "中文"}, source_id="agent:chat:001",
+        valid_from=datetime.now(timezone.utc).isoformat(),
+        idempotency_key="agent:chat:001:language",
+    )
+    print(memory.recall("user-1"))      # Canonical current claim
+    print(memory.search(query="语言偏好"))  # Search adapter must be enabled
+    print(memory.list_memories(include_superseded=True))
+    # Optional only when the Temporal capability is deployed:
+    if os.getenv("MEMORY_USE_TEMPORAL") == "1":
+        job = memory.verify_memory_async(claim["id"])
+        print(memory.workflow_status(job["workflow_id"]))
+    memory.forget(claim["id"])
+```
+
+For direct `curl` clients, send **both** headers on every identity-scoped
+request: `Authorization: Bearer <amc-secret>` and
+`X-Memory-Tenant: <workspace-id>`. A valid secret cannot select an
+unauthorized tenant. `GET /v1/identity/tenants` lets a client discover the
+single tenant associated with its API Credential.
+
+The SDK now exposes history browse, identity information, workspaces,
+async verification, workflow state and cancellation, in addition to existing
+memory operations, SSE events, webhooks, objects and search. All
+HTTP endpoints are documented by the runtime's `/openapi.json` and
+`/docs/swagger`.
+
+**Important release boundary:** this contract and the PostgreSQL-backed
+SDK round-trip are under PR #51 acceptance. It is not a public hosted
+multi-tenant SaaS yet. Temporal verification requires its Worker and
+persistent backend; production API credentials need TLS, secure identity
+deployment, rate limiting and independent restore tests. An SDK client
+must never treat a timeout after a write as proof the write did not commit;
+use an idempotency key and read back.

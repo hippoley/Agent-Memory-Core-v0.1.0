@@ -31,6 +31,8 @@ def main() -> None:
         identity = memory.whoami()
         assert identity["tenant_id"] == tenant_id, identity
         capabilities = memory.capabilities()
+        enabled = {item["name"]: item["enabled"]
+                   for item in capabilities.get("capabilities", [])}
 
         first = memory.remember(
             subject_id=subject,
@@ -103,6 +105,7 @@ def main() -> None:
             "search_matches": len(search.get("items", [])),
             "provenance_sources": len(sources["sources"]),
             "events_read": len(events["items"]),
+            "evidence_object_sha256": object_digest,
             "temporal_workflow": workflow,
             "history_after_revoke": len(retained["items"]),
             "status": "THIRD_PARTY_SDK_ACCEPTED",

@@ -295,6 +295,7 @@ def verify_and_consume_evidence(
         if not isinstance(fact_id, str):
             raise EvidenceTrustError("fact_id/event_id/receipt_id must be a string")
         semantic_claim = {
+            "producer_issuer": proof.issuer,
             "tenant_id": item.tenant_id, "task_id": item.task_id,
             "source": item.source, "claim_type": proof.claim_type,
             "workflow_id": item.workflow_id or "", "run_id": item.run_id or "",
@@ -304,12 +305,12 @@ def verify_and_consume_evidence(
         semantic_sha256 = hashlib.sha256(_canonical_json(semantic_claim).encode("utf-8")).hexdigest()
         fact_row = conn.execute(
             """INSERT INTO memory_evidence_facts
-                 (tenant_id,task_id,evidence_source,claim_type,workflow_id,
-                  run_id,lease_epoch,fact_id,semantic_sha256,first_evidence_id,
-                  first_issuer,first_key_id,first_observed_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 (producer_issuer,tenant_id,task_id,evidence_source,claim_type,
+                  workflow_id,run_id,lease_epoch,fact_id,semantic_sha256,
+                  first_evidence_id,first_issuer,first_key_id,first_observed_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT DO NOTHING RETURNING semantic_sha256""",
-            (item.tenant_id,item.task_id,item.source,proof.claim_type,
+            (proof.issuer,item.tenant_id,item.task_id,item.source,proof.claim_type,
              item.workflow_id or "",item.run_id or "",
              item.lease_epoch if item.lease_epoch is not None else -1,
              fact_id,semantic_sha256,item.evidence_id,proof.issuer,proof.key_id,
@@ -319,10 +320,10 @@ def verify_and_consume_evidence(
         if fact_row is None:
             existing = conn.execute(
                 """SELECT semantic_sha256 FROM memory_evidence_facts
-                   WHERE tenant_id=%s AND task_id=%s AND evidence_source=%s
-                     AND claim_type=%s AND workflow_id=%s AND run_id=%s
-                     AND lease_epoch=%s AND fact_id=%s FOR UPDATE""",
-                (item.tenant_id,item.task_id,item.source,proof.claim_type,
+                   WHERE producer_issuer=%s AND tenant_id=%s AND task_id=%s
+                     AND evidence_source=%s AND claim_type=%s AND workflow_id=%s
+                     AND run_id=%s AND lease_epoch=%s AND fact_id=%s FOR UPDATE""",
+                (proof.issuer,item.tenant_id,item.task_id,item.source,proof.claim_type,
                  item.workflow_id or "",item.run_id or "",
                  item.lease_epoch if item.lease_epoch is not None else -1,fact_id),
             ).fetchone()

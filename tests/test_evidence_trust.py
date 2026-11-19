@@ -74,8 +74,8 @@ class FakeConnection:
             self.nonces.add(nonce_key)
             return FakeResult((params[2],))
         if "INSERT INTO memory_evidence_facts" in query:
-            fact_key = tuple(params[:8])
-            digest = params[8]
+            fact_key = tuple(params[:9])
+            digest = params[9]
             if fact_key in self.facts:
                 return FakeResult(None)
             self.facts[fact_key] = digest

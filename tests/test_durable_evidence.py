@@ -56,6 +56,7 @@ def test_cross_tenant_or_workflow_identity_is_conflict():
             evidence_id="other-tenant", tenant_id="tenant-b", task_id=TASK,
             source="temporal_history", observed_at=STAMP,
             payload={"execution_status": "RUNNING"}, workflow_id="workflow-a",
+            run_id="run-other",
         ),
     ])
     assert result.outcome == "CONFLICT"
@@ -206,3 +207,13 @@ def test_incomplete_effect_inventory_is_unknown_not_conflict_or_confirmed():
     assert result.outcome == "UNKNOWN"
     assert result.recovery_authorization == "DENY"
     assert any("effect_count" in reason for reason in result.reasons)
+
+
+
+def test_temporal_history_requires_workflow_and_run_identity():
+    with pytest.raises(EvidenceValidationError, match="requires run_id"):
+        EvidenceEnvelope.create(
+            evidence_id="history-no-run", tenant_id=TENANT, task_id=TASK,
+            source="temporal_history", observed_at=STAMP,
+            payload={"execution_status": "RUNNING"}, workflow_id=WORKFLOW,
+        )

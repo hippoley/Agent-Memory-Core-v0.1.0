@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\nAGENT_MEMORY_CORE_LOCAL_DEMO_READY")
     print("The API is bound to loopback; it is not published to the Internet.")
-    print("A real SDK smoke journey and namespaced demo memories are ready for inspection.")
+    print("A real SDK smoke journey completed; inspect the seeder output above for extracted demo facts.")
     print("The credential remains in .env.local; do not paste it into chat or commit it.")
     print("\nOpen these local interfaces:")
     for label, url in PAGES:

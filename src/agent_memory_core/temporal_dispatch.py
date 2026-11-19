@@ -41,17 +41,21 @@ class TemporalDispatchStore:
             raise TemporalDispatchConflict("Task already has a different Temporal dispatch identity")
         return dict(zip(("task_id","tenant_id","workflow_id","task_queue","status"),row))
 
-    def claim(self, *, dispatcher_id: str, lease_seconds: int=30) -> dict | None:
+    def claim(self, *, dispatcher_id: str, lease_seconds: int=30,
+              task_queue: str | None=None) -> dict | None:
         if not dispatcher_id or not 1 <= lease_seconds <= 3600:
             raise ValueError("dispatcher_id and lease_seconds 1..3600 are required")
+        if task_queue is not None and not task_queue:
+            raise ValueError("task_queue must be non-empty when provided")
         with self.conn.transaction():
             row=self.conn.execute(
                 """SELECT task_id::text,tenant_id,workflow_id,task_queue,lease_epoch
                    FROM memory_temporal_dispatches
-                   WHERE status='pending'
-                      OR (status='dispatching' AND lease_expires_at<=clock_timestamp())
+                   WHERE (%s IS NULL OR task_queue=%s)
+                     AND (status='pending'
+                       OR (status='dispatching' AND lease_expires_at<=clock_timestamp()))
                    ORDER BY created_at,task_id
-                   LIMIT 1 FOR UPDATE SKIP LOCKED""").fetchone()
+                   LIMIT 1 FOR UPDATE SKIP LOCKED""",(task_queue,task_queue)).fetchone()
             if row is None:
                 return None
             task_id,tenant_id,workflow_id,task_queue,epoch=row

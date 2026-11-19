@@ -1,13 +1,10 @@
-"""Generic durable-task orchestration shell for PostgreSQL-backed tasks.
-
-The workflow deliberately does not claim business completion. A task-specific
-runner must signal a terminal result only after its PostgreSQL lease and effect
-ledger have reached a safe terminal state.
-"""
+"""Identity-bound Temporal orchestration for PostgreSQL durable tasks."""
 from __future__ import annotations
+from datetime import timedelta
 
 try:
     from temporalio import workflow
+    from temporalio.common import RetryPolicy
 except ImportError as exc:
     raise RuntimeError("Install agent-memory-core[temporal]") from exc
 
@@ -33,27 +30,33 @@ class DurableTaskWorkflow:
             "failure": self._failure,
         }
 
-    @workflow.signal
-    def complete(self, result: dict) -> None:
-        self._result = result
-        self._stage = "COMPLETED"
-
-    @workflow.signal
-    def fail(self, error: dict) -> None:
-        self._failure = error
-        self._stage = "FAILED"
-
     @workflow.run
     async def run(self, request: dict) -> dict:
         required = ("tenant_id", "task_id", "workflow_id", "task_type")
         if any(not isinstance(request.get(key), str) or not request[key] for key in required):
             raise ValueError("Durable task workflow identity is incomplete")
-        actual_id = workflow.info().workflow_id
-        if actual_id != request["workflow_id"]:
-            raise ValueError("Temporal Workflow ID does not match the persisted task identity")
+        if workflow.info().workflow_id != request["workflow_id"]:
+            raise ValueError("Temporal Workflow ID does not match persisted task identity")
         self._identity = {key: request[key] for key in required}
-        self._stage = "ACCEPTED"
-        await workflow.wait_condition(lambda: self._stage in {"COMPLETED", "FAILED"})
-        if self._stage == "FAILED":
-            raise RuntimeError("Durable task runner reported failure")
-        return {"identity": self._identity, "result": self._result}
+        self._stage = "EXECUTING"
+        try:
+            result = await workflow.execute_activity(
+                "execute_durable_task",
+                self._identity,
+                start_to_close_timeout=timedelta(hours=24),
+                heartbeat_timeout=timedelta(seconds=45),
+                retry_policy=RetryPolicy(
+                    initial_interval=timedelta(seconds=2),
+                    maximum_interval=timedelta(minutes=1),
+                    maximum_attempts=0,
+                ),
+            )
+            if result.get("status") != "completed":
+                raise RuntimeError("Durable task activity returned a non-completed state")
+            self._result = result.get("result")
+            self._stage = "COMPLETED"
+            return {"identity": self._identity, "result": self._result}
+        except Exception as exc:
+            self._failure = type(exc).__name__
+            self._stage = "FAILED"
+            raise

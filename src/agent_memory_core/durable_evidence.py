@@ -218,6 +218,8 @@ def adjudicate_evidence(
     lookup = _latest(items, "temporal_lookup")
     lease = _latest(items, "activity_heartbeat")
     dispatch_epoch = dispatch.lease_epoch if dispatch else None
+    effect_items = [item for item in items if item.source == "effect_ledger"]
+    receipt_items = [item for item in items if item.source == "provider_receipt"]
 
     if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "NOT_FOUND" and temporal:
         conflicts.append("Temporal lookup reports NOT_FOUND while Temporal history evidence exists.")
@@ -246,8 +248,6 @@ def adjudicate_evidence(
     temporal_status = str(temporal.payload.get("execution_status", "UNKNOWN")).upper() if temporal else "UNKNOWN"
     dispatch_status = str(dispatch.payload.get("status", "UNKNOWN")).lower() if dispatch else "UNKNOWN"
 
-    effect_items = [item for item in items if item.source == "effect_ledger"]
-    receipt_items = [item for item in items if item.source == "provider_receipt"]
     effect_statuses: dict[str, str] = {}
     effect_keys = {str(item.payload.get("effect_key", "")) for item in effect_items}
     effect_keys.discard("")

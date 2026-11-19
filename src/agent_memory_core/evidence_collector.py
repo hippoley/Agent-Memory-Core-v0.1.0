@@ -112,9 +112,11 @@ async def collect_live_temporal_dispatch_evidence(
            WHERE t.tenant_id=%s
            ORDER BY d.updated_at, t.task_id
            LIMIT %s""",
-        (tenant_id, limit),
+        (tenant_id, limit + 1),
     ).fetchall()
 
+    truncated = len(rows) > limit
+    rows = rows[:limit]
     evidence: list[EvidenceEnvelope] = []
     for row in rows:
         (

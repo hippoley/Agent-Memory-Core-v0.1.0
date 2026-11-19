@@ -25,7 +25,7 @@ def test_lite_demo_launches_supported_local_profile():
 
 def test_identity_flag_is_explicit_and_opt_in():
     command = demo_local.launch_command("extended", True)
-    assert command[-2:] == ["--identity"] or command[-1] == "--identity"
+    assert command[-1] == "--identity"
     assert command[command.index("--profile") + 1] == "extended"
 
 

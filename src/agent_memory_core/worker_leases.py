@@ -32,7 +32,7 @@ class DurableTaskLeaseStore:
         }
 
     def claim(self, *, tenant_id: str, worker_id: str | None = None,
-              lease_seconds: int = 30) -> dict | None:
+              lease_seconds: int = 30, task_id: str | None = None) -> dict | None:
         if not tenant_id:
             raise ValueError("tenant_id is required")
         if not 1 <= lease_seconds <= 3600:
@@ -46,6 +46,7 @@ class DurableTaskLeaseStore:
                      SELECT task_id
                      FROM memory_durable_tasks
                      WHERE tenant_id=%s
+                       AND (%s::uuid IS NULL OR task_id=%s::uuid)
                        AND status IN ('queued','running','paused')
                        AND (lease_expires_at IS NULL OR lease_expires_at <= clock_timestamp())
                      ORDER BY created_at,task_id
@@ -66,7 +67,7 @@ class DurableTaskLeaseStore:
                      task.input,task.workflow_id,task.status,task.checkpoint_version,
                      task.progress_completed,task.progress_total,task.lease_owner,
                      task.lease_epoch,task.lease_expires_at""",
-                (tenant_id, owner, lease_seconds),
+                (tenant_id, task_id, task_id, owner, lease_seconds),
             ).fetchone()
             if row is None:
                 return None

@@ -9,6 +9,7 @@ on:
       - 'src/agent_memory_core/durable_task_workflow.py'
       - 'src/agent_memory_core/temporal_worker.py'
       - 'tests/test_temporal_durable_task_workflow.py'
+      - 'tests/test_temporal_durable_task_execution.py'
       - 'scripts/launch_local.py'
       - 'scripts/smoke_extended_temporal.py'
       - '.github/workflows/extended-age-temporal.yml'

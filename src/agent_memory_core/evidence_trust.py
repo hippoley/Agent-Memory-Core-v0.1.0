@@ -27,6 +27,10 @@ class EvidenceReplayError(EvidenceTrustError):
     """The signed nonce has already been consumed."""
 
 
+class EvidenceFactConflictError(EvidenceTrustError):
+    """Incompatible content was submitted for the same semantic fact identity."""
+
+
 @dataclass(frozen=True)
 class EvidenceAttestation:
     schema_version: str
@@ -40,6 +44,7 @@ class EvidenceAttestation:
     tenant_id: str
     task_id: str
     source: str
+    claim_type: str
     workflow_id: str | None
     run_id: str | None
     lease_epoch: int | None
@@ -58,6 +63,7 @@ class EvidenceAttestation:
             "tenant_id": self.tenant_id,
             "task_id": self.task_id,
             "source": self.source,
+            "claim_type": self.claim_type,
             "workflow_id": self.workflow_id,
             "run_id": self.run_id,
             "lease_epoch": self.lease_epoch,
@@ -84,6 +90,7 @@ class VerifiedEvidence:
     expires_at: str
     nonce: str
     signature_sha256: str
+    fact_disposition: str = "NEW"
 
 
 def _crypto():
@@ -116,14 +123,15 @@ def _b64url_decode(value: str) -> bytes:
 
 def sign_evidence(
     evidence: EvidenceEnvelope, *, issuer: str, key_id: str, audience: str,
-    issued_at: str, expires_at: str, nonce: str, private_key: Any,
+    issued_at: str, expires_at: str, nonce: str, claim_type: str,
+    private_key: Any,
 ) -> EvidenceAttestation:
     """Create an attestation using a producer-held Ed25519 private key."""
     evidence.verify()
     _parse_timestamp(issued_at)
     _parse_timestamp(expires_at)
-    if not all(isinstance(v, str) and v for v in (issuer, key_id, audience, nonce)):
-        raise EvidenceTrustError("issuer, key_id, audience and nonce are required")
+    if not all(isinstance(v, str) and v for v in (issuer, key_id, audience, nonce, claim_type)):
+        raise EvidenceTrustError("issuer, key_id, audience, nonce and claim_type are required")
     if len(nonce) < 16:
         raise EvidenceTrustError("nonce must contain at least 16 characters")
     claims = {
@@ -138,6 +146,7 @@ def sign_evidence(
         "tenant_id": evidence.tenant_id,
         "task_id": evidence.task_id,
         "source": evidence.source,
+        "claim_type": claim_type,
         "workflow_id": evidence.workflow_id,
         "run_id": evidence.run_id,
         "lease_epoch": evidence.lease_epoch,
@@ -166,8 +175,8 @@ def verify_and_consume_evidence(
         raise EvidenceTrustError("unsupported attestation schema version")
     if not expected_audience or proof.audience != expected_audience:
         raise EvidenceTrustError("attestation audience mismatch")
-    if not all(isinstance(v, str) and v for v in (proof.issuer, proof.key_id, proof.nonce)):
-        raise EvidenceTrustError("issuer, key_id and nonce are required")
+    if not all(isinstance(v, str) and v for v in (proof.issuer, proof.key_id, proof.nonce, proof.claim_type)):
+        raise EvidenceTrustError("issuer, key_id, nonce and claim_type are required")
     if len(proof.nonce) < 16:
         raise EvidenceTrustError("nonce must contain at least 16 characters")
     if (
@@ -208,8 +217,7 @@ def verify_and_consume_evidence(
 
     with conn.transaction():
         row = conn.execute(
-            """SELECT producer_key.public_key, producer_key.allowed_sources,
-                      producer_key.allowed_tenants, producer_key.audience,
+            """SELECT producer_key.public_key, producer_key.audience,
                       producer_key.not_before, producer_key.expires_at,
                       producer_key.revoked_at, principal.status,
                       principal.principal_type, tenant.status
@@ -224,9 +232,8 @@ def verify_and_consume_evidence(
         if row is None:
             raise EvidenceTrustError("producer key, service principal, or tenant is not trusted")
         (
-            public_key, allowed_sources, allowed_tenants, audience,
-            not_before, key_expires, revoked_at, principal_status,
-            principal_type, tenant_status,
+            public_key, audience, not_before, key_expires, revoked_at,
+            principal_status, principal_type, tenant_status,
         ) = row
         if principal_status != "active" or principal_type != "service":
             raise EvidenceTrustError("producer service principal is not active")
@@ -236,10 +243,29 @@ def verify_and_consume_evidence(
             raise EvidenceTrustError("producer key has been revoked")
         if audience != proof.audience:
             raise EvidenceTrustError("producer key is not authorized for this audience")
-        if item.source not in set(allowed_sources or []):
-            raise EvidenceTrustError("producer key is not authorized for this evidence source")
-        if "*" not in set(allowed_tenants or []) and item.tenant_id not in set(allowed_tenants or []):
-            raise EvidenceTrustError("producer key is not authorized for this tenant")
+        if item.payload.get("authoritative") is not None and not isinstance(item.payload.get("authoritative"), bool):
+            raise EvidenceTrustError("authoritative claim must be a boolean")
+        task_type = item.payload.get("task_type", "*")
+        if not isinstance(task_type, str) or not task_type:
+            raise EvidenceTrustError("task_type authority scope must be a non-empty string")
+        grant = conn.execute(
+            """SELECT allow_authoritative
+               FROM memory_evidence_authority_grants
+               WHERE issuer=%s AND key_id=%s
+                 AND evidence_source=%s AND claim_type=%s
+                 AND tenant_scope IN (%s,'*')
+                 AND task_type_scope IN (%s,'*')
+               ORDER BY (tenant_scope=%s) DESC,
+                        (task_type_scope=%s) DESC
+               LIMIT 1
+               FOR SHARE""",
+            (proof.issuer,proof.key_id,item.source,proof.claim_type,
+             item.tenant_id,task_type,item.tenant_id,task_type),
+        ).fetchone()
+        if grant is None:
+            raise EvidenceTrustError("producer has no authority grant for source, claim type and scope")
+        if item.payload.get("authoritative") is True and grant[0] is not True:
+            raise EvidenceTrustError("producer is not authorized to assert authoritative evidence")
         if issued < not_before or (key_expires is not None and issued >= key_expires):
             raise EvidenceTrustError("attestation was issued outside the producer key validity window")
         if key_expires is not None and current >= key_expires:
@@ -263,11 +289,53 @@ def verify_and_consume_evidence(
         if consumed is None:
             raise EvidenceReplayError("attestation nonce has already been consumed")
 
+        fact_id = item.payload.get("fact_id") or item.payload.get("event_id") or item.payload.get("receipt_id") or ""
+        if not isinstance(fact_id, str):
+            raise EvidenceTrustError("fact_id/event_id/receipt_id must be a string")
+        semantic_claim = {
+            "tenant_id": item.tenant_id, "task_id": item.task_id,
+            "source": item.source, "claim_type": proof.claim_type,
+            "workflow_id": item.workflow_id or "", "run_id": item.run_id or "",
+            "lease_epoch": item.lease_epoch if item.lease_epoch is not None else -1,
+            "fact_id": fact_id, "payload": dict(item.payload),
+        }
+        semantic_sha256 = hashlib.sha256(_canonical_json(semantic_claim).encode("utf-8")).hexdigest()
+        fact_row = conn.execute(
+            """INSERT INTO memory_evidence_facts
+                 (tenant_id,task_id,evidence_source,claim_type,workflow_id,
+                  run_id,lease_epoch,fact_id,semantic_sha256,first_evidence_id,
+                  first_issuer,first_key_id,first_observed_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT DO NOTHING RETURNING semantic_sha256""",
+            (item.tenant_id,item.task_id,item.source,proof.claim_type,
+             item.workflow_id or "",item.run_id or "",
+             item.lease_epoch if item.lease_epoch is not None else -1,
+             fact_id,semantic_sha256,item.evidence_id,proof.issuer,proof.key_id,
+             _parse_timestamp(item.observed_at)),
+        ).fetchone()
+        fact_disposition = "NEW"
+        if fact_row is None:
+            existing = conn.execute(
+                """SELECT semantic_sha256 FROM memory_evidence_facts
+                   WHERE tenant_id=%s AND task_id=%s AND evidence_source=%s
+                     AND claim_type=%s AND workflow_id=%s AND run_id=%s
+                     AND lease_epoch=%s AND fact_id=%s FOR UPDATE""",
+                (item.tenant_id,item.task_id,item.source,proof.claim_type,
+                 item.workflow_id or "",item.run_id or "",
+                 item.lease_epoch if item.lease_epoch is not None else -1,fact_id),
+            ).fetchone()
+            if existing is None:
+                raise EvidenceTrustError("semantic fact ledger conflict could not be resolved")
+            if existing[0] != semantic_sha256:
+                raise EvidenceFactConflictError("conflicting semantic content for the same producer fact identity")
+            fact_disposition = "DUPLICATE"
+
     return VerifiedEvidence(
         evidence=item, issuer=proof.issuer, key_id=proof.key_id,
         audience=proof.audience, issued_at=proof.issued_at,
         expires_at=proof.expires_at, nonce=proof.nonce,
         signature_sha256=hashlib.sha256(signature).hexdigest(),
+        fact_disposition=fact_disposition,
     )
 
 
@@ -300,6 +368,7 @@ class TrustedAdjudication:
                     "nonce": item.nonce,
                     "evidence_sha256": item.evidence.sha256,
                     "signature_sha256": item.signature_sha256,
+                    "fact_disposition": item.fact_disposition,
                 }
                 for item in self.verified_evidence
             ],

@@ -311,11 +311,12 @@ def adjudicate_evidence(
         temporal_status == "COMPLETED"
         and task_status == "completed"
         and not unresolved
+        and task_row is not None
+        and task_row.payload.get("effect_count") == len(effect_keys)
         and (
             effects_status == "ALL_COMMITTED"
             or (
                 effects_status == "NO_EFFECT_EVIDENCE"
-                and task_row is not None
                 and task_row.payload.get("effect_count") == 0
             )
         )

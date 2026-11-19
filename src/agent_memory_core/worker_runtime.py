@@ -113,12 +113,12 @@ class DurableTaskWorker:
         if self.heartbeat_interval <= 0 or self.heartbeat_interval >= lease_seconds:
             raise ValueError("heartbeat_interval must be positive and shorter than the lease")
 
-    def _claim(self) -> dict | None:
+    def _claim(self, task_id: str | None = None) -> dict | None:
         db = self.connection_factory()
         try:
             return DurableTaskLeaseStore(db.conn).claim(
                 tenant_id=self.tenant_id, worker_id=self.worker_id,
-                lease_seconds=self.lease_seconds)
+                lease_seconds=self.lease_seconds,task_id=task_id)
         finally:
             db.close()
 
@@ -132,8 +132,8 @@ class DurableTaskWorker:
         finally:
             db.close()
 
-    def run_once(self) -> bool:
-        task = self._claim()
+    def run_once(self, task_id: str | None = None) -> bool:
+        task = self._claim(task_id=task_id)
         if task is None:
             return False
         lost = threading.Event()

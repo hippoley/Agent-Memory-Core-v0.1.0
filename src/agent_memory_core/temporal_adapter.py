@@ -172,8 +172,7 @@ def execute_durable_task(request: dict) -> dict:
             return {"status":"completed","result":row[3],"replayed":True}
         if row[2]=="failed":
             raise ApplicationError("PostgreSQL task is already failed",
-                                   type="TaskAlreadyFailed",non_retryable=True,
-                                   details=[row[4]])
+                                   row[4],type="TaskAlreadyFailed",non_retryable=True)
     finally:
         db.close()
 
@@ -223,8 +222,7 @@ def execute_durable_task(request: dict) -> dict:
         return {"status":"completed","result":task[1],"replayed":not outcome["ran"]}
     if task[0]=="failed":
         raise ApplicationError("Task handler marked PostgreSQL task failed",
-                               type="DurableTaskFailed",non_retryable=True,
-                               details=[task[2]])
+                               task[2],type="DurableTaskFailed",non_retryable=True)
     if not outcome["ran"]:
         raise ApplicationError("Task is not currently claimable",
                                type="DurableTaskLeaseBusy",non_retryable=False)

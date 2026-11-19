@@ -149,6 +149,7 @@ def verify_and_consume_evidence(
     expected_audience: str, now: datetime | None = None,
     max_clock_skew: timedelta = timedelta(seconds=30),
     max_attestation_lifetime: timedelta = timedelta(minutes=5),
+    max_evidence_age: timedelta = timedelta(minutes=15),
 ) -> VerifiedEvidence:
     """Verify authority, signature, freshness and nonce uniqueness atomically.
 
@@ -182,6 +183,13 @@ def verify_and_consume_evidence(
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None or current.utcoffset() is None:
         raise EvidenceTrustError("verification time must be timezone-aware")
+    if max_clock_skew < timedelta(0) or max_attestation_lifetime <= timedelta(0) or max_evidence_age <= timedelta(0):
+        raise EvidenceTrustError("freshness policy durations must be positive")
+    observed = _parse_timestamp(item.observed_at)
+    if observed > current + max_clock_skew:
+        raise EvidenceTrustError("evidence observation time is too far in the future")
+    if current - observed > max_evidence_age + max_clock_skew:
+        raise EvidenceTrustError("evidence observation is stale under the configured freshness policy")
     if expires <= issued or expires - issued > max_attestation_lifetime:
         raise EvidenceTrustError("attestation lifetime is invalid or exceeds policy")
     if issued > current + max_clock_skew:

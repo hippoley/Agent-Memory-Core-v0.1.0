@@ -113,27 +113,26 @@ def test_two_independent_dispatchers_racing_claim_exactly_one_lease():
             db=PostgresMemory(dsn)
             try:
                 barrier.wait(timeout=10)
-                return TemporalDispatchStore(db.conn).claim(
+                claim=TemporalDispatchStore(db.conn).claim(
                     dispatcher_id=dispatcher_id,lease_seconds=30,task_queue=task_queue)
+                return dispatcher_id,claim
             finally:
                 db.close()
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             results=list(pool.map(contender,("dispatcher-race-a","dispatcher-race-b")))
 
-        winners=[claim for claim in results if claim is not None]
-        losers=[claim for claim in results if claim is None]
+        winners=[item for item in results if item[1] is not None]
+        losers=[item for item in results if item[1] is None]
         assert len(winners)==1
         assert len(losers)==1
-        assert winners[0]["task_id"]==task_id
-        assert winners[0]["lease_epoch"]==1
+        winner_id,winner_claim=winners[0]
+        assert winner_claim["task_id"]==task_id
+        assert winner_claim["lease_epoch"]==1
         state=setup.conn.execute(
             """SELECT status,lease_owner,lease_epoch,attempts
                FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
-        assert state[0]=="dispatching"
-        assert state[1] in ("dispatcher-race-a","dispatcher-race-b")
-        assert state[2:]==(1,1)
-        assert state[1]==winners[0]["lease_owner"] if "lease_owner" in winners[0] else True
-        assert winners[0]["lease_epoch"]==state[2]
+        assert state==("dispatching",winner_id,1,1)
+        assert winner_claim["lease_epoch"]==state[2]
     finally:
         setup.close()

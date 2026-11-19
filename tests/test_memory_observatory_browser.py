@@ -273,3 +273,51 @@ def test_revision_ack_without_old_version_supersession_is_unverified(ui):
     expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
     expect(ui.locator("#active")).to_have_text("2")
     assert "Revision committed and independently read back" not in ui.locator("#mutationNote").inner_text()
+
+
+def test_mutation_readback_is_independent_of_500_row_visual_page(ui):
+    """An API-verified claim beyond the visual page is not a false failure."""
+    import json
+    visible = [
+        {"id": f"other-{i:03d}", "subject_id": f"other-subject-{i:03d}",
+         "predicate": "unrelated", "value": {"index": i}, "source_id": "test:other",
+         "recorded_at": "2026-11-19T00:00:00Z"}
+        for i in range(500)
+    ]
+    created = {"id": "claim-beyond-visible-page", "subject_id": "target-subject",
+               "predicate": "preferred_temperature", "value": {"degrees": 21},
+               "source_id": "test:target", "recorded_at": "2026-11-19T01:00:00Z"}
+    accepted = {"value": False}
+    targeted_queries = []
+    def respond(route):
+        url, method = route.request.url, route.request.method
+        if method == "POST" and url.endswith("/v1/memories"):
+            accepted["value"] = True
+            route.fulfill(status=201, content_type="application/json",
+                          body=json.dumps({"id": created["id"]}))
+        else:
+            if "/v1/memories?subject_id=target-subject" in url:
+                targeted_queries.append(url)
+                rows = [created] if accepted["value"] else []
+            elif "/v1/memories?" in url:
+                rows = visible
+            else:
+                rows = []
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"items": rows}))
+    ui.route("**/v1/**", respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-visual-page-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#total")).to_have_text("500")
+    ui.locator("#writeSubject").fill("target-subject")
+    ui.locator("#writePredicate").fill("preferred_temperature")
+    ui.locator("#writeValue").fill('{"degrees":21}')
+    ui.locator("#writeSource").fill("test:target")
+    ui.locator("#saveMemory").click()
+    expect(ui.locator("#mutationNote")).to_contain_text(
+        "Memory created and independently read back"
+    )
+    assert targeted_queries, "Expected filtered canonical history request"
+    assert ui.locator("#claimPicker option").count() == 501
+    assert ui.locator("#claimPicker").input_value() == ""

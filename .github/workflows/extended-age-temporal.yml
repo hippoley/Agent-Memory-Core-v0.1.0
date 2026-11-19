@@ -4,6 +4,11 @@ on:
     paths:
       - 'compose.temporal.yaml'
       - 'docker/Dockerfile.temporal'
+      - 'src/agent_memory_core/temporal_dispatch.py'
+      - 'src/agent_memory_core/temporal_dispatcher.py'
+      - 'src/agent_memory_core/durable_task_workflow.py'
+      - 'src/agent_memory_core/temporal_worker.py'
+      - 'tests/test_temporal_durable_task_workflow.py'
       - 'scripts/launch_local.py'
       - 'scripts/smoke_extended_temporal.py'
       - '.github/workflows/extended-age-temporal.yml'

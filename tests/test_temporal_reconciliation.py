@@ -107,12 +107,24 @@ def _live_row(*, task_status="running", dispatch_status="started",
     )
 
 
+class _Description:
+    def __init__(self, *, status, workflow_type, task_queue, memo, run_id):
+        self.id = "wf-1"
+        self.status = SimpleNamespace(name=status)
+        self.workflow_type = SimpleNamespace(name=workflow_type)
+        self.task_queue = task_queue
+        self._memo = memo
+        self.run_id = run_id
+
+    async def memo(self):
+        return self._memo
+
+
 def _description(*, status="RUNNING", workflow_type="DurableTaskWorkflow",
                  task_queue="queue-a", memo=None, run_id="run-1"):
-    return SimpleNamespace(
-        id="wf-1",
-        status=SimpleNamespace(name=status),
-        workflow_type=SimpleNamespace(name=workflow_type),
+    return _Description(
+        status=status,
+        workflow_type=workflow_type,
         task_queue=task_queue,
         memo=memo or {"agent_memory_task_identity": {
             "tenant_id": "tenant-a", "task_id": "task-1",
@@ -138,7 +150,7 @@ def test_live_inspection_distinguishes_missing_workflow_from_lookup_failure():
     from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
 
     class WorkflowNotFoundError(Exception):
-        pass
+        status = SimpleNamespace(name="NOT_FOUND")
 
     missing = asyncio.run(inspect_temporal_dispatches(
         _ReadOnlyConn([_live_row()]),
@@ -242,12 +254,13 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
         task_id = str(uuid4())
         workflow_id = stable_workflow_id(tenant_id, task_id)
         task_queue = "temporal-reconcile-live-" + uuid4().hex
-        client = await Client.connect(
-            os.getenv("MEMORY_TEMPORAL_ADDRESS", "localhost:7233"),
-            namespace=os.getenv("MEMORY_TEMPORAL_NAMESPACE", "default"),
-        )
+        client = None
         handle = None
         try:
+            client = await Client.connect(
+                os.getenv("MEMORY_TEMPORAL_ADDRESS", "localhost:7233"),
+                namespace=os.getenv("MEMORY_TEMPORAL_NAMESPACE", "default"),
+            )
             db.migrate()
             with db.conn.transaction():
                 db.conn.execute(

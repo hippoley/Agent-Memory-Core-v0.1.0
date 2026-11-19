@@ -219,6 +219,10 @@ def adjudicate_evidence(
     effect_statuses: dict[str, str] = {}
     effect_keys = {str(item.payload.get("effect_key", "")) for item in effect_items}
     effect_keys.discard("")
+    receipt_keys = {str(item.payload.get("effect_key", "")) for item in receipt_items}
+    receipt_keys.discard("")
+    if receipt_keys - effect_keys:
+        reasons.append("Provider receipt exists without a matching PostgreSQL effect intent.")
     for key in effect_keys:
         candidates = [item for item in effect_items if item.payload.get("effect_key") == key]
         latest_effect = max(candidates, key=lambda item: (_parse_timestamp(item.observed_at), item.evidence_id))
@@ -233,13 +237,28 @@ def adjudicate_evidence(
         if payload.get("authoritative") is not True or not payload.get("idempotency_key"):
             effect_statuses[key] = "unknown"
             continue
+        expected_key = next(
+            (str(item.payload["idempotency_key"]) for item in effect_items
+             if item.payload.get("effect_key") == key and item.payload.get("idempotency_key")),
+            None,
+        )
+        if expected_key is not None and payload.get("idempotency_key") != expected_key:
+            reasons.append(f"Provider receipt idempotency key conflicts for effect {key!r}.")
+            effect_statuses[key] = "unknown"
+            continue
         outcome = str(payload.get("outcome", "UNKNOWN")).upper()
-        effect_statuses[key] = {
+        provider_status = {
             "COMMITTED": "committed",
             "NOT_FOUND": "not_found",
             "REJECTED": "failed",
             "UNKNOWN": "unknown",
         }.get(outcome, "unknown")
+        ledger_status = effect_statuses.get(key, "unknown")
+        if ledger_status in {"committed", "failed"} and provider_status in {"committed", "failed", "not_found"} and ledger_status != provider_status:
+            reasons.append(f"Provider receipt conflicts with terminal Effect Ledger state for effect {key!r}.")
+            effect_statuses[key] = "unknown"
+        else:
+            effect_statuses[key] = provider_status
 
     unresolved = sorted(
         key for key, status in effect_statuses.items()
@@ -274,7 +293,15 @@ def adjudicate_evidence(
         temporal_status == "COMPLETED"
         and task_status == "completed"
         and not unresolved
-        and effects_status in {"ALL_COMMITTED", "NO_EFFECT_EVIDENCE"}
+        and (
+            effects_status == "ALL_COMMITTED"
+            or (
+                effects_status == "NO_EFFECT_EVIDENCE"
+                and task_row is not None
+                and task_row.payload.get("effect_count") == 0
+            )
+        )
+        and not reasons
     ):
         outcome = "CONFIRMED"
         reasons.append("Temporal completion and PostgreSQL business completion agree; no unresolved effects were observed.")
@@ -285,6 +312,8 @@ def adjudicate_evidence(
         and dispatch.payload.get("lease_valid") is True
         and bool(dispatch.payload.get("lease_owner"))
         and dispatch_epoch is not None
+        and task_row is not None
+        and task_row.payload.get("effect_count") == len(effect_keys)
         and not unresolved
         and all(status in {"requested", "not_found"} for status in effect_statuses.values())
         and task_status not in TERMINAL_TASK_STATES

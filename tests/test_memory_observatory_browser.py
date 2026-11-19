@@ -177,3 +177,62 @@ def test_canvas_domain_labels_have_safe_horizontal_margins(ui,width):
     canvas_width=ui.locator("#art").evaluate("el => el.getBoundingClientRect().width")
     assert labels, "Expected domain annotation positions"
     assert all(120<=x<=canvas_width-120 for x in labels), (canvas_width,labels)
+
+
+def test_write_ack_without_canonical_readback_never_reports_success(ui):
+    """A successful POST alone is not verified memory state."""
+    import json
+    requests = []
+    def respond(route):
+        method = route.request.method
+        url = route.request.url
+        requests.append((method, url))
+        if method == "POST" and url.endswith("/v1/memories"):
+            route.fulfill(status=201, content_type="application/json",
+                          body=json.dumps({"id": "accepted-but-unseen"}))
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"items": []}))
+    ui.route("**/v1/**", respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#writeSubject").fill("negative-test-subject")
+    ui.locator("#writePredicate").fill("preference")
+    ui.locator("#writeValue").fill('{"temperature":21}')
+    ui.locator("#writeSource").fill("test:stale-read")
+    ui.locator("#saveMemory").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
+    assert "independently read back. New ID" not in ui.locator("#mutationNote").inner_text()
+    expect(ui.locator("#total")).to_have_text("0")
+    assert any(method == "POST" and url.endswith("/v1/memories") for method, url in requests)
+
+
+def test_forget_ack_with_stale_canonical_readback_never_reports_success(ui):
+    """A successful DELETE with an unchanged active record stays unverified."""
+    import json
+    row = {"id": "stable-active-record", "subject_id": "test-subject",
+           "predicate": "preference", "value": {"temperature": 21},
+           "source_id": "test:original", "recorded_at": "2026-11-19T00:00:00Z"}
+    methods = []
+    def respond(route):
+        methods.append(route.request.method)
+        if route.request.method == "DELETE":
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"forgotten": [row["id"]]}))
+        else:
+            result = {"items": [row]} if "/v1/memories?" in route.request.url else {"items": []}
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(result))
+    ui.route("**/v1/**", respond)
+    ui.on("dialog", lambda dialog: dialog.accept())
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#claimPicker").select_option(row["id"])
+    ui.locator("#forgetSelected").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
+    expect(ui.locator("#active")).to_have_text("1")
+    assert "DELETE" in methods

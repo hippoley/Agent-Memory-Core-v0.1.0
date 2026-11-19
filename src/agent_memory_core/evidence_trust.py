@@ -85,6 +85,8 @@ class VerifiedEvidence:
     evidence: EvidenceEnvelope
     issuer: str
     key_id: str
+    principal_id: str
+    claim_type: str
     audience: str
     issued_at: str
     expires_at: str
@@ -217,10 +219,10 @@ def verify_and_consume_evidence(
 
     with conn.transaction():
         row = conn.execute(
-            """SELECT producer_key.public_key, producer_key.audience,
-                      producer_key.not_before, producer_key.expires_at,
-                      producer_key.revoked_at, principal.status,
-                      principal.principal_type, tenant.status
+            """SELECT producer_key.public_key, principal.principal_id::text,
+                      producer_key.audience, producer_key.not_before,
+                      producer_key.expires_at, producer_key.revoked_at,
+                      principal.status, principal.principal_type, tenant.status
                FROM memory_evidence_producer_keys AS producer_key
                JOIN memory_principals AS principal
                  ON principal.principal_id=producer_key.principal_id
@@ -232,8 +234,8 @@ def verify_and_consume_evidence(
         if row is None:
             raise EvidenceTrustError("producer key, service principal, or tenant is not trusted")
         (
-            public_key, audience, not_before, key_expires, revoked_at,
-            principal_status, principal_type, tenant_status,
+            public_key, principal_id, audience, not_before, key_expires,
+            revoked_at, principal_status, principal_type, tenant_status,
         ) = row
         if principal_status != "active" or principal_type != "service":
             raise EvidenceTrustError("producer service principal is not active")
@@ -332,6 +334,7 @@ def verify_and_consume_evidence(
 
     return VerifiedEvidence(
         evidence=item, issuer=proof.issuer, key_id=proof.key_id,
+        principal_id=str(principal_id), claim_type=proof.claim_type,
         audience=proof.audience, issued_at=proof.issued_at,
         expires_at=proof.expires_at, nonce=proof.nonce,
         signature_sha256=hashlib.sha256(signature).hexdigest(),
@@ -362,6 +365,8 @@ class TrustedAdjudication:
                 {
                     "issuer": item.issuer,
                     "key_id": item.key_id,
+                    "principal_id": item.principal_id,
+                    "claim_type": item.claim_type,
                     "audience": item.audience,
                     "issued_at": item.issued_at,
                     "expires_at": item.expires_at,

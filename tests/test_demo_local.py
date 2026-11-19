@@ -38,3 +38,10 @@ def test_smoke_uses_the_public_sdk_entrypoint():
 
 def test_browser_urls_are_loopback_only():
     assert all(url.startswith("http://127.0.0.1:") for _, url in demo_local.PAGES)
+
+
+def test_demo_seeds_namespaced_live_records():
+    assert demo_local.seed_command() == [
+        sys.executable,
+        str(ROOT / "scripts" / "seed_demo.py"),
+    ]

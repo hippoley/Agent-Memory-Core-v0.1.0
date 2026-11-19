@@ -196,7 +196,11 @@ def adjudicate_evidence(
     tenant_ids = {item.tenant_id for item in items}
     task_ids = {item.task_id for item in items}
     workflow_ids = {item.workflow_id for item in items if item.workflow_id}
-    if len(tenant_ids) != 1 or len(task_ids) != 1 or len(workflow_ids) > 1:
+    evidence_ids: dict[str, set[str]] = {}
+    for item in items:
+        evidence_ids.setdefault(item.evidence_id, set()).add(item.sha256)
+    duplicate_id_conflict = any(len(digests_for_id) > 1 for digests_for_id in evidence_ids.values())
+    if duplicate_id_conflict or len(tenant_ids) != 1 or len(task_ids) != 1 or len(workflow_ids) > 1:
         first = items[0]
         return Adjudication(first.tenant_id, first.task_id, "CONFLICT", "UNKNOWN",
                             "UNKNOWN", "UNKNOWN", "DENY", None,
@@ -270,7 +274,10 @@ def adjudicate_evidence(
              if item.payload.get("effect_key") == key and item.payload.get("idempotency_key")),
             None,
         )
-        if expected_key is not None and payload.get("idempotency_key") != expected_key:
+        if expected_key is None:
+            effect_statuses[key] = "unknown"
+            continue
+        if payload.get("idempotency_key") != expected_key:
             conflicts.append(f"Provider receipt idempotency key conflicts for effect {key!r}.")
             effect_statuses[key] = "unknown"
             continue

@@ -213,9 +213,18 @@ async def inspect_temporal_dispatches(
             "Temporal execution exists under the expected Workflow ID but its type, task queue, or immutable memo identity differs from PostgreSQL. Preserve both records; do not acknowledge or repair automatically."
             if identity_conflict else assessment.reason
         )
-        if recorded_run_id and temporal_run_id and recorded_run_id != temporal_run_id:
+        if not identity_conflict and recorded_run_id and temporal_run_id and recorded_run_id != temporal_run_id:
             classification = "TEMPORAL_RUN_ID_DIVERGENCE"
             reason = "The Temporal Run ID differs from the Run ID recorded in PostgreSQL. Preserve both identifiers and require investigation."
+        elif not identity_conflict and temporal_exists and dispatch_status == "pending":
+            classification = "TEMPORAL_EXISTS_DISPATCH_PENDING"
+            reason = "A Temporal execution exists while PostgreSQL still considers the dispatch pending. Validate identity and lease history before acknowledging it."
+        elif not identity_conflict and temporal_exists and dispatch_status == "dispatching" and temporal_status not in TEMPORAL_TERMINAL:
+            classification = "TEMPORAL_EXISTS_DISPATCH_UNACKNOWLEDGED"
+            reason = "Temporal accepted an execution but PostgreSQL has not recorded the dispatch acknowledgement. A current fenced dispatcher may validate and acknowledge it; this read-only report does not do so."
+        elif not identity_conflict and not temporal_exists and dispatch_status == "started":
+            classification = "POSTGRES_DISPATCH_STARTED_TEMPORAL_MISSING"
+            reason = "PostgreSQL records a started dispatch but Temporal explicitly reports the Workflow ID missing. Preserve the ledger and investigate retention, namespace, or deletion before any restart."
         report.append({
             "task_id": str(task_id),
             "tenant_id": row_tenant,

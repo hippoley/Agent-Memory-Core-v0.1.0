@@ -37,6 +37,10 @@ def smoke_command() -> list[str]:
     return [sys.executable, str(ROOT / "scripts" / "smoke_local.py")]
 
 
+def seed_command() -> list[str]:
+    return [sys.executable, str(ROOT / "scripts" / "seed_demo.py")]
+
+
 def require_sdk() -> None:
     try:
         import agent_memory_core.sdk  # noqa: F401

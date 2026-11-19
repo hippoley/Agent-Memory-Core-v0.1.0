@@ -63,33 +63,6 @@ async def _start_or_recover(client, claim: dict) -> str:
 
 
 
-def _test_failpoint(name: str) -> None:
-    """Deterministic subprocess barrier; inert unless explicitly test-enabled.
-
-    A separate pytest process observes the marker and can SIGKILL this process
-    at the exact boundary without relying on arbitrary scheduling delays.
-    """
-    if os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_MODE") != "1":
-        return
-    if os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_FAILPOINT") != name:
-        return
-    directory = os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_DIR")
-    if not directory:
-        raise RuntimeError("Dispatcher test failpoint requires TEST_DIR")
-    os.makedirs(directory, exist_ok=True)
-    reached = os.path.join(directory, name + ".reached")
-    release = os.path.join(directory, name + ".release")
-    with open(reached, "w", encoding="utf-8") as marker:
-        marker.write(str(os.getpid()))
-        marker.flush()
-        os.fsync(marker.fileno())
-    deadline = asyncio.get_running_loop().time() + 120
-    while not os.path.exists(release):
-        if asyncio.get_running_loop().time() >= deadline:
-            raise TimeoutError(f"Dispatcher test failpoint timed out: {name}")
-        import time
-        time.sleep(0.02)
-
 async def run_dispatcher(*, once: bool = False) -> None:
     try:
         from temporalio.client import Client
@@ -98,7 +71,7 @@ async def run_dispatcher(*, once: bool = False) -> None:
 
     from .postgres import PostgresMemory
     from .temporal_adapter import _database_dsn
-    from .temporal_dispatch import TemporalDispatchStore
+    from .temporal_dispatch import TemporalDispatchStore, _test_failpoint
 
     address = os.getenv("MEMORY_TEMPORAL_ADDRESS", "localhost:7233")
     namespace = os.getenv("MEMORY_TEMPORAL_NAMESPACE", "default")

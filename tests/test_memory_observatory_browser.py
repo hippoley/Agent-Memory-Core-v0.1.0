@@ -236,3 +236,40 @@ def test_forget_ack_with_stale_canonical_readback_never_reports_success(ui):
     expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
     expect(ui.locator("#active")).to_have_text("1")
     assert "DELETE" in methods
+
+
+def test_revision_ack_without_old_version_supersession_is_unverified(ui):
+    """A new version alone is insufficient if the previous version stayed active."""
+    import json
+    old = {"id": "old-claim", "subject_id": "revision-subject",
+           "predicate": "preferred_temperature", "value": {"degrees": 20},
+           "source_id": "test:old", "recorded_at": "2026-11-19T00:00:00Z"}
+    new = {"id": "new-claim", "subject_id": "revision-subject",
+           "predicate": "preferred_temperature", "value": {"degrees": 21},
+           "source_id": "test:new"}
+    accepted = {"value": False}
+    def respond(route):
+        url, method = route.request.url, route.request.method
+        if method == "POST" and url.endswith("/v1/memories"):
+            accepted["value"] = True
+            route.fulfill(status=201, content_type="application/json",
+                          body=json.dumps({"id": new["id"]}))
+        else:
+            # The old version is intentionally *not* superseded.
+            rows = [old, new] if accepted["value"] else [old]
+            payload = {"items": rows} if "/v1/memories?" in url else {"items": []}
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(payload))
+    ui.route("**/v1/**", respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#claimPicker").select_option(old["id"])
+    ui.locator("#targetSelected").click()
+    ui.locator("#writeValue").fill('{"degrees":21}')
+    ui.locator("#writeSource").fill("test:new")
+    ui.locator("#saveMemory").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
+    expect(ui.locator("#active")).to_have_text("2")
+    assert "Revision committed and independently read back" not in ui.locator("#mutationNote").inner_text()

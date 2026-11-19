@@ -20,7 +20,15 @@ CREATE TABLE IF NOT EXISTS memory_evidence_producer_keys (
 -- source/tenant allowlists. The normalized grants below supersede those columns.
 ALTER TABLE memory_evidence_producer_keys
   DROP COLUMN IF EXISTS allowed_sources,
-  DROP COLUMN IF EXISTS allowed_tenants;
+  DROP COLUMN IF EXISTS allowed_tenants,
+  ALTER COLUMN principal_id SET NOT NULL;
+ALTER TABLE memory_evidence_producer_keys
+  DROP CONSTRAINT IF EXISTS memory_evidence_producer_keys_principal_id_fkey,
+  DROP CONSTRAINT IF EXISTS memory_evidence_producer_keys_principal_fk;
+ALTER TABLE memory_evidence_producer_keys
+  ADD CONSTRAINT memory_evidence_producer_keys_principal_fk
+  FOREIGN KEY (principal_id) REFERENCES memory_principals(principal_id)
+  ON DELETE RESTRICT;
 
 CREATE TABLE IF NOT EXISTS memory_evidence_authority_grants (
   issuer text NOT NULL,

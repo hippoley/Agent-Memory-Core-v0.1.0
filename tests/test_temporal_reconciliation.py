@@ -367,6 +367,7 @@ def test_evidence_key_revocation_serializes_with_live_verification():
         private_key=private_key,
     )
     key_locked = threading.Event()
+    revoke_started = threading.Event()
     release_verifier = threading.Event()
 
     class PausingConnection:
@@ -416,6 +417,7 @@ def test_evidence_key_revocation_serializes_with_live_verification():
             )
             assert key_locked.wait(timeout=10), "verification did not acquire producer key lock"
             def revoke_key():
+                revoke_started.set()
                 with revoker_db.conn.transaction():
                     revoker_db.conn.execute(
                         """UPDATE memory_evidence_producer_keys SET revoked_at=clock_timestamp()
@@ -423,6 +425,7 @@ def test_evidence_key_revocation_serializes_with_live_verification():
                         (issuer,key_id),
                     )
             revoke_future = pool.submit(revoke_key)
+            assert revoke_started.wait(timeout=10), "revocation thread did not start"
             time.sleep(0.2)
             assert not revoke_future.done(), "revocation must wait for in-flight FOR SHARE verification"
             release_verifier.set()

@@ -45,6 +45,7 @@ Supported sources:
 
 - `postgres_task`
 - `postgres_dispatch`
+- `postgres_worker_lease`
 - `temporal_history`
 - `temporal_lookup`
 - `activity_heartbeat`
@@ -61,7 +62,7 @@ There is deliberately no universal "latest status wins" rule.
 |---|---|---|
 | Did a Workflow execute? | Temporal History / explicit Temporal lookup | A transport error is not NOT_FOUND |
 | Is a business task complete? | PostgreSQL task row | Temporal COMPLETED cannot complete the business row |
-| Who may commit a state transition? | Current PostgreSQL lease + Epoch | A stale epoch never regains authority |
+| Who may commit a state transition? | Current PostgreSQL task/worker lease + Epoch | A stale epoch never regains authority |
 | Did an external operation happen? | Authoritative provider receipt | Must be tied to the same effect and idempotency key |
 | What does the application currently believe? | PostgreSQL Effect Ledger | UNKNOWN remains unresolved absent independent evidence |
 
@@ -75,7 +76,7 @@ Evidence inventory completeness matters. A task's declared `effect_count` must m
 |---|---|---|
 | `CONFIRMED` | Temporal completion, PostgreSQL business completion, and complete resolved effect inventory agree | DENY; no recovery needed |
 | `NOT_STARTED` | Explicit Temporal NOT_FOUND, valid current dispatch lease, nonterminal task, and complete effect inventory with no unresolved operation | ALLOW conditionally for START_OR_RECOVER_TEMPORAL |
-| `IN_PROGRESS` | Temporal execution, fresh Activity heartbeat, or effect execution/reconciliation is active | DENY |
+| `IN_PROGRESS` | Temporal execution, a fresh heartbeat bound to the current worker lease owner/Epoch, or effect execution/reconciliation is active | DENY |
 | `UNKNOWN` | Evidence is missing, stale, incomplete, or insufficient to determine the outcome | DENY |
 | `CONFLICT` | Identity, Run ID, provider receipt, or cross-domain facts contradict | DENY |
 
@@ -105,7 +106,7 @@ The implementation is intentionally a pure function. Source adapters that collec
 
 ## 7. Conformance tests and open gates
 
-The initial tests cover digest tampering, timezone validation, cross-tenant identity conflict, Run ID divergence, active execution, fresh heartbeat, unresolved effects, authoritative and unverified receipts, contradictory receipts, conditional NOT_STARTED authorization, missing lease, incomplete effect inventory, and orphan receipts.
+The initial tests cover digest tampering, timezone validation, cross-tenant identity conflict, Run ID divergence, active execution, heartbeat-to-current-worker-lease binding, stale heartbeat rejection, unresolved effects, authoritative and unverified receipts, contradictory receipts, conditional NOT_STARTED authorization, missing lease, incomplete effect inventory, and orphan receipts.
 
 Still required before production claims:
 

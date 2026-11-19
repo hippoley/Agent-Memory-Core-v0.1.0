@@ -16,6 +16,7 @@ SCHEMA_VERSION = "amc.durable-evidence.v1"
 EVIDENCE_SOURCES = frozenset({
     "postgres_task",
     "postgres_dispatch",
+    "postgres_worker_lease",
     "temporal_history",
     "temporal_lookup",
     "activity_heartbeat",
@@ -93,8 +94,8 @@ class EvidenceEnvelope:
         if not isinstance(self.payload, Mapping):
             raise EvidenceValidationError("payload must be a JSON object")
         if self.source in {
-            "postgres_task", "postgres_dispatch", "temporal_history",
-            "temporal_lookup", "activity_heartbeat",
+            "postgres_task", "postgres_dispatch", "postgres_worker_lease",
+            "temporal_history", "temporal_lookup", "activity_heartbeat",
         } and not self.workflow_id:
             raise EvidenceValidationError(f"{self.source} evidence requires workflow_id")
         if self.source == "temporal_history" and not self.run_id:
@@ -216,7 +217,8 @@ def adjudicate_evidence(
     task_row = _latest(items, "postgres_task")
     temporal = _latest(items, "temporal_history")
     lookup = _latest(items, "temporal_lookup")
-    lease = _latest(items, "activity_heartbeat")
+    heartbeat = _latest(items, "activity_heartbeat")
+    worker_lease = _latest(items, "postgres_worker_lease")
     dispatch_epoch = dispatch.lease_epoch if dispatch else None
     effect_items = [item for item in items if item.source == "effect_ledger"]
     receipt_items = [item for item in items if item.source == "provider_receipt"]
@@ -243,6 +245,8 @@ def adjudicate_evidence(
         conflicts.append("Conflicting Run IDs were observed within the same evidence domain.")
     elif temporal_run_ids and dispatch_run_ids and temporal_run_ids != dispatch_run_ids:
         conflicts.append("PostgreSQL dispatch Run ID differs from Temporal execution Run ID.")
+    if heartbeat and temporal_run_ids and heartbeat.run_id and heartbeat.run_id not in temporal_run_ids:
+        conflicts.append("Activity heartbeat Run ID differs from Temporal history.")
 
     task_status = str(task_row.payload.get("status", "UNKNOWN")).lower() if task_row else "UNKNOWN"
     temporal_status = str(temporal.payload.get("execution_status", "UNKNOWN")).upper() if temporal else "UNKNOWN"
@@ -319,9 +323,19 @@ def adjudicate_evidence(
     elif temporal_status in {"RUNNING", "CONTINUED_AS_NEW"}:
         outcome = "IN_PROGRESS"
         reasons.append("Temporal history confirms an active Workflow execution.")
-    elif lease and lease.payload.get("fresh") is True:
+    elif (
+        heartbeat
+        and heartbeat.payload.get("fresh") is True
+        and temporal is not None
+        and heartbeat.run_id == temporal.run_id
+        and worker_lease is not None
+        and worker_lease.payload.get("lease_valid") is True
+        and worker_lease.lease_epoch is not None
+        and heartbeat.lease_epoch == worker_lease.lease_epoch
+        and heartbeat.payload.get("worker_id") == worker_lease.payload.get("lease_owner")
+    ):
         outcome = "IN_PROGRESS"
-        reasons.append("A fresh Activity heartbeat confirms forward execution activity.")
+        reasons.append("A fresh Activity heartbeat matches the current PostgreSQL worker lease owner and Epoch.")
     elif any(status in {"executing", "reconciling"} for status in effect_statuses.values()):
         outcome = "IN_PROGRESS"
         reasons.append("At least one external effect is currently executing or reconciling.")

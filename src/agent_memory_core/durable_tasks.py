@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from uuid import uuid4
+
+from .temporal_dispatch import stable_workflow_id
 
 
 class TaskConflict(ValueError):
@@ -58,11 +61,12 @@ class DurableTaskStore:
                     if _digest({
                         "task_type": existing[2], "input": existing[3],
                         "created_by_principal_id": existing[10],
-                        "workflow_id": existing[4],
+                        "workflow_id": workflow_id,
                     }) != request_hash:
                         raise TaskConflict("Idempotency key was used for a different task request")
                     return self._task_row(existing[:10])
             task_id = uuid4()
+            workflow_id = workflow_id or stable_workflow_id(tenant_id, str(task_id))
             row = self.conn.execute(
                 """INSERT INTO memory_durable_tasks
                    (task_id,tenant_id,created_by_principal_id,task_type,workflow_id,
@@ -82,6 +86,16 @@ class DurableTaskStore:
                     "task_id": str(task_id), "task_type": task_type,
                     "workflow_id": workflow_id,
                 })),
+            )
+            # The dispatch intent is committed atomically with the task and
+            # creation outbox event. Temporal network calls happen later, outside
+            # this transaction, under a leased/fenced dispatcher claim.
+            self.conn.execute(
+                """INSERT INTO memory_temporal_dispatches
+                   (task_id,tenant_id,workflow_id,task_queue)
+                   VALUES (%s,%s,%s,%s)""",
+                (task_id,tenant_id,workflow_id,
+                 os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core")),
             )
             return self._task_row(row)
 
@@ -128,7 +142,8 @@ class DurableTaskStore:
         return task
 
     def commit_checkpoint(
-        self, *, tenant_id: str, task_id: str, expected_version: int,
+        self, *, tenant_id: str, task_id: str, worker_id: str,
+        lease_epoch: int, expected_version: int,
         checkpoint: dict, idempotency_key: str,
         progress_completed: int = 0, progress_total: int = 0,
         artifact_sha256: str | None = None,
@@ -146,7 +161,11 @@ class DurableTaskStore:
             len(artifact_sha256) != 64 or any(c not in "0123456789abcdef" for c in artifact_sha256)
         ):
             raise ValueError("artifact_sha256 must be lowercase SHA-256 hex")
+        from .worker_leases import DurableTaskLeaseStore
         with self.conn.transaction():
+            DurableTaskLeaseStore(self.conn).assert_current(
+                tenant_id=tenant_id,task_id=task_id,worker_id=worker_id,
+                lease_epoch=lease_epoch,lock=True)
             task=self.conn.execute(
                 """SELECT checkpoint_version,status FROM memory_durable_tasks
                    WHERE tenant_id=%s AND task_id=%s::uuid FOR UPDATE""",
@@ -188,9 +207,9 @@ class DurableTaskStore:
                 if previous and previous[0] != effect_hash:
                     raise TaskConflict("Effect key was reused with a different request")
                 self.conn.execute(
-                    """INSERT INTO memory_task_effects(task_id,effect_key,request_sha256)
-                       VALUES (%s::uuid,%s,%s) ON CONFLICT(task_id,effect_key) DO NOTHING""",
-                    (task_id,effect_key,effect_hash),
+                    """INSERT INTO memory_task_effects(task_id,effect_key,request_sha256,request)
+                       VALUES (%s::uuid,%s,%s,%s::jsonb) ON CONFLICT(task_id,effect_key) DO NOTHING""",
+                    (task_id,effect_key,effect_hash,_canonical(effect_request)),
                 )
                 if not previous:
                     self.conn.execute(
@@ -233,31 +252,15 @@ class DurableTaskStore:
             )
             return {"task_id":task_id,"version":next_version,"replayed":False}
 
-    def set_status(self, *, tenant_id: str, task_id: str, status: str,
+    def set_status(self, *, tenant_id: str, task_id: str, worker_id: str,
+                   lease_epoch: int, status: str,
                    result: dict | None = None, error: dict | None = None) -> bool:
-        allowed={"queued","running","paused","completed","failed","cancelled"}
-        if status not in allowed:
-            raise ValueError("Unsupported task status")
-        terminal=status in {"completed","failed","cancelled"}
-        with self.conn.transaction():
-            row=self.conn.execute(
-                """UPDATE memory_durable_tasks SET status=%s,result=%s::jsonb,
-                   last_error=%s::jsonb,updated_at=clock_timestamp(),
-                   completed_at=CASE WHEN %s THEN clock_timestamp() ELSE NULL END
-                   WHERE tenant_id=%s AND task_id=%s::uuid
-                     AND status NOT IN ('completed','failed','cancelled')
-                   RETURNING task_id""",
-                (status,_canonical(result) if result is not None else None,
-                 _canonical(error) if error is not None else None,terminal,tenant_id,task_id),
-            ).fetchone()
-            if row is not None:
-                self.conn.execute(
-                    """INSERT INTO memory_outbox
-                       (event_id,tenant_id,aggregate_type,aggregate_id,event_type,payload)
-                       VALUES (%s,%s,'task',%s,'memory.task.status.changed',%s::jsonb)""",
-                    (uuid4(),tenant_id,task_id,_canonical({
-                        "task_id":task_id,"status":status,
-                        "terminal":terminal,
-                    })),
-                )
-            return row is not None
+        """Compatibility facade that now requires and enforces Worker Fencing.
+
+        There is deliberately no tenant-only status mutation path. All writes
+        delegate to the same lease/epoch-checked store used by the public API.
+        """
+        from .worker_leases import DurableTaskLeaseStore
+        return DurableTaskLeaseStore(self.conn).finish(
+            tenant_id=tenant_id,task_id=task_id,worker_id=worker_id,
+            lease_epoch=lease_epoch,status=status,result=result,error=error)

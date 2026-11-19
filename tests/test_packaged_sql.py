@@ -23,7 +23,8 @@ def test_migration_runner_discovers_ordered_sql_resources():
     assert migrations==[
         "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql",
         "004_predicate_cardinality.sql","005_identity_foundation.sql",
-        "006_durable_tasks.sql"
+        "006_durable_tasks.sql","007_durable_task_worker_leases.sql",
+        "008_durable_task_effect_reconciliation.sql","009_temporal_dispatch.sql"
     ]
 
 def test_packaged_predicate_policy_migration_matches_repository_sql():
@@ -40,7 +41,8 @@ def test_migration_runner_discovers_predicate_policy_migration():
     assert migrations==[
         "001_core.sql","002_webhooks.sql","003_outbox_recovery.sql",
         "004_predicate_cardinality.sql","005_identity_foundation.sql",
-        "006_durable_tasks.sql"
+        "006_durable_tasks.sql","007_durable_task_worker_leases.sql",
+        "008_durable_task_effect_reconciliation.sql","009_temporal_dispatch.sql"
     ]
 
 def test_packaged_identity_foundation_migration_matches_repository_sql():
@@ -57,3 +59,29 @@ def test_packaged_durable_task_migration_matches_repository_sql():
     assert packaged==canonical
     assert "memory_task_checkpoints" in packaged
     assert "memory_task_effects" in packaged
+
+
+def test_packaged_worker_lease_migration_matches_repository_sql():
+    packaged=resources.files("agent_memory_core").joinpath("resources/007_durable_task_worker_leases.sql").read_text()
+    canonical=(Path(__file__).resolve().parents[1]/"sql/postgresql/007_durable_task_worker_leases.sql").read_text()
+    assert packaged==canonical
+    assert "lease_epoch" in packaged
+    assert "memory_durable_tasks_lease_shape" in packaged
+    assert "IF NOT EXISTS" in packaged
+
+
+def test_packaged_external_effect_migration_matches_repository_sql():
+    packaged=resources.files("agent_memory_core").joinpath("resources/008_durable_task_effect_reconciliation.sql").read_text()
+    canonical=(Path(__file__).resolve().parents[1]/"sql/postgresql/008_durable_task_effect_reconciliation.sql").read_text()
+    assert packaged==canonical
+    assert "'unknown'" in packaged
+    assert "'reconciling'" in packaged
+    assert "request jsonb" in packaged
+
+
+def test_packaged_temporal_dispatch_migration_matches_repository_sql():
+    packaged=resources.files("agent_memory_core").joinpath("resources/009_temporal_dispatch.sql").read_text()
+    canonical=(Path(__file__).resolve().parents[1]/"sql/postgresql/009_temporal_dispatch.sql").read_text()
+    assert packaged==canonical
+    assert "memory_temporal_dispatches" in packaged
+    assert "lease_epoch" in packaged

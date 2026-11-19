@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_public_api_create_checkpoint_read_and_tenant_isolation():
+def test_public_api_rejects_unleased_checkpoint_and_status_mutations():
     dsn=os.getenv("MEMORY_TEST_DSN")
     if not dsn:
         pytest.skip("MEMORY_TEST_DSN required")
@@ -31,18 +31,22 @@ def test_public_api_create_checkpoint_read_and_tenant_isolation():
 
         checkpoint=client.post(f"/v1/tasks/{task_id}/checkpoints",
             headers={"Authorization":"Bearer "+key},
-            json={"expected_version":0,"checkpoint":{"last_completed":10},
-                  "idempotency_key":"checkpoint-1","progress_completed":10,
-                  "progress_total":20,
-                  "effect_key":"memory-claim-11",
-                  "effect_request":{"action":"write_claim","ordinal":11}})
-        assert checkpoint.status_code==201,checkpoint.text
-        assert checkpoint.json()["version"]==1
+            json={"worker_id":"untrusted-client","lease_epoch":1,
+                  "expected_version":0,"checkpoint":{"last_completed":10},
+                  "idempotency_key":"checkpoint-1"})
+        assert checkpoint.status_code==403,checkpoint.text
+
+        status=client.post(f"/v1/tasks/{task_id}/status",
+            headers={"Authorization":"Bearer "+key},
+            json={"worker_id":"untrusted-client","lease_epoch":1,
+                  "status":"completed","result":{"forged":True}})
+        assert status.status_code==403,status.text
 
         loaded=client.get(f"/v1/tasks/{task_id}",
                           headers={"Authorization":"Bearer "+key})
         assert loaded.status_code==200
-        assert loaded.json()["checkpoint"]["checkpoint"]["last_completed"]==10
+        assert loaded.json()["checkpoint"] is None
+        assert loaded.json()["status"]=="queued"
 
         listed=client.get("/v1/tasks",headers={"Authorization":"Bearer "+key})
         assert any(item["task_id"]==task_id for item in listed.json()["items"])
@@ -52,3 +56,119 @@ def test_public_api_create_checkpoint_read_and_tenant_isolation():
             denied=other_client.get(f"/v1/tasks/{task_id}",
                 headers={"Authorization":"Bearer "+key})
             assert denied.status_code==404
+
+
+def test_dedicated_worker_credential_claim_checkpoint_and_finish():
+    dsn=os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("MEMORY_TEST_DSN required")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+    from agent_memory_core.postgres import PostgresMemory
+
+    from agent_memory_core.durable_tasks import DurableTaskStore
+    tenant="task-worker-api-"+uuid4().hex
+    token="dedicated-worker-token-"+uuid4().hex
+    db=PostgresMemory(dsn)
+    try:
+        task=DurableTaskStore(db.conn).create_task(
+            tenant_id=tenant,task_type="memory.batch.organize",input={"batch_size":1},
+            idempotency_key="worker-create-"+uuid4().hex)
+        task_id=task["task_id"]
+    finally:
+        db.close()
+    class IdentityStore:
+        def authenticate_api_credential(self,secret):
+            if secret!=token:
+                return None
+            return {"tenant_id":tenant,"principal_id":str(uuid4()),
+                    "role":"editor","scopes":["tasks:execute"]}
+        def authenticate_session(self,token,tenant_id):
+            return None
+        def close(self):
+            pass
+
+    def store_factory():
+        return PostgresMemory(dsn)
+    app=create_app(store_factory=store_factory,
+                   identity_store_factory=IdentityStore)
+    headers={"Authorization":"Bearer "+token,"X-Memory-Tenant":tenant}
+    with TestClient(app) as client:
+        worker_id="worker-"+uuid4().hex
+
+        claimed=client.post("/v1/tasks/worker/claim",headers=headers,
+            json={"worker_id":worker_id,"lease_seconds":30})
+        assert claimed.status_code==200,claimed.text
+        task=claimed.json()["task"]
+        assert task["task_id"]==task_id
+        assert task["lease_epoch"]==1
+
+        renewed=client.post(f"/v1/tasks/{task_id}/lease/renew",headers=headers,
+            json={"worker_id":worker_id,"lease_epoch":task["lease_epoch"],
+                  "lease_seconds":30})
+        assert renewed.status_code==200,renewed.text
+
+        checkpoint=client.post(f"/v1/tasks/{task_id}/checkpoints",
+            headers=headers,json={"worker_id":worker_id,
+                "lease_epoch":task["lease_epoch"],"expected_version":0,
+                "checkpoint":{"cursor":1},"idempotency_key":"worker-checkpoint-1",
+                "progress_completed":1,"progress_total":1})
+        assert checkpoint.status_code==201,checkpoint.text
+        assert checkpoint.json()["version"]==1
+
+        expire=PostgresMemory(dsn)
+        try:
+            expire.conn.execute(
+                "UPDATE memory_durable_tasks SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE tenant_id=%s AND task_id=%s::uuid",
+                (tenant,task_id))
+        finally:
+            expire.close()
+        takeover=client.post("/v1/tasks/worker/claim",headers=headers,
+            json={"worker_id":"worker-B","lease_seconds":30})
+        assert takeover.status_code==200,takeover.text
+        newer=takeover.json()["task"]
+        assert newer["lease_epoch"]==2
+
+        stale=client.post(f"/v1/tasks/{task_id}/status",headers=headers,
+            json={"worker_id":worker_id,"lease_epoch":task["lease_epoch"],
+                  "status":"completed","result":{"forged":True}})
+        assert stale.status_code==409,stale.text
+
+        finished=client.post(f"/v1/tasks/{task_id}/status",headers=headers,
+            json={"worker_id":"worker-B","lease_epoch":newer["lease_epoch"],
+                  "status":"completed","result":{"processed":1}})
+        assert finished.status_code==200,finished.text
+        verify=PostgresMemory(dsn)
+        try:
+            loaded=DurableTaskStore(verify.conn).get_task(tenant_id=tenant,task_id=task_id)
+            assert loaded["status"]=="completed"
+        finally:
+            verify.close()
+
+
+def test_memory_wildcard_credential_cannot_claim_tasks_without_explicit_scope():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from agent_memory_core.api import create_app
+
+    tenant="task-worker-deny-"+uuid4().hex
+    token="memory-wildcard-"+uuid4().hex
+    class IdentityStore:
+        def authenticate_api_credential(self,secret):
+            if secret!=token:
+                return None
+            return {"tenant_id":tenant,"principal_id":str(uuid4()),
+                    "role":"editor","scopes":["memory:*"]}
+        def authenticate_session(self,token,tenant_id):
+            return None
+        def close(self):
+            pass
+
+    app=create_app(store_factory=lambda:None,identity_store_factory=IdentityStore)
+    with TestClient(app) as client:
+        denied=client.post("/v1/tasks/worker/claim",
+            headers={"Authorization":"Bearer "+token,"X-Memory-Tenant":tenant},
+            json={"worker_id":"ordinary-memory-client","lease_seconds":30})
+        assert denied.status_code==403,denied.text
+        assert "tasks:execute" in denied.text

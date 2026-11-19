@@ -50,6 +50,8 @@ EXPECTED={
     "/v1/workflows/{workflow_id}/resume":{"post"},
     "/v1/tasks":{"get","post"},
     "/v1/tasks/{task_id}":{"get"},
+    "/v1/tasks/worker/claim":{"post"},
+    "/v1/tasks/{task_id}/lease/renew":{"post"},
     "/v1/tasks/{task_id}/checkpoints":{"post"},
     "/v1/tasks/{task_id}/status":{"post"},
 }

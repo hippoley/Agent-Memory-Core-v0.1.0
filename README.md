@@ -356,3 +356,44 @@ See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [User Story accept
 [中文导览](docs/START-HERE.zh-CN.md) · [Interactive Atlas](docs/demo/index.html) · [API reference](docs/API-REFERENCE.md) · [Report an issue](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues)
 
 </div>
+
+
+## Durable Task Worker Runtime (PR #52, Draft)
+
+The PostgreSQL task store now has an independent worker runtime with
+lease/heartbeat renewal, epoch-fenced checkpoint commits and process-level
+recovery. Worker credentials require the explicit `tasks:execute` scope;
+ordinary memory write credentials cannot claim or mutate durable tasks.
+
+- [Standalone worker handler example](examples/durable_task_worker/README.md)
+- [API and worker authorization contract](docs/API-REFERENCE.md)
+- Runtime entrypoint: `python -m agent_memory_core.worker_runtime`
+
+The SIGKILL acceptance test starts Worker A as a separate OS process, kills it
+after a durable checkpoint, then starts Worker B to reclaim the expired lease
+and resume from that checkpoint. The test passed in the PostgreSQL integration workflow on HEAD
+`3e1bce2db53e074baf0c7ba8d3755cc02b67341f`. The integration workflow
+reported 62 passed and 7 skipped; skipped tests are not counted as passing. Provider-side idempotency and
+UNKNOWN reconciliation remain separate release gates; a database lease does
+not make a remote side effect exactly once.
+
+
+## External effect safety (Migration 008)
+
+Durable checkpoints can record external effect intents transactionally.
+`agent_memory_core.durable_effects` adds fenced provider execution and
+UNKNOWN reconciliation. An expired Worker does not trigger an automatic
+provider retry: the replacement Worker first reconciles the prior idempotency
+key. Only a definitive provider `NOT_FOUND` returns the effect to
+`requested`; task completion is blocked until every effect is committed.
+
+Provider adapters must implement `execute(request, idempotency_key)` and
+`reconcile(request, idempotency_key, provider_reference)`. The stable key
+is scoped to tenant + task + effect. Exactly-once remote execution is not
+claimed; it depends on provider-side idempotency and reconciliation semantics.
+
+
+The fencing boundary is enforced inside the canonical Python task store too:
+checkpoint and status mutations require the current Worker ID and Lease Epoch.
+The HTTP layer is not the only guard; a tenant-only SDK/store write cannot
+bypass the PostgreSQL lease check.

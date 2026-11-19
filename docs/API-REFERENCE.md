@@ -112,7 +112,11 @@ scope, active Membership and role from PostgreSQL; a caller-supplied tenant
 header selects a workspace but never grants access to it.
 
 A first Owner/Admin can issue a short-lived tenant-scoped API credential from
-the authenticated identity flow. The raw secret is returned once; store it
+the authenticated identity flow. Ordinary memory clients should receive only
+`memory:read` and/or `memory:write`. A worker must receive the dedicated
+`tasks:execute` scope; this scope is not interchangeable with ordinary
+`memory:write`. Worker mutation routes reject legacy keys and browser sessions,
+and require the worker ID plus the current lease epoch on checkpoint and finish. The raw secret is returned once; store it
 outside source control. Revoke it with
 `DELETE /v1/identity/api-credentials/{credential_id}`. The issuing Principal
 must retain the required role, and the credential's scopes and expiry are
@@ -169,6 +173,14 @@ managed secrets, backup/restore, rate limiting and independent security review.
 | POST | `/v1/edges` | Create relation and optionally project into AGE |
 | GET | `/v1/events` | Durable event replay with cursor pagination |
 | GET | `/v1/events/stream` | Bounded SSE stream with reconnect cursor |
+| POST | `/v1/tasks` | Create an idempotent durable business task |
+| GET | `/v1/tasks` | List tasks in the authenticated tenant |
+| GET | `/v1/tasks/{task_id}` | Read task and latest checkpoint |
+| POST | `/v1/tasks/worker/claim` | Claim one task using a dedicated `tasks:execute` credential |
+| POST | `/v1/tasks/{task_id}/lease/renew` | Renew the current Worker Lease and Epoch |
+| POST | `/v1/tasks/{task_id}/checkpoints` | Commit a checkpoint and Outbox intents with Worker Fencing |
+| POST | `/v1/tasks/{task_id}/status` | Finish/pause only with current Worker Fencing |
+
 
 ## 4b. Browsing and trust policy
 
@@ -574,3 +586,78 @@ persistent backend; production API credentials need TLS, secure identity
 deployment, rate limiting and independent restore tests. An SDK client
 must never treat a timeout after a write as proof the write did not commit;
 use an idempotency key and read back.
+
+
+## 2026-11-18 — Durable Task Worker Runtime (PR #52, Draft)
+
+PR #52 adds a separately deployable Python worker runtime on top of the
+PostgreSQL lease/fencing store. Register application handlers by durable
+`task_type`; the runtime claims work, renews the lease from a heartbeat
+thread, exposes fenced checkpoint commits to the handler, and records
+completion only if the same lease epoch is still current.
+
+The public API separates worker authority from ordinary memory writes:
+issue a dedicated credential containing `tasks:execute`. Do not give this
+scope to browser users or ordinary memory clients. The claim endpoint is
+tenant-scoped by the authenticated credential; callers cannot choose another
+tenant by changing the request body.
+
+The integration acceptance includes a real POSIX process test: Worker A
+commits a checkpoint and is killed with SIGKILL; after the PostgreSQL lease
+expires, Worker B claims a higher epoch, reads the checkpoint, resumes, and
+completes. This acceptance passed in the PostgreSQL integration workflow on HEAD
+`3e1bce2db53e074baf0c7ba8d3755cc02b67341f` (62 passed, 7 skipped across
+the integration selection). The skipped tests are not counted as passing.
+
+External effects remain a separate delivery boundary. A handler must persist
+an effect intent with the checkpoint and use provider-side idempotency plus
+UNKNOWN reconciliation. PostgreSQL fencing cannot roll back a remote action.
+
+
+## Durable external effects and UNKNOWN reconciliation (Migration 008)
+
+A checkpoint may atomically persist an effect intent. The intent stores its
+canonical request, SHA-256 digest, and stable effect key in PostgreSQL, while
+the same transaction emits `memory.task.effect.requested` to the Outbox.
+The provider request is not executed inside that database transaction.
+
+Effect states are:
+
+`requested → executing → committed`
+
+`executing → unknown → reconciling → committed`
+
+`reconciling → requested` is permitted only when the provider's reconciliation
+contract definitively reports `NOT_FOUND`. An ambiguous response stays
+`unknown`; it must not be retried automatically. A definitive provider
+rejection may become `failed`.
+
+Every transition is fenced by the current task Worker ID and Lease Epoch.
+When a new Worker claims a task, in-flight `executing` or `reconciling`
+effects from an older epoch are moved to `unknown` and an Outbox evidence
+event is emitted. Task completion is blocked while any effect is not
+`committed`; failure/cancellation is blocked while an effect is still
+`executing`, `unknown`, or `reconciling`.
+
+Provider adapters implement two methods:
+
+- `execute(request, idempotency_key) -> {provider_reference?, result?}`
+- `reconcile(request, idempotency_key, provider_reference) -> {outcome: committed|not_found|unknown|failed, ...}`
+
+The stable idempotency key is derived from tenant, task and effect identity.
+A provider must honor that key or provide a strongly consistent lookup before
+the adapter may treat `NOT_FOUND` as safe to retry. PostgreSQL fencing cannot
+prevent a remote provider from performing an operation after a delayed
+request; provider idempotency and reconciliation are mandatory. The runtime
+does not claim exactly-once external effects.
+
+
+### Direct SDK/store write boundary
+
+The canonical Python store methods are also fenced, not merely their HTTP
+wrappers. `DurableTaskStore.commit_checkpoint(...)` and
+`DurableTaskStore.set_status(...)` require `worker_id` and
+`lease_epoch`, then validate the current unexpired PostgreSQL lease inside
+the write transaction. Calling either method with tenant identity alone is
+not a supported mutation path. The Worker Lease Store and HTTP endpoints
+delegate to this same enforcement boundary.

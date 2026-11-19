@@ -233,6 +233,8 @@ class DurableTaskCreate(BaseModel):
 
 class DurableCheckpointWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=255)
+    lease_epoch: int = Field(ge=1)
     expected_version: int = Field(ge=0)
     checkpoint: dict[str, Any]
     idempotency_key: str = Field(min_length=1, max_length=255)
@@ -245,9 +247,24 @@ class DurableCheckpointWrite(BaseModel):
 
 class DurableTaskStatusWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=255)
+    lease_epoch: int = Field(ge=1)
     status: str
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+
+
+class DurableTaskClaimWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=255)
+    lease_seconds: int = Field(default=30, ge=1, le=3600)
+
+
+class DurableTaskRenewWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=255)
+    lease_epoch: int = Field(ge=1)
+    lease_seconds: int = Field(default=30, ge=1, le=3600)
 
 
 class SearchRequest(BaseModel):
@@ -362,7 +379,14 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                     raise HTTPException(status_code=403, detail="Reader membership is read-only")
                 scopes = identity.get("scopes")
                 if scopes is not None:
-                    required_scope = "memory:read" if safe_method else "memory:write"
+                    worker_mutation = (
+                        request.method.upper() == "POST"
+                        and request.url.path.startswith("/v1/tasks/")
+                    )
+                    required_scope = (
+                        "tasks:execute" if worker_mutation
+                        else ("memory:read" if safe_method else "memory:write")
+                    )
                     if required_scope not in scopes and "memory:*" not in scopes:
                         raise HTTPException(status_code=403, detail="Credential scope is insufficient")
                 identity["auth_type"] = auth_type
@@ -377,6 +401,15 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                 headers={"WWW-Authenticate": "Bearer"},
             )
         raise HTTPException(status_code=403, detail="Invalid credential")
+
+    def task_worker_auth(request: Request, t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        scopes = identity.get("scopes") or []
+        if identity.get("auth_type") != "api_credential":
+            raise HTTPException(status_code=403, detail="Dedicated task worker credential required")
+        if "tasks:execute" not in scopes:
+            raise HTTPException(status_code=403, detail="Dedicated tasks:execute scope required")
+        return t
 
     @app.get("/v1/auth/oidc/login", tags=["Identity"], summary="Start OIDC browser login")
     def oidc_login():
@@ -528,7 +561,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=403, detail="Owner/Admin browser session required")
         if not item.name.strip():
             raise HTTPException(status_code=422, detail="Credential name cannot be blank")
-        allowed = {"memory:read", "memory:write", "memory:*"}
+        allowed = {"memory:read", "memory:write", "memory:*", "tasks:execute"}
         if any(scope not in allowed for scope in item.scopes) or len(set(item.scopes)) != len(item.scopes):
             raise HTTPException(status_code=422, detail="Invalid or duplicate credential scope")
         from datetime import timedelta
@@ -1621,20 +1654,54 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         finally:
             db.close()
 
-    @app.post("/v1/tasks/{task_id}/checkpoints", status_code=201,
-              tags=["Durable Tasks"],
-              summary="Commit a versioned checkpoint and Outbox intents atomically")
-    def commit_durable_checkpoint(task_id: str, item: DurableCheckpointWrite,
-                                   t: str = Depends(auth)):
-        from .durable_tasks import DurableTaskStore, TaskConflict
+    @app.post("/v1/tasks/worker/claim", tags=["Durable Tasks"],
+              summary="Atomically claim one task using a dedicated worker credential")
+    def claim_durable_task(item: DurableTaskClaimWrite,
+                           t: str = Depends(task_worker_auth)):
+        from .worker_leases import DurableTaskLeaseStore
+        db=store_factory()
+        try:
+            task=DurableTaskLeaseStore(db.conn).claim(
+                tenant_id=t,worker_id=item.worker_id,lease_seconds=item.lease_seconds)
+            return {"task":task}
+        finally:
+            db.close()
+
+    @app.post("/v1/tasks/{task_id}/lease/renew", tags=["Durable Tasks"],
+              summary="Renew a task lease using its current fencing epoch")
+    def renew_durable_task_lease(task_id: str, item: DurableTaskRenewWrite,
+                                 t: str = Depends(task_worker_auth)):
+        from .worker_leases import DurableTaskLeaseStore
         try:
             task_id=str(UUID(task_id))
         except ValueError:
             raise HTTPException(status_code=422,detail="task_id must be a UUID")
         db=store_factory()
         try:
-            return DurableTaskStore(db.conn).commit_checkpoint(
-                tenant_id=t,task_id=task_id,expected_version=item.expected_version,
+            renewed=DurableTaskLeaseStore(db.conn).renew(
+                tenant_id=t,task_id=task_id,worker_id=item.worker_id,
+                lease_epoch=item.lease_epoch,lease_seconds=item.lease_seconds)
+            if not renewed:
+                raise HTTPException(status_code=409,detail="Lease expired or worker was fenced")
+            return {"task_id":task_id,"renewed":True,"lease_epoch":item.lease_epoch}
+        finally:
+            db.close()
+
+    @app.post("/v1/tasks/{task_id}/checkpoints", status_code=201,
+              tags=["Durable Tasks"],
+              summary="Commit a checkpoint only with the current worker lease and fencing epoch")
+    def commit_durable_checkpoint(task_id: str, item: DurableCheckpointWrite,
+                                   t: str = Depends(task_worker_auth)):
+        from .worker_leases import DurableTaskLeaseStore, LeaseConflict
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            return DurableTaskLeaseStore(db.conn).commit_checkpoint(
+                tenant_id=t,task_id=task_id,worker_id=item.worker_id,
+                lease_epoch=item.lease_epoch,expected_version=item.expected_version,
                 checkpoint=item.checkpoint,idempotency_key=item.idempotency_key,
                 progress_completed=item.progress_completed,
                 progress_total=item.progress_total,
@@ -1643,30 +1710,34 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             )
         except LookupError:
             raise HTTPException(status_code=404,detail="Task not found")
-        except TaskConflict as exc:
+        except LeaseConflict as exc:
             raise HTTPException(status_code=409,detail=str(exc))
-        except ValueError as exc:
-            raise HTTPException(status_code=422,detail=str(exc))
+        except Exception as exc:
+            from .durable_tasks import TaskConflict
+            if isinstance(exc,TaskConflict):
+                raise HTTPException(status_code=409,detail=str(exc))
+            raise
         finally:
             db.close()
 
     @app.post("/v1/tasks/{task_id}/status", tags=["Durable Tasks"],
-              summary="Advance a durable task lifecycle state")
+              summary="Finish or pause a task using the current worker lease")
     def update_durable_task_status(task_id: str, item: DurableTaskStatusWrite,
-                                   t: str = Depends(auth)):
-        from .durable_tasks import DurableTaskStore
+                                   t: str = Depends(task_worker_auth)):
+        from .worker_leases import DurableTaskLeaseStore, LeaseConflict
         try:
             task_id=str(UUID(task_id))
         except ValueError:
             raise HTTPException(status_code=422,detail="task_id must be a UUID")
         db=store_factory()
         try:
-            updated=DurableTaskStore(db.conn).set_status(
-                tenant_id=t,task_id=task_id,status=item.status,
+            DurableTaskLeaseStore(db.conn).finish(
+                tenant_id=t,task_id=task_id,worker_id=item.worker_id,
+                lease_epoch=item.lease_epoch,status=item.status,
                 result=item.result,error=item.error)
-            if not updated:
-                raise HTTPException(status_code=404,detail="Task not found or already terminal")
             return {"task_id":task_id,"status":item.status}
+        except LeaseConflict as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=422,detail=str(exc))
         finally:

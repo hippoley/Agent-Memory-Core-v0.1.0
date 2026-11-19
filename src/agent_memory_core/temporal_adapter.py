@@ -130,6 +130,106 @@ def write_memory_verification_receipt(verified: dict) -> dict:
     finally:
         db.close()
 
+
+@activity.defn(name="execute_durable_task")
+def execute_durable_task(request: dict) -> dict:
+    """Run one registered application handler under the PostgreSQL task lease."""
+    import importlib
+    import threading
+    from temporalio import activity
+    from temporalio.exceptions import ApplicationError
+    from .postgres import PostgresMemory
+    from .worker_runtime import DurableTaskWorker
+
+    required=("tenant_id","task_id","workflow_id","task_type")
+    if any(not isinstance(request.get(key),str) or not request[key] for key in required):
+        raise ApplicationError("Durable task identity is incomplete",
+                               type="InvalidTaskIdentity",non_retryable=True)
+
+    dsn=_database_dsn()
+    module_name=os.getenv("MEMORY_WORKER_HANDLER_MODULE",
+                          "agent_memory_core.example_task_handlers")
+    module=importlib.import_module(module_name)
+    handlers=getattr(module,"HANDLERS",None)
+    if not isinstance(handlers,dict) or request["task_type"] not in handlers:
+        raise ApplicationError(
+            f"No registered handler for task_type={request['task_type']!r}",
+            type="TaskHandlerNotRegistered",non_retryable=True)
+
+    db=PostgresMemory(dsn)
+    try:
+        _assert_temporal_tenant(db,request["tenant_id"])
+        row=db.conn.execute(
+            """SELECT task_type,workflow_id,status,result,last_error
+               FROM memory_durable_tasks
+               WHERE tenant_id=%s AND task_id=%s::uuid""",
+            (request["tenant_id"],request["task_id"]),
+        ).fetchone()
+        if row is None or row[0]!=request["task_type"] or row[1]!=request["workflow_id"]:
+            raise ApplicationError("PostgreSQL task identity does not match Temporal request",
+                                   type="TaskIdentityMismatch",non_retryable=True)
+        if row[2]=="completed":
+            return {"status":"completed","result":row[3],"replayed":True}
+        if row[2]=="failed":
+            raise ApplicationError("PostgreSQL task is already failed",
+                                   row[4],type="TaskAlreadyFailed",non_retryable=True)
+    finally:
+        db.close()
+
+    def connect():
+        return PostgresMemory(dsn)
+
+    worker=DurableTaskWorker(
+        connection_factory=connect,
+        tenant_id=request["tenant_id"],
+        handlers=handlers,
+        worker_id="temporal-activity:"+request["workflow_id"],
+        lease_seconds=int(os.getenv("MEMORY_WORKER_LEASE_SECONDS","30")),
+    )
+    outcome={"ran":False,"error":None}
+    def run():
+        try:
+            outcome["ran"]=worker.run_once(task_id=request["task_id"])
+        except BaseException as exc:
+            outcome["error"]=exc
+
+    thread=threading.Thread(target=run,name="durable-task-handler",daemon=True)
+    thread.start()
+    while thread.is_alive():
+        activity.heartbeat({"tenant_id":request["tenant_id"],
+                            "task_id":request["task_id"],
+                            "workflow_id":request["workflow_id"]})
+        thread.join(timeout=10)
+    if outcome["error"] is not None:
+        exc=outcome["error"]
+        raise ApplicationError(
+            f"Durable task worker failed: {type(exc).__name__}: {exc}",
+            type="DurableTaskExecutionFailed",non_retryable=True) from exc
+
+    db=PostgresMemory(dsn)
+    try:
+        task=db.conn.execute(
+            """SELECT status,result,last_error FROM memory_durable_tasks
+               WHERE tenant_id=%s AND task_id=%s::uuid""",
+            (request["tenant_id"],request["task_id"]),
+        ).fetchone()
+    finally:
+        db.close()
+    if task is None:
+        raise ApplicationError("Task disappeared after execution",
+                               type="TaskMissingAfterExecution",non_retryable=True)
+    if task[0]=="completed":
+        return {"status":"completed","result":task[1],"replayed":not outcome["ran"]}
+    if task[0]=="failed":
+        raise ApplicationError("Task handler marked PostgreSQL task failed",
+                               task[2],type="DurableTaskFailed",non_retryable=True)
+    if not outcome["ran"]:
+        raise ApplicationError("Task is not currently claimable",
+                               type="DurableTaskLeaseBusy",non_retryable=False)
+    raise ApplicationError("Task runner returned without a terminal task state",
+                           type="DurableTaskNotTerminal",non_retryable=False)
+
+
 @workflow.defn
 class VerifyMemoryWorkflow:
     """Durable verification with queryable progress and cooperative pause/resume.

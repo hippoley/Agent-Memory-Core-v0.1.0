@@ -58,6 +58,7 @@ def local_environment() -> dict[str, str]:
                     env[key] = value
     return env
 
+
 def require_sdk() -> None:
     try:
         import agent_memory_core.sdk  # noqa: F401

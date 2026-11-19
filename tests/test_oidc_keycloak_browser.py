@@ -106,7 +106,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             page.locator("#writeValue").fill('{"language":"English"}')
             page.locator("#writeSource").fill("observatory-ui:keycloak-e2e:create")
             page.locator("#saveMemory").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Memory created.", timeout=15000)
+            expect(page.locator("#mutationNote")).to_contain_text("Memory created and independently read back.", timeout=15000)
             page.wait_for_function("""() => {
               const picker = document.querySelector('#claimPicker');
               return Array.from(picker.options).some(option =>
@@ -127,7 +127,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
             page.locator("#writeValue").fill('{"language":"Chinese"}')
             page.locator("#writeSource").fill("observatory-ui:keycloak-e2e:revision")
             page.locator("#saveMemory").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Revision committed.", timeout=15000)
+            expect(page.locator("#mutationNote")).to_contain_text("Revision committed and independently read back.", timeout=15000)
             ui_revision = page.evaluate("""async () => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const [activeResponse, historyResponse] = await Promise.all([
@@ -147,7 +147,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
 
             page.once("dialog", lambda dialog: dialog.accept())
             page.locator("#forgetSelected").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed for", timeout=15000)
+            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed and independently read back for", timeout=15000)
             ui_forgotten = page.evaluate("""async () => {
               const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
               const [activeResponse, historyResponse] = await Promise.all([
@@ -405,13 +405,13 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 page2.locator("#writeValue").fill('{"status":"registered"}')
                 page2.locator("#writeSource").fill("observatory-ui:self-registration:create")
                 page2.locator("#saveMemory").click()
-                expect(page2.locator("#mutationNote")).to_contain_text("Memory created.", timeout=15000)
+                expect(page2.locator("#mutationNote")).to_contain_text("Memory created and independently read back.", timeout=15000)
                 page2.locator("#targetSelected").click()
                 expect(page2.locator("#saveMemory")).to_contain_text("Replace selected memory")
                 page2.locator("#writeValue").fill('{"status":"verified"}')
                 page2.locator("#writeSource").fill("observatory-ui:self-registration:revision")
                 page2.locator("#saveMemory").click()
-                expect(page2.locator("#mutationNote")).to_contain_text("Revision committed.", timeout=15000)
+                expect(page2.locator("#mutationNote")).to_contain_text("Revision committed and independently read back.", timeout=15000)
                 self_service_state = page2.evaluate("""async () => {
                   const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
                   const [activeResponse, historyResponse] = await Promise.all([
@@ -429,7 +429,7 @@ def test_real_keycloak_login_creates_workspace_and_completes_memory_lifecycle():
                 assert len(self_service_state["history"]["items"]) == 2, self_service_state
                 page2.once("dialog", lambda dialog: dialog.accept())
                 page2.locator("#forgetSelected").click()
-                expect(page2.locator("#mutationNote")).to_contain_text("Soft-forget committed for", timeout=15000)
+                expect(page2.locator("#mutationNote")).to_contain_text("Soft-forget committed and independently read back for", timeout=15000)
                 self_service_after_forget = page2.evaluate("""async () => {
                   const tenant = decodeURIComponent(document.cookie.split('; ').find(x => x.startsWith('amc_tenant=')).split('=').slice(1).join('='));
                   const [activeResponse, historyResponse] = await Promise.all([

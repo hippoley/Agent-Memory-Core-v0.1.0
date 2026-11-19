@@ -51,7 +51,7 @@ class TemporalDispatchStore:
             row=self.conn.execute(
                 """SELECT task_id::text,tenant_id,workflow_id,task_queue,lease_epoch
                    FROM memory_temporal_dispatches
-                   WHERE (%s IS NULL OR task_queue=%s)
+                   WHERE (%s::text IS NULL OR task_queue=%s)
                      AND (status='pending'
                        OR (status='dispatching' AND lease_expires_at<=clock_timestamp()))
                    ORDER BY created_at,task_id

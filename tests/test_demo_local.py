@@ -48,6 +48,7 @@ def test_demo_seeds_namespaced_live_records():
     ]
 
 
-def test_local_environment_loads_generated_key_without_printing_it():
+def test_local_environment_pins_requests_to_loopback():
     env = demo_local.local_environment()
-    assert isinstance(env, dict)
+    assert env["MEMORY_BASE"] == "http://127.0.0.1:8765"
+    assert env["MEMORY_BASE_URL"] == "http://127.0.0.1:8765"

@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS memory_evidence_nonces (
 -- Semantic identity is independent of attestation nonce and envelope timestamp.
 -- A changed payload for the same immutable fact identity is a conflict, not a new fact.
 CREATE TABLE IF NOT EXISTS memory_evidence_facts (
+  producer_issuer text NOT NULL,
   tenant_id text NOT NULL,
   task_id text NOT NULL,
   evidence_source text NOT NULL,
@@ -90,10 +91,21 @@ CREATE TABLE IF NOT EXISTS memory_evidence_facts (
   first_observed_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (
-    tenant_id,task_id,evidence_source,claim_type,
+    producer_issuer,tenant_id,task_id,evidence_source,claim_type,
     workflow_id,run_id,lease_epoch,fact_id
   )
 );
+
+-- Upgrade an earlier unmerged draft of the fact ledger without losing observations.
+ALTER TABLE memory_evidence_facts
+  ADD COLUMN IF NOT EXISTS producer_issuer text NOT NULL DEFAULT '';
+ALTER TABLE memory_evidence_facts
+  DROP CONSTRAINT IF EXISTS memory_evidence_facts_pkey;
+ALTER TABLE memory_evidence_facts
+  ADD CONSTRAINT memory_evidence_facts_pkey PRIMARY KEY (
+    producer_issuer,tenant_id,task_id,evidence_source,claim_type,
+    workflow_id,run_id,lease_epoch,fact_id
+  );
 
 CREATE INDEX IF NOT EXISTS memory_evidence_nonces_expiry
   ON memory_evidence_nonces(expires_at);

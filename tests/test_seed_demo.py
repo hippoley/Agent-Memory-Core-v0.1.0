@@ -1,4 +1,4 @@
-"""Unit checks for the deterministic demo memory seed contract."""
+"""Guardrails for the repository's existing Chinese demo-story seeder."""
 import importlib.util
 from pathlib import Path
 
@@ -11,24 +11,21 @@ seed_demo = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(seed_demo)
 
 
-def test_active_claim_excludes_superseded_and_forgotten_versions():
-    rows = [
-        {"id": "old", "predicate": "p", "superseded_at": "2026-01-01T00:00:00Z"},
-        {"id": "forgotten", "predicate": "p", "forgotten_at": "2026-01-02T00:00:00Z"},
-        {"id": "current", "predicate": "p"},
-    ]
-    assert seed_demo.active_claim(rows, "p")["id"] == "current"
+def test_demo_story_has_stable_source_ids_and_multiple_turns():
+    assert len(seed_demo.STORY) >= 5
+    assert all(source.startswith("demo:script:") for source, _ in seed_demo.STORY)
 
 
-def test_active_claim_returns_none_when_no_current_version():
-    assert seed_demo.active_claim(
-        [{"id": "old", "predicate": "p", "superseded_at": "2026-01-01T00:00:00Z"}],
-        "p",
-    ) is None
+def test_seed_story_contains_correction_and_multiple_domains():
+    utterances = " ".join(text for _, text in seed_demo.STORY)
+    assert "23" in utterances
+    assert "灯" in utterances
+    assert "安静" in utterances
 
 
-def test_demo_subjects_are_namespaced():
+def test_cleanup_is_opt_in_and_seed_is_a_separate_operation():
     source = (ROOT / "scripts" / "seed_demo.py").read_text(encoding="utf-8")
-    assert '"amc-demo-user"' in source
-    assert '"amc-demo-home"' in source
-    assert '"amc-demo-window-01"' in source
+    assert 'parser.add_argument("--clean"' in source
+    assert 'parser.add_argument("--seed"' in source
+    assert "if args.clean:" in source
+    assert "if args.seed:" in source

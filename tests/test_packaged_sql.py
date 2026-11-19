@@ -98,4 +98,5 @@ def test_packaged_evidence_provenance_migration_matches_repository_sql():
     assert "memory_evidence_authority_grants" in packaged
     assert "memory_evidence_nonces" in packaged
     assert "memory_evidence_facts" in packaged
+    assert "producer_issuer" in packaged
     assert "allow_authoritative" in packaged

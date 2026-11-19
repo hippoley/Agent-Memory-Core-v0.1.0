@@ -152,6 +152,23 @@ To stop the local stack:
 python scripts/launch_local.py down
 ```
 
+## Run the product locally in a browser
+
+For a hands-on local experience, install the API/SDK dependencies and run the demo launcher:
+
+```bash
+python -m pip install -e '.[api,postgres]'
+python scripts/demo_local.py
+```
+
+The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and opens the Console, Observatory and API manual in your browser. It leaves uniquely named smoke records in the local database so you can inspect them; it does not call a hosted model or publish the API to the Internet.
+
+- **Console:** `http://127.0.0.1:8765/dashboard/` — natural-language ingestion, claim ledger, history and search.
+- **Observatory:** `http://127.0.0.1:8765/dashboard/observatory.html` — start in clearly labeled synthetic Demo mode, then connect with the local key to inspect Live API data.
+- **API manual:** `http://127.0.0.1:8765/docs`.
+
+The key is generated locally in `.env.local` as `MEMORY_API_KEY`; paste it only into the local browser page. Stop the stack with `python scripts/launch_local.py down`. See [the Chinese local demo guide](docs/LOCAL-DEMO.zh-CN.md) for profiles, identity mode and safety boundaries.
+
 ## Connect an agent with the Python SDK
 
 External agents use the same public REST API as Observatory. They do not import server modules, access PostgreSQL, or use browser-only business endpoints.

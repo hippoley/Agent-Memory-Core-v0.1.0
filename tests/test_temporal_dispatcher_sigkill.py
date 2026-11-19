@@ -167,8 +167,6 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
                 assert description.id == workflow_id
                 assert description.task_queue == queue
                 return description.run_id
-            finally:
-                await client.close()
 
         assert asyncio.run(verify_temporal()) == after[4]
     finally:

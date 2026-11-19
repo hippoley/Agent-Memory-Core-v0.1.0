@@ -227,8 +227,8 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
     """Exercise the adapter against PostgreSQL 16 and the real Temporal service."""
     import os
     from uuid import uuid4
-    if not os.getenv("MEMORY_TEST_DSN") or not os.getenv("MEMORY_TEMPORAL_ADDRESS"):
-        pytest.skip("Real PostgreSQL and Temporal services are required")
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real PostgreSQL is required; Temporal defaults to localhost:7233")
 
     from temporalio.client import Client
     from agent_memory_core.postgres import PostgresMemory

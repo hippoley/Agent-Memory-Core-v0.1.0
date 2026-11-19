@@ -239,3 +239,62 @@ async def inspect_temporal_dispatches(
             "lookup_error": None,
         })
     return report
+
+def main() -> None:
+    """Run a tenant-scoped, read-only PostgreSQL/Temporal reconciliation report."""
+    import argparse
+    import asyncio
+    import json
+    import os
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Inspect PostgreSQL durable tasks against Temporal without mutating either system."
+    )
+    parser.add_argument("--tenant-id", required=True, help="Exact tenant scope to inspect")
+    parser.add_argument("--limit", type=int, default=100, help="Maximum tasks (1..500)")
+    args = parser.parse_args()
+    if not 1 <= args.limit <= 500:
+        parser.error("--limit must be between 1 and 500")
+
+    async def run() -> list[dict]:
+        from temporalio.client import Client
+        from .postgres import PostgresMemory
+        from .temporal_adapter import _database_dsn
+
+        db = PostgresMemory(_database_dsn())
+        try:
+            client = await Client.connect(
+                os.getenv("MEMORY_TEMPORAL_ADDRESS", "localhost:7233"),
+                namespace=os.getenv("MEMORY_TEMPORAL_NAMESPACE", "default"),
+            )
+            return await inspect_temporal_dispatches(
+                db.conn, client, tenant_id=args.tenant_id, limit=args.limit
+            )
+        finally:
+            db.close()
+
+    try:
+        report = asyncio.run(run())
+    except Exception as exc:
+        print(json.dumps({
+            "error": type(exc).__name__,
+            "message": str(exc),
+            "safe_for_automatic_repair": False,
+        }, ensure_ascii=False), file=sys.stderr)
+        raise SystemExit(2) from exc
+
+    print(json.dumps({
+        "mode": "read_only",
+        "tenant_id": args.tenant_id,
+        "count": len(report),
+        "automatic_repair": "disabled",
+        "items": report,
+    }, ensure_ascii=False, indent=2, default=str))
+    if any(item["classification"] not in {"ALIGNED_NONTERMINAL", "ALIGNED_TERMINAL"}
+           for item in report):
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

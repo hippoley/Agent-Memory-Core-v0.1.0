@@ -23,7 +23,7 @@ def _identity(claim: dict) -> dict:
 
 async def _start_or_recover(client, claim: dict) -> str:
     from temporalio.common import WorkflowIDReusePolicy
-    from temporalio.exceptions import WorkflowExecutionAlreadyStartedError
+    from temporalio.exceptions import WorkflowAlreadyStartedError
     from .durable_task_workflow import DurableTaskWorkflow
 
     identity = _identity(claim)
@@ -37,7 +37,7 @@ async def _start_or_recover(client, claim: dict) -> str:
             memo={"agent_memory_task_identity": identity},
             id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
         )
-    except WorkflowExecutionAlreadyStartedError:
+    except WorkflowAlreadyStartedError:
         # Do not treat AlreadyStarted as success by itself. The deterministic
         # ID, workflow type, queue and persisted memo must all match.
         description = await handle.describe()

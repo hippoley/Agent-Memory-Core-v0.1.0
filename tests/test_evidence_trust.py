@@ -211,6 +211,21 @@ def test_authoritative_payload_flag_requires_explicit_authority_grant():
         verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
 
 
+def test_authoritative_claim_is_accepted_only_with_explicit_grant():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence(payload={"authoritative": True})
+    proof = sample_attestation(evidence, private_key)
+    conn = verifier(private_key, grants=[{
+        "source": "temporal_history", "claim_type": CLAIM,
+        "tenant_scope": TENANT, "task_type_scope": TASK_TYPE,
+        "allow_authoritative": True,
+    }])
+    result = verify_and_consume_evidence(
+        conn, evidence, proof, expected_audience=AUDIENCE, now=NOW,
+    )
+    assert result.fact_disposition == "NEW"
+
+
 def test_revoked_producer_key_is_rejected():
     private_key = Ed25519PrivateKey.generate()
     evidence = sample_evidence()

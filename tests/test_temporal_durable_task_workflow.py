@@ -7,8 +7,9 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_durable_task_workflow_exposes_identity_and_waits_for_terminal_signal():
+def test_durable_task_workflow_executes_activity_and_exposes_identity():
     pytest.importorskip("temporalio")
+    from temporalio import activity
     from temporalio.testing import WorkflowEnvironment
     from temporalio.worker import Worker
     from agent_memory_core.durable_task_workflow import DurableTaskWorkflow
@@ -22,8 +23,15 @@ def test_durable_task_workflow_exposes_identity_and_waits_for_terminal_signal():
                 "workflow_id": "amc-test-durable-task-identity",
                 "task_type": "test",
             }
+
+            @activity.defn(name="execute_durable_task")
+            async def execute(request: dict) -> dict:
+                assert request == identity
+                return {"status": "completed", "result": {"ok": True}}
+
             async with Worker(
-                env.client, task_queue=queue, workflows=[DurableTaskWorkflow]
+                env.client, task_queue=queue,
+                workflows=[DurableTaskWorkflow], activities=[execute]
             ):
                 handle = await env.client.start_workflow(
                     DurableTaskWorkflow.run, identity,
@@ -33,11 +41,10 @@ def test_durable_task_workflow_exposes_identity_and_waits_for_terminal_signal():
                 async with asyncio.timeout(20):
                     observed = await handle.query(DurableTaskWorkflow.identity)
                     assert observed == identity
-                    progress = await handle.query(DurableTaskWorkflow.progress)
-                    assert progress["stage"] == "ACCEPTED"
-                    await handle.signal(DurableTaskWorkflow.complete, {"ok": True})
                     result = await handle.result()
                     assert result == {"identity": identity, "result": {"ok": True}}
+                    progress = await handle.query(DurableTaskWorkflow.progress)
+                    assert progress["stage"] == "COMPLETED"
 
     asyncio.run(scenario())
 

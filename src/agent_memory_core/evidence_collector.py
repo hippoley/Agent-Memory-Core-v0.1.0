@@ -60,7 +60,8 @@ async def collect_live_temporal_dispatch_evidence(
 
     rows = conn.execute(
         """SELECT
-               t.task_id::text, t.tenant_id, t.task_type, t.workflow_id,
+               t.task_id::text, t.tenant_id, t.task_type, t.workflow_id AS task_workflow_id,
+               d.workflow_id AS dispatch_workflow_id,
                t.status AS task_status, t.lease_owner AS worker_lease_owner,
                t.lease_epoch AS worker_lease_epoch,
                t.lease_expires_at AS worker_lease_expires_at,
@@ -98,7 +99,7 @@ async def collect_live_temporal_dispatch_evidence(
     evidence: list[EvidenceEnvelope] = []
     for row in rows:
         (
-            task_id, row_tenant, task_type, workflow_id, task_status,
+            task_id, row_tenant, task_type, task_workflow_id, workflow_id, task_status,
             worker_owner, worker_epoch, worker_expiry, worker_heartbeat,
             worker_lease_valid, dispatch_status, task_queue, recorded_run_id,
             dispatch_owner, dispatch_epoch, dispatch_expiry, dispatch_attempts,
@@ -169,6 +170,8 @@ async def collect_live_temporal_dispatch_evidence(
                 "status": task_status,
                 "task_type": task_type,
                 "effect_count": len(_json_value(effects) or []),
+                "task_workflow_id": task_workflow_id,
+                "dispatch_workflow_id_matches": task_workflow_id == workflow_id,
             },
         ))
         evidence.append(EvidenceEnvelope.create(

@@ -72,6 +72,9 @@ The JSON report distinguishes:
 - `TEMPORAL_STOPPED_POSTGRES_NONTERMINAL` / `TEMPORAL_FAILED_POSTGRES_NONTERMINAL`: Temporal stopped or failed; business outcome still requires evidence.
 - `TEMPORAL_EXECUTION_MISSING`: Temporal explicitly reports the deterministic Workflow ID as missing.
 - `TEMPORAL_LOOKUP_FAILED`: Temporal could not be queried; existence is unknown, not missing.
+- `TEMPORAL_EXISTS_DISPATCH_UNACKNOWLEDGED`: Temporal accepted a matching Workflow, but PostgreSQL is still dispatching and has not recorded the Run ID.
+- `TEMPORAL_EXISTS_DISPATCH_PENDING`: a matching Temporal Workflow exists while the PostgreSQL dispatch ledger is still pending.
+- `POSTGRES_DISPATCH_STARTED_TEMPORAL_MISSING`: PostgreSQL records a started dispatch but Temporal explicitly reports the Workflow ID missing.
 - `TEMPORAL_IDENTITY_CONFLICT`: Workflow type, task queue, Workflow ID, or immutable memo differs from PostgreSQL.
 - `TEMPORAL_RUN_ID_DIVERGENCE`: the discovered Temporal Run ID differs from the PostgreSQL dispatch ledger.
 - `PG_COMPLETED_WITH_UNRESOLVED_EFFECTS`: PostgreSQL says completed while an external effect remains requested, executing, unknown, or reconciling.

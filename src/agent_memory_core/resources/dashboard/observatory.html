@@ -388,6 +388,12 @@ $("targetSelected").onclick=()=>{
  $("mutationNote").textContent="Revision target locked to Memory ID "+revisionTarget+". The API will retain the old version in history.";
  $("writeValue").focus();
 };
+// Object key order is not a database fact: PostgreSQL JSONB may reorder keys.
+function canonicalJson(value){
+ if(Array.isArray(value))return value.map(canonicalJson);
+ if(value&&typeof value==="object")return Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonicalJson(value[k])]));
+ return value;
+}
 $("writeForm").onsubmit=async e=>{
  e.preventDefault();
  if(state.mode!=="live"||(!state.key&&!readCookie("amc_tenant"))){$("mutationNote").textContent="Connect to Live API first.";return}
@@ -405,7 +411,7 @@ $("writeForm").onsubmit=async e=>{
   await refreshLive();
   const observed=state.items.find(x=>String(x.id||x.memory_id)===created.id);
   if(!observed||observed.subject_id!==subject_id||observed.predicate!==predicate||observed.source_id!==source_id||
-     JSON.stringify(observed.value)!==JSON.stringify(value)||observed.superseded_at||observed.forgotten_at){
+     JSON.stringify(canonicalJson(observed.value))!==JSON.stringify(canonicalJson(value))||observed.superseded_at||observed.forgotten_at){
     throw Error("Canonical readback did not confirm the created claim; inspect API history before retrying");
   }
   if(revisionTarget){

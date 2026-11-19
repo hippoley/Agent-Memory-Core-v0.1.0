@@ -201,7 +201,7 @@ def test_expired_attestation_is_rejected():
     )
     conn = verifier(private_key)
 
-    with pytest.raises(EvidenceTrustError, match="lifetime"):
+    with pytest.raises(EvidenceTrustError, match="expired"):
         verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
 
 

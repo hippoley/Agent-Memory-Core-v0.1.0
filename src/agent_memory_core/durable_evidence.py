@@ -225,13 +225,6 @@ def adjudicate_evidence(
 
     if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "NOT_FOUND" and temporal:
         conflicts.append("Temporal lookup reports NOT_FOUND while Temporal history evidence exists.")
-    if task_row and task_row.payload.get("dispatch_workflow_id_matches") is False:
-        conflicts.append("PostgreSQL task Workflow ID differs from the dispatch ledger Workflow ID.")
-    if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "FOUND":
-        for field in ("workflow_id_matches", "workflow_type_matches",
-                      "task_queue_matches", "memo_identity_matches"):
-            if lookup.payload.get(field) is False:
-                conflicts.append(f"Temporal lookup identity check failed: {field}.")
     if task_row and "effect_count" in task_row.payload:
         expected_effect_count = task_row.payload.get("effect_count")
         if (
@@ -246,10 +239,7 @@ def adjudicate_evidence(
         }):
             reasons.append("PostgreSQL effect_count does not match the supplied Effect Ledger evidence.")
 
-    temporal_run_ids = {
-        item.run_id for item in items
-        if item.source in {"temporal_history", "temporal_lookup"} and item.run_id
-    }
+    temporal_run_ids = {item.run_id for item in items if item.source == "temporal_history" and item.run_id}
     dispatch_run_ids = {item.run_id for item in items if item.source == "postgres_dispatch" and item.run_id}
     if len(temporal_run_ids) > 1 or len(dispatch_run_ids) > 1:
         conflicts.append("Conflicting Run IDs were observed within the same evidence domain.")
@@ -259,11 +249,7 @@ def adjudicate_evidence(
         conflicts.append("Activity heartbeat Run ID differs from Temporal history.")
 
     task_status = str(task_row.payload.get("status", "UNKNOWN")).lower() if task_row else "UNKNOWN"
-    temporal_status_source = temporal or lookup
-    temporal_status = (
-        str(temporal_status_source.payload.get("execution_status", "UNKNOWN")).upper()
-        if temporal_status_source else "UNKNOWN"
-    )
+    temporal_status = str(temporal.payload.get("execution_status", "UNKNOWN")).upper() if temporal else "UNKNOWN"
     dispatch_status = str(dispatch.payload.get("status", "UNKNOWN")).lower() if dispatch else "UNKNOWN"
 
     expected_temporal_terminal = {
@@ -348,8 +334,8 @@ def adjudicate_evidence(
     elif (
         heartbeat
         and heartbeat.payload.get("fresh") is True
-        and temporal_status_source is not None
-        and heartbeat.run_id == temporal_status_source.run_id
+        and temporal is not None
+        and heartbeat.run_id == temporal.run_id
         and worker_lease is not None
         and worker_lease.payload.get("lease_valid") is True
         and worker_lease.lease_epoch is not None

@@ -190,6 +190,39 @@ def test_live_inspection_rejects_invalid_scope_and_limit():
     assert conn.calls == []
 
 @pytest.mark.integration
+
+
+def test_live_inspection_classifies_existing_workflow_without_dispatch_ack():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    result = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([_live_row(dispatch_status="dispatching")]),
+        _TemporalClient(_Handle(_description(status="RUNNING"))),
+        tenant_id="tenant-a"))
+    assert result[0]["classification"] == "TEMPORAL_EXISTS_DISPATCH_UNACKNOWLEDGED"
+    assert result[0]["safe_for_automatic_repair"] is False
+
+
+def test_live_inspection_classifies_temporal_execution_with_pending_dispatch():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    result = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([_live_row(dispatch_status="pending")]),
+        _TemporalClient(_Handle(_description(status="RUNNING"))),
+        tenant_id="tenant-a"))
+    assert result[0]["classification"] == "TEMPORAL_EXISTS_DISPATCH_PENDING"
+    assert result[0]["safe_for_automatic_repair"] is False
+
+
+def test_live_inspection_does_not_hide_identity_conflict_with_run_id_divergence():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    result = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([_live_row(run_id="recorded-run")]),
+        _TemporalClient(_Handle(_description(
+            task_queue="wrong-queue", run_id="actual-run"))),
+        tenant_id="tenant-a"))
+    assert result[0]["classification"] == "TEMPORAL_IDENTITY_CONFLICT"
+    assert result[0]["identity_conflict"]["task_queue_matches"] is False
+
+
 def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
     """Exercise the adapter against PostgreSQL 16 and the real Temporal service."""
     import os
@@ -224,10 +257,19 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
                     (task_id, tenant_id, "example.memory.batch.organize",
                      workflow_id, "{}"),
                 )
-            TemporalDispatchStore(db.conn).enqueue(
+            store = TemporalDispatchStore(db.conn)
+            store.enqueue(
                 tenant_id=tenant_id, task_id=task_id,
                 workflow_id=workflow_id, task_queue=task_queue,
             )
+            # Simulate the ambiguous-start boundary: claim committed, Temporal
+            # accepts the Workflow, but PostgreSQL has not acknowledged its Run ID.
+            claim = store.claim(
+                dispatcher_id="reconcile-integration-dispatcher",
+                lease_seconds=60,
+                task_queue=task_queue,
+            )
+            assert claim and claim["task_id"] == task_id
             identity = {
                 "tenant_id": tenant_id,
                 "task_id": task_id,
@@ -246,7 +288,7 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
                 db.conn, client, tenant_id=tenant_id, limit=10,
             )
             assert len(report) == 1
-            assert report[0]["classification"] == "ALIGNED_NONTERMINAL"
+            assert report[0]["classification"] == "TEMPORAL_EXISTS_DISPATCH_UNACKNOWLEDGED"
             assert report[0]["temporal_status"] == "RUNNING"
             assert report[0]["temporal_run_id"] == started_description.run_id
             assert report[0]["recorded_temporal_run_id"] is None

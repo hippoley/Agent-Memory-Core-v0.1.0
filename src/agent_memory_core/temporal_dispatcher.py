@@ -43,7 +43,8 @@ async def _start_or_recover(client, claim: dict) -> str:
         description = await handle.describe()
         workflow_type = getattr(description, "workflow_type", None)
         workflow_type_name = getattr(workflow_type, "name", workflow_type)
-        memo = getattr(description, "memo", None) or {}
+        memo_getter = getattr(description, "memo", None)
+        memo = await memo_getter() if callable(memo_getter) else (memo_getter or {})
         if (
             getattr(description, "id", None) != identity["workflow_id"]
             or workflow_type_name != "DurableTaskWorkflow"

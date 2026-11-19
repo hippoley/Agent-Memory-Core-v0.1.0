@@ -46,6 +46,7 @@ def _wait_for_lease_expiry(db, task_id, timeout=15):
 @pytest.mark.parametrize(
     ("failpoint", "expect_existing_workflow"),
     [
+        ("before_claim_commit", False),
         ("after_claim_commit", False),
         ("after_temporal_start_before_ack", True),
     ],
@@ -114,9 +115,17 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
                FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",
             (task_id,),
         ).fetchone()
-        assert before[0] == "dispatching"
-        assert before[2] == 1
-        assert before[4] is None
+        if failpoint == "before_claim_commit":
+            # Uncommitted UPDATE is invisible to this independent connection.
+            assert before[0] == "pending"
+            assert before[1] is None
+            assert before[2] == 0
+            assert before[3] == 0
+            assert before[4] is None
+        else:
+            assert before[0] == "dispatching"
+            assert before[2] == 1
+            assert before[4] is None
 
         original_run_id = None
         if expect_existing_workflow:
@@ -132,7 +141,8 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
         _, stderr = process.communicate(timeout=10)
         assert process.returncode == -signal.SIGKILL, stderr.decode(errors="replace")
 
-        _wait_for_lease_expiry(db, task_id)
+        if failpoint != "before_claim_commit":
+            _wait_for_lease_expiry(db, task_id)
         recovery_env = env.copy()
         recovery_env["MEMORY_TEMPORAL_DISPATCHER_ID"] = "sigkill-b-" + uuid4().hex
         recovery_env.pop("MEMORY_TEMPORAL_DISPATCH_TEST_FAILPOINT", None)
@@ -150,8 +160,9 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
             (task_id,),
         ).fetchone()
         assert after[0] == "started"
-        assert after[2] == 2
-        assert after[3] == 2
+        expected_epoch = 1 if failpoint == "before_claim_commit" else 2
+        assert after[2] == expected_epoch
+        assert after[3] == expected_epoch
         assert after[4]
         if original_run_id:
             assert after[4] == original_run_id

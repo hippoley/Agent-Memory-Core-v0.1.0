@@ -225,6 +225,8 @@ def adjudicate_evidence(
 
     if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "NOT_FOUND" and temporal:
         conflicts.append("Temporal lookup reports NOT_FOUND while Temporal history evidence exists.")
+    if task_row and task_row.payload.get("dispatch_workflow_id_matches") is False:
+        conflicts.append("PostgreSQL task Workflow ID differs from the dispatch ledger Workflow ID.")
     if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "FOUND":
         for field in ("workflow_id_matches", "workflow_type_matches",
                       "task_queue_matches", "memo_identity_matches"):

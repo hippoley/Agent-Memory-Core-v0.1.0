@@ -161,7 +161,7 @@ python -m pip install -e '.[api,postgres]'
 python scripts/demo_local.py
 ```
 
-The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and runs the existing seven-turn Chinese demo-story seeder through the public text-processing API (without invoking its optional cleanup mode), then opens the Console, Observatory and API manual in your browser. Smoke and demo records remain in the local database for inspection. The seeder prints the actual extraction relations; unextracted utterances are not presented as successful memories. It does not call a hosted model or publish the API to the Internet.
+The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and runs the existing seven-turn Chinese demo-story seeder through the public text-processing API (without invoking its optional cleanup mode), then opens the Console, Observatory and API manual in your browser. Smoke and demo records remain in the local database for inspection. The seeder prints the actual extraction relations; unextracted utterances are not presented as successful memories. Lite defaults to the local `rule` extractor, so this is a UI/API walkthrough, not evidence of LLM quality. It does not call a hosted model or publish the API to the Internet.
 
 - **Console:** `http://127.0.0.1:8765/dashboard/` — natural-language ingestion, claim ledger, history and search.
 - **Observatory:** `http://127.0.0.1:8765/dashboard/observatory.html` — start in clearly labeled synthetic Demo mode, then connect with the local key to inspect Live API data.

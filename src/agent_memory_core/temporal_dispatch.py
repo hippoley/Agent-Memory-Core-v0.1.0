@@ -6,6 +6,8 @@ but the acknowledgement is lost, the lease expires and the next dispatcher
 must describe/reuse the deterministic Workflow ID rather than create a new ID.
 """
 from __future__ import annotations
+import os
+import time
 from uuid import uuid5, NAMESPACE_URL
 
 
@@ -17,6 +19,29 @@ def stable_workflow_id(tenant_id: str, task_id: str) -> str:
 
 class TemporalDispatchConflict(RuntimeError):
     pass
+
+
+def _test_failpoint(name: str) -> None:
+    """Test-only deterministic barrier; disabled unless explicitly enabled."""
+    if os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_MODE") != "1":
+        return
+    if os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_FAILPOINT") != name:
+        return
+    directory = os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_DIR")
+    if not directory:
+        raise RuntimeError("Dispatcher test failpoint requires TEST_DIR")
+    os.makedirs(directory, exist_ok=True)
+    reached = os.path.join(directory, name + ".reached")
+    release = os.path.join(directory, name + ".release")
+    with open(reached, "w", encoding="utf-8") as marker:
+        marker.write(str(os.getpid()))
+        marker.flush()
+        os.fsync(marker.fileno())
+    deadline = time.monotonic() + 120
+    while not os.path.exists(release):
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Dispatcher test failpoint timed out: {name}")
+        time.sleep(0.02)
 
 
 class TemporalDispatchStore:
@@ -67,6 +92,9 @@ class TemporalDispatchStore:
                    WHERE task_id=%s::uuid
                    RETURNING task_id::text,tenant_id,workflow_id,task_queue,lease_epoch,attempts""",
                 (dispatcher_id,lease_seconds,task_id)).fetchone()
+            # Deliberately block before the transaction context exits. SIGKILL
+            # at this point must roll back owner, epoch and attempts atomically.
+            _test_failpoint("before_claim_commit")
         return dict(zip(("task_id","tenant_id","workflow_id","task_queue","lease_epoch","attempts"),claimed))
 
     def mark_started(self, *, task_id: str, dispatcher_id: str,

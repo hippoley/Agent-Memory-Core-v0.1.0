@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS memory_evidence_producer_keys (
   CHECK (expires_at IS NULL OR expires_at > not_before)
 );
 
+-- Safe when an earlier unmerged draft of migration 010 created the coarse
+-- source/tenant allowlists. The normalized grants below supersede those columns.
+ALTER TABLE memory_evidence_producer_keys
+  DROP COLUMN IF EXISTS allowed_sources,
+  DROP COLUMN IF EXISTS allowed_tenants;
+
 CREATE TABLE IF NOT EXISTS memory_evidence_authority_grants (
   issuer text NOT NULL,
   key_id text NOT NULL,

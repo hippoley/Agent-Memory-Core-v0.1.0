@@ -33,6 +33,7 @@ async def main() -> None:
         VerifyMemoryWorkflow,
         verify_memory_record,
         write_memory_verification_receipt,
+        execute_durable_task,
         _database_dsn,
     )
     from .durable_task_workflow import DurableTaskWorkflow
@@ -57,7 +58,8 @@ async def main() -> None:
             task_queue=task_queue,
             activity_executor=executor,
             workflows=[VerifyMemoryWorkflow, DurableTaskWorkflow],
-            activities=[verify_memory_record,write_memory_verification_receipt],
+            activities=[verify_memory_record,write_memory_verification_receipt,
+                        execute_durable_task],
         )
         await worker.run()
 

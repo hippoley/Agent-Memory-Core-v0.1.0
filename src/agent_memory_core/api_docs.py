@@ -46,8 +46,10 @@ curl -s -H "Authorization: Bearer $KEY" "$API/v1/memories?limit=20"
 
 ## 认证与租户
 
-所有 `/v1/*`（除 `/v1/health`）都要求 `Authorization: Bearer <MEMORY_API_KEY>`。
-**租户身份来自凭据，永远不从请求体读取**，因此客户端无法通过改 JSON 越权。
+所有 `/v1/*`（除 `/v1/health`）都必须通过认证。兼容模式可使用
+`Authorization: Bearer <MEMORY_API_KEY>`；身份模式使用 Opaque Session 或有 Scope 的
+API Credential，并通过 `X-Memory-Tenant` 选择已加入的租户。
+**租户身份必须由服务端验证当前 Membership，永远不从请求体读取**。
 
 ## 响应与错误约定
 
@@ -75,6 +77,8 @@ TAG_METADATA = [
     {"name": "System",
      "description": "探活、就绪与能力发现。接入方应当先调用 `/v1/capabilities`，"
                     "再决定是否使用向量、图谱、Temporal 等可选通道。"},
+    {"name": "Identity",
+     "description": "当前身份、租户 Membership、Opaque Session 撤销与 API Credential 授权。"},
     {"name": "Memory",
      "description": "记忆的主体：写入、浏览、回忆、软遗忘，以及控制"
                     "“一个主体一个谓词能存几条”的可信基数策略。"},
@@ -91,6 +95,8 @@ TAG_METADATA = [
      "description": "持久化事件日志：游标轮询、SSE 实时流、签名 webhook 与死信重放。"},
     {"name": "Workflows",
      "description": "可选的 Temporal 工作流生命周期；未配置时统一返回 503。"},
+    {"name": "Durable Tasks",
+     "description": "PostgreSQL 规范任务状态、版本化检查点、幂等副作用意图与事务性 Outbox。"},
 ]
 
 
@@ -130,6 +136,89 @@ class Story:
 CURL = 'curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"'
 
 STORIES: dict[tuple[str, str], Story] = {
+    # --------------------------------------------------------------- Identity
+    ("GET", "/v1/auth/oidc/login"): Story(
+        persona="首次使用的开发者",
+        goal="通过已配置的 OpenID Connect 身份提供商安全登录",
+        value="不需要把密码交给记忆服务，且登录事务由短期 State、Nonce 与 PKCE 保护",
+        steps=("服务端从固定的 MEMORY_OIDC_ISSUER 获取 Discovery 元数据。",
+               "浏览器被重定向到授权端点，使用 Authorization Code + PKCE S256。",
+               "事务 Cookie 为 HttpOnly、签名保护且最多存活 10 分钟。"),
+        example='打开 $API/v1/auth/oidc/login',
+    ),
+    ("GET", "/v1/auth/oidc/callback"): Story(
+        persona="完成身份认证的开发者",
+        goal="验证 OIDC 回调并建立自己的记忆工作区",
+        value="首次登录可原子创建 Principal、External Identity、Owner Membership 和 Session",
+        steps=("服务端校验签名、Issuer、Audience、Expiry、Nonce 与 State。",
+               "账号关联只使用 issuer + subject，不使用未经验证的 Email 自动合并账号。",
+               "仅在 MEMORY_OIDC_ALLOW_SIGNUP=1 时允许新身份注册；新工作区与 Session 在同一数据库事务内创建。",
+               "Session 使用 HttpOnly Cookie，CSRF Token 单独设置；登录后进入 Observatory。"),
+        example='由身份提供商回调 $API/v1/auth/oidc/callback',
+    ),
+    ("GET", "/v1/identity/tenants"): Story(
+        persona="已登录开发者",
+        goal="列出当前 Session 能访问的全部租户及角色",
+        value="登录后可以选择工作区，不必把租户 ID 写死在客户端配置里",
+        steps=("只返回当前有效 Session 的 active Membership。",
+               "已撤销、暂停的 Membership 和租户不会出现在列表中。",
+               "API Credential 只返回它绑定的单个租户。"),
+        example='curl -H "Authorization: Bearer $SESSION" $API/v1/identity/tenants',
+    ),
+    ("POST", "/v1/identity/tenants"): Story(
+        persona="已登录开发者",
+        goal="创建一个新的独立记忆工作区",
+        value="新工作区由当前 Principal 拥有，并在创建后立即切换过去",
+        steps=("仅浏览器 Session 可以创建工作区；Legacy Key 和 API Credential 不可调用。",
+               "新 Tenant 与 Owner Membership 在控制面事务中创建。",
+               "服务端设置当前浏览器的工作区 Cookie；后续请求仍逐次验证 Membership。"),
+        example='curl -X POST -H "X-Memory-Tenant: $TENANT" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" -b cookies.txt -d \'{"display_name":"Research"}\' $API/v1/identity/tenants',
+    ),
+    ("POST", "/v1/identity/select-tenant"): Story(
+        persona="属于多个工作区的开发者",
+        goal="切换当前浏览器 Session 使用的工作区",
+        value="切换只改变当前选择，不改变 Principal、Session 或其他成员的状态",
+        steps=("仅浏览器 Session 可以切换；每个写请求必须通过 CSRF 校验。",
+               "目标 Tenant 必须存在于该 Session 的 active Membership 列表中。",
+               "切换成功后服务端更新工作区 Cookie；伪造或已撤销的 Membership 返回 403。"),
+        example='curl -X POST -H "X-Memory-Tenant: $CURRENT_TENANT" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" -b cookies.txt -d \'{"tenant_id":"$TARGET_TENANT"}\' $API/v1/identity/select-tenant',
+    ),
+    ("POST", "/v1/identity/api-credentials"): Story(
+        persona="已注册工作区的 Owner 或 Admin",
+        goal="通过受 CSRF 保护的浏览器 Session 创建租户限定的开发者 API 凭据",
+        value="第三方 SDK 可以按当前 Workspace 权限调用记忆和异步工作流",
+        steps=("必须使用 Owner/Admin Session，API Credential 不能再次签发 API Credential。",
+               "只接受 memory:read、memory:write、memory:*，默认 90 天有效。",
+               "secret 只在创建响应中返回一次，服务端只保存哈希；使用时携带 X-Memory-Tenant。"),
+        example='curl -X POST -b cookies.txt -H "X-Memory-Tenant: $TENANT" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" -d \'{"name":"my-agent","scopes":["memory:read","memory:write"]}\' $API/v1/identity/api-credentials',
+    ),
+    ("DELETE", "/v1/identity/api-credentials/{credential_id}"): Story(
+        persona="工作区开发者",
+        goal="立即撤销自己签发的第三方访问凭据",
+        value="旧 SDK Token 和由它排队的后续任务都不能再产生新的授权副作用",
+        steps=("必须使用有效的浏览器 Session，不能用 API Credential 自行撤权。",
+               "只能撤销当前 Principal 签发的 Credential；不存在返回 404。",
+               "下次请求和后台执行会重新校验凭据状态。"),
+        example='curl -X DELETE -b cookies.txt -H "X-Memory-Tenant: $TENANT" -H "X-CSRF-Token: $CSRF" $API/v1/identity/api-credentials/<uuid>',
+    ),
+    ("GET", "/v1/identity/me"): Story(
+        persona="已登录开发者",
+        goal="读取当前请求实际生效的 Principal、租户和角色",
+        value="客户端能展示当前身份与权限，不需要信任本地缓存的角色",
+        steps=("每次请求都重新检查 Session/API Credential 与当前 Membership。",
+               "租户通过 X-Memory-Tenant 选择，必须是该 Principal 当前加入的租户。",
+               "兼容旧 Bearer Key 时返回 legacy 身份，不伪装成多用户 Principal。"),
+        example='curl -H "Authorization: Bearer $SESSION" -H "X-Memory-Tenant: $TENANT" $API/v1/identity/me',
+    ),
+    ("POST", "/v1/auth/logout"): Story(
+        persona="已登录开发者",
+        goal="立即撤销当前登录 Session",
+        value="退出后旧 Session 不能继续访问任何租户资源",
+        steps=("Session 通过服务端存储的 Token Hash 定位并撤销。",
+               "Cookie 模式的写请求必须提供匹配的 CSRF Cookie 与 X-CSRF-Token。",
+               "该接口不撤销独立签发的 API Credential。"),
+        example='curl -X POST -H "Authorization: Bearer $SESSION" -H "X-Memory-Tenant: $TENANT" $API/v1/auth/logout',
+    ),
     # ---------------------------------------------------------------- System
     ("GET", "/v1/health"): Story(
         persona="平台运维",
@@ -464,6 +553,73 @@ STORIES: dict[tuple[str, str], Story] = {
         steps=("取消是请求式的，返回 `cancel_requested:true` 不代表已终止。",
                "随后用 GET 同一路径确认最终状态。"),
         example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/cancel",
+    ),
+    ("GET", "/v1/workflows/{workflow_id}/progress"): Story(
+        persona="任务发起者",
+        goal="读取持久化的工作阶段、已完成步骤和进度百分比",
+        value="服务重启后仍能从工作流历史还原任务进度，而不是依赖浏览器内存",
+        steps=("工作流 id 必须带本租户前缀，否则 404。",
+               "当前 VerifyMemoryWorkflow 暴露阶段和两步完成计数；这不是任意 Activity 的字节级检查点。"),
+        example=CURL + " $API/v1/workflows/t:memory-verify-<uuid>/progress",
+    ),
+    ("POST", "/v1/workflows/{workflow_id}/pause"): Story(
+        persona="任务发起者",
+        goal="请求工作流在下一个安全阶段边界暂停",
+        value="维护人员可以暂缓后续步骤而不丢失已经完成的工作",
+        steps=("暂停通过 Temporal Signal 持久化。",
+               "正在执行的 Activity 不会被强制中断；暂停在下一个阶段边界生效。"),
+        example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/pause",
+    ),
+    ("POST", "/v1/workflows/{workflow_id}/resume"): Story(
+        persona="任务发起者",
+        goal="继续执行此前暂停的工作流",
+        value="从 Temporal 已记录的阶段继续，而不是创建一条新的任务",
+        steps=("工作流 id 必须带本租户前缀，否则 404。",
+               "恢复通过 Temporal Signal 发送；重复请求不会创建新的 Workflow ID。"),
+        example=CURL + " -X POST $API/v1/workflows/t:memory-verify-<uuid>/resume",
+    ),
+    # ----------------------------------------------------------- Durable Tasks
+    ("POST", "/v1/tasks"): Story(
+        persona="第三方 Agent 开发者",
+        goal="创建一条有租户归属、输入快照和幂等键的长期业务任务",
+        value="HTTP 请求结束后任务仍有独立身份，可以被查询、恢复和审计",
+        steps=("tenant_id 从当前认证上下文取得，不接受请求体指定租户。",
+               "相同幂等键和相同请求返回原任务；相同键不同请求返回 409。",
+               "任务创建与 memory.task.created Outbox 事件在同一事务提交。"),
+        example=CURL + " -d '{\"task_type\":\"memory.batch.organize\",\"input\":{\"batch_size\":100},\"idempotency_key\":\"organize-001\"}' $API/v1/tasks",
+    ),
+    ("GET", "/v1/tasks"): Story(
+        persona="任务控制台",
+        goal="分页列出当前工作区的长期任务",
+        value="不访问数据库也能检查任务状态、进度和执行历史入口",
+        steps=("结果只包含当前认证租户的任务。",
+               "limit 为 1–100，offset 从 0 开始。"),
+        example=CURL + " '$API/v1/tasks?limit=50&offset=0'",
+    ),
+    ("GET", "/v1/tasks/{task_id}"): Story(
+        persona="任务发起者",
+        goal="读取任务的规范状态和最新业务检查点",
+        value="Worker 更换或 Temporal 重放后仍可从 PostgreSQL 还原业务游标",
+        steps=("task_id 必须是 UUID；跨租户资源统一返回 404。",
+               "响应包含 checkpoint_version、progress 与最新 checkpoint。"),
+        example=CURL + " $API/v1/tasks/<task-uuid>",
+    ),
+    ("POST", "/v1/tasks/{task_id}/checkpoints"): Story(
+        persona="长期 Agent Worker",
+        goal="以预期版本提交检查点、进度和可选副作用意图",
+        value="检查点与 Outbox 事件原子提交，旧 Worker 不能覆盖新 Worker 的进度",
+        steps=("expected_version 必须等于当前版本，否则 409。",
+               "相同幂等键与完全相同内容重放返回原版本；内容不同则 409。",
+               "effect_key 只记录副作用意图，不代表外部系统已经执行成功。"),
+        example=CURL + " -d '{\"expected_version\":0,\"checkpoint\":{\"last_completed\":100},\"idempotency_key\":\"cp-001\",\"progress_completed\":100,\"progress_total\":1000}' $API/v1/tasks/<task-uuid>/checkpoints",
+    ),
+    ("POST", "/v1/tasks/{task_id}/status"): Story(
+        persona="任务执行器",
+        goal="更新任务生命周期并留下可重放的状态变更事件",
+        value="暂停、运行、完成和失败等状态能被独立观察与审计",
+        steps=("仅能修改当前租户的任务；终态任务不可再次变更。",
+               "状态更新与 memory.task.status.changed Outbox 事件在同一事务提交。"),
+        example=CURL + " -d '{\"status\":\"completed\",\"result\":{\"organized\":1000}}' $API/v1/tasks/<task-uuid>/status",
     ),
 }
 

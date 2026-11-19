@@ -33,7 +33,20 @@ async def main() -> None:
         VerifyMemoryWorkflow,
         verify_memory_record,
         write_memory_verification_receipt,
+        _database_dsn,
     )
+    from .postgres import PostgresMemory
+    from .worker_identity import configured_worker_tenant, assert_worker_tenant
+
+    tenant_id=configured_worker_tenant()
+    if tenant_id is None and os.getenv("MEMORY_TEMPORAL_REQUIRE_RLS","0")=="1":
+        raise RuntimeError("MEMORY_WORKER_TENANT is required with MEMORY_TEMPORAL_REQUIRE_RLS=1")
+    if tenant_id is not None:
+        db=PostgresMemory(_database_dsn())
+        try:
+            assert_worker_tenant(db,tenant_id)
+        finally:
+            db.close()
     # Both Activities are synchronous psycopg functions. Temporal Python
     # requires an executor for synchronous Activities, otherwise Worker
     # construction fails even when connection and unit tests succeed.

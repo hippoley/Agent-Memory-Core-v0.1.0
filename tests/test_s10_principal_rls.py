@@ -71,6 +71,49 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
 
         db_a=PostgresMemory(make_conninfo(dsn,user=role_a,password=password_a))
         db_b=PostgresMemory(make_conninfo(dsn,user=role_b,password=password_b))
+
+        # Temporal is an optional dependency. The dedicated Temporal CI job
+        # installs it and executes this same adversarial PostgreSQL test.
+        import importlib.util
+        if importlib.util.find_spec("temporalio") is not None:
+            from agent_memory_core.temporal_adapter import (
+                verify_memory_record, write_memory_verification_receipt)
+            previous_dsn=os.environ.get("MEMORY_DSN")
+            previous_required=os.environ.get("MEMORY_TEMPORAL_REQUIRE_RLS")
+            try:
+                os.environ["MEMORY_TEMPORAL_REQUIRE_RLS"]="1"
+                os.environ["MEMORY_DSN"]=make_conninfo(dsn,user=role_a,password=password_a)
+                verified=verify_memory_record({"tenant_id":tenant_a,"memory_id":admin_id_a})
+                assert verified["tenant_id"]==tenant_a and verified["memory_id"]==admin_id_a
+                receipt=write_memory_verification_receipt(verified)
+                assert receipt["tenant_id"]==tenant_a
+                with pytest.raises(PermissionError):
+                    verify_memory_record({"tenant_id":tenant_b,"memory_id":admin_id_b})
+                with pytest.raises(PermissionError):
+                    write_memory_verification_receipt({
+                        "tenant_id":tenant_b,"memory_id":admin_id_b,
+                        "subject_id":"bedroom","predicate":"night_mode",
+                        "source_id":"b","active":True})
+                # A broad administrative login must not silently become a
+                # cross-tenant Temporal worker when production RLS is required.
+                os.environ["MEMORY_DSN"]=dsn
+                with pytest.raises(PermissionError):
+                    verify_memory_record({"tenant_id":tenant_a,"memory_id":admin_id_a})
+            finally:
+                if previous_dsn is None:
+                    os.environ.pop("MEMORY_DSN",None)
+                else:
+                    os.environ["MEMORY_DSN"]=previous_dsn
+                if previous_required is None:
+                    os.environ.pop("MEMORY_TEMPORAL_REQUIRE_RLS",None)
+                else:
+                    os.environ["MEMORY_TEMPORAL_REQUIRE_RLS"]=previous_required
+        from agent_memory_core.worker_identity import assert_worker_tenant
+        assert_worker_tenant(db_a, tenant_a)
+        with pytest.raises(PermissionError):
+            assert_worker_tenant(db_a, tenant_b)
+        with pytest.raises(PermissionError):
+            assert_worker_tenant(admin, tenant_a)
         db_a.assert_database_tenant(tenant_a)
         db_b.assert_database_tenant(tenant_b)
         with pytest.raises(PermissionError):
@@ -87,6 +130,22 @@ def test_distinct_authenticated_logins_cannot_spoof_cross_tenant_sql():
             "SELECT count(*) FROM memory_embeddings").fetchone()[0]==0
         assert db_b.conn.execute(
             "SELECT count(*) FROM memory_embeddings").fetchone()[0]==1
+        # Projection delivery consumption must follow database RLS, not an
+        # event-supplied tenant string. A's worker must never acknowledge B.
+        from agent_memory_core.projections import ProjectionWorker, PostgresProjectionHandlers
+        before_b=db_b.conn.execute(
+            """SELECT count(*) FROM memory_projection_deliveries d
+               JOIN memory_outbox o ON o.event_id=d.event_id
+               WHERE d.channel='fts' AND o.tenant_id=%s AND d.status='done'""",
+            (tenant_b,)).fetchone()[0]
+        ProjectionWorker(db_a.conn).consume(
+            channel="fts",handler=PostgresProjectionHandlers.full_text,limit=20)
+        after_b=db_b.conn.execute(
+            """SELECT count(*) FROM memory_projection_deliveries d
+               JOIN memory_outbox o ON o.event_id=d.event_id
+               WHERE d.channel='fts' AND o.tenant_id=%s AND d.status='done'""",
+            (tenant_b,)).fetchone()[0]
+        assert after_b==before_b, "Tenant-A projection worker acknowledged tenant-B deliveries"
         assert db_a.conn.execute(
             "SELECT object_sha256 FROM memory_objects").fetchall()==[("a"*64,)]
         assert db_a.conn.execute(
@@ -156,3 +215,36 @@ def test_rls_sql_is_operator_only_not_automatic_migration():
     assert "session_user::name" in ddl
     assert "current_setting('app.tenant_id'" not in ddl
     assert "CREATE POLICY memory_authenticated_tenant_policy" in ddl
+
+
+def test_standalone_worker_strict_mode_requires_scope_and_never_ignores_rls(monkeypatch):
+    from agent_memory_core.worker_identity import (
+        configured_worker_tenant, assert_worker_tenant)
+
+    class Database:
+        def __init__(self):
+            self.calls=[]
+        def assert_database_tenant(self, tenant):
+            self.calls.append(tenant)
+            if tenant!="tenant-a":
+                raise PermissionError("PostgreSQL login belongs to another tenant")
+
+    db=Database()
+    monkeypatch.setenv("MEMORY_WORKER_REQUIRE_RLS","1")
+    monkeypatch.delenv("MEMORY_WORKER_TENANT",raising=False)
+    with pytest.raises(RuntimeError,match="MEMORY_WORKER_TENANT"):
+        configured_worker_tenant()
+    monkeypatch.setenv("MEMORY_WORKER_TENANT","tenant-a")
+    assert configured_worker_tenant()=="tenant-a"
+    assert_worker_tenant(db,configured_worker_tenant())
+    assert db.calls==["tenant-a"]
+    with pytest.raises(PermissionError):
+        assert_worker_tenant(db,"tenant-b")
+    with pytest.raises(RuntimeError,match="Tenant-bound"):
+        assert_worker_tenant(db,None)
+    # A missing RLS installation must not silently degrade to application
+    # filtering when the worker is configured for tenant isolation.
+    db.assert_database_tenant=lambda _: (_ for _ in ()).throw(
+        RuntimeError("RLS registry is not installed"))
+    with pytest.raises(RuntimeError,match="RLS registry"):
+        assert_worker_tenant(db,configured_worker_tenant())

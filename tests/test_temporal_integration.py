@@ -29,16 +29,39 @@ def test_temporal_postgres_and_idempotent_receipt():
         from concurrent.futures import ThreadPoolExecutor
         async with await WorkflowEnvironment.start_local() as env:
             queue="memory-"+uuid4().hex
-            with ThreadPoolExecutor(max_workers=2) as executor:
+            request={"tenant_id":tenant,"memory_id":claim}
+            handle=await env.client.start_workflow(VerifyMemoryWorkflow.run,request,
+                id="verify-"+claim,task_queue=queue)
+            # Worker A runs the workflow to a durable pause boundary.
+            with ThreadPoolExecutor(max_workers=2) as executor_a:
                 async with Worker(env.client,task_queue=queue,
-                activity_executor=executor,workflows=[VerifyMemoryWorkflow],
+                activity_executor=executor_a,workflows=[VerifyMemoryWorkflow],
                 activities=[verify_memory_record,write_memory_verification_receipt]):
-                    request={"tenant_id":tenant,"memory_id":claim}
-                    a=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
-                        id="verify-"+claim,task_queue=queue)
+                    await handle.signal(VerifyMemoryWorkflow.pause)
+                    for _ in range(100):
+                        progress=await handle.query(VerifyMemoryWorkflow.progress)
+                        if progress["stage"]=="PAUSED":
+                            break
+                        await asyncio.sleep(0.05)
+                    assert progress["stage"]=="PAUSED"
+                    assert progress["paused"] is True
+                    assert progress["completed_steps"]==0
+
+            # Worker A is now gone. Signal is recorded while no Worker polls;
+            # Worker B must replay the same history and continue the same ID.
+            await handle.signal(VerifyMemoryWorkflow.resume)
+            with ThreadPoolExecutor(max_workers=2) as executor_b:
+                async with Worker(env.client,task_queue=queue,
+                activity_executor=executor_b,workflows=[VerifyMemoryWorkflow],
+                activities=[verify_memory_record,write_memory_verification_receipt]):
+                    a=await handle.result()
+                    progress=await handle.query(VerifyMemoryWorkflow.progress)
                     b=await env.client.execute_workflow(VerifyMemoryWorkflow.run,request,
                         id="reverify-"+claim,task_queue=queue)
                     assert a==b and a["active"] and a["source_id"]=="user-1"
+                    assert progress["stage"]=="COMPLETED"
+                    assert progress["completed_steps"]==2
+                    assert progress["progress_percent"]==100
         db=PostgresMemory(os.environ["MEMORY_TEST_DSN"])
         try:
             n=db.conn.execute(

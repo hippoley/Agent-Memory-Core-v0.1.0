@@ -79,18 +79,72 @@ configuration directly to the public internet.
 
 ## 3. Authentication and tenant boundary
 
-All endpoints except `GET /v1/health` require:
+The runtime supports two deliberately distinct authentication modes. Do not
+mix their configuration or treat the legacy key as an identity-mode credential.
+
+### 3.1 Legacy single-tenant compatibility mode
+
+When `MEMORY_IDENTITY_DSN` is not configured, the legacy local/single-tenant
+mode accepts:
 
 ```http
 Authorization: Bearer <MEMORY_API_KEY>
 ```
 
-One process binds one API key to one server-configured `MEMORY_TENANT_ID`.
-Tenant IDs are never accepted from request payloads. This is not yet a
-multi-tenant identity provider: deploy separate credentials and isolated
-database/object-store boundaries for mutually untrusted customers. Production
-RLS, key rotation/revocation, TLS, rate limiting and audit controls remain
-deployment acceptance requirements.
+The process binds this key to its server-configured
+`MEMORY_TENANT_ID`. This is a compatibility/development mode, not the
+multi-user identity control plane.
+
+### 3.2 Identity mode (PR #51)
+
+When `MEMORY_IDENTITY_DSN` is configured, requests use either an opaque
+browser Session or a scoped API credential:
+
+```http
+Authorization: Bearer <SESSION_OR_API_CREDENTIAL>
+X-Memory-Tenant: <WORKSPACE_ID>
+```
+
+The browser Observatory may instead send the HttpOnly `amc_session` cookie.
+Cookie-authenticated mutations also require the CSRF double-submit cookie and
+`X-CSRF-Token` header. The server resolves the current Principal, credential
+scope, active Membership and role from PostgreSQL; a caller-supplied tenant
+header selects a workspace but never grants access to it.
+
+A first Owner/Admin can issue a short-lived tenant-scoped API credential from
+the authenticated identity flow. The raw secret is returned once; store it
+outside source control. Revoke it with
+`DELETE /v1/identity/api-credentials/{credential_id}`. The issuing Principal
+must retain the required role, and the credential's scopes and expiry are
+enforced on every request. See
+[Identity control-plane deployment](IDENTITY-CONTROL-PLANE-DEPLOYMENT.md)
+for the separate identity database role and production worker boundaries.
+
+### 3.3 Reproducible local identity walkthrough
+
+From a fresh checkout with Docker Compose and Python available:
+
+```bash
+python scripts/launch_local.py up --profile lite --identity
+```
+
+Open `http://127.0.0.1:8765/dashboard/observatory.html`, choose **Sign in
+with organization**, and register a local Keycloak user. The local Keycloak
+admin console is at `http://127.0.0.1:8081`; its development-only bootstrap
+credentials are documented by the local Compose profile and must never be
+reused outside loopback development. After login, issue an API credential
+from the supported Owner/Admin flow and use it with the public SDK/REST API.
+
+To stop the stack without deleting its persistent development volumes:
+
+```bash
+python scripts/launch_local.py down
+```
+
+This local profile intentionally uses development secrets and loopback HTTP.
+It is not a production deployment recipe. Production requires a dedicated
+identity-service LOGIN, separate tenant-bound worker credentials, HTTPS,
+managed secrets, backup/restore, rate limiting and independent security review.
 
 ## 4. Complete HTTP route inventory
 
@@ -357,7 +411,7 @@ in query strings.
 
 ## 10. Temporal workflow lifecycle
 
-The API can start, describe and request cancellation of the registered
+The API can start, describe, query progress, cooperatively pause/resume, and request cancellation of the registered
 `VerifyMemoryWorkflow`. The Temporal service and Worker are separate processes.
 
 Configure the API:
@@ -394,6 +448,14 @@ worker autoscaling and production Temporal cluster operations are not
 implemented. Cancellation is a request to Temporal, not proof that an
 external side effect was rolled back.
 
+
+The current verification workflow exposes:
+
+- `GET /v1/workflows/{workflow_id}/progress` — stage, completed steps and percentage.
+- `POST /v1/workflows/{workflow_id}/pause` — pause at the next safe stage boundary; an in-flight Activity is not interrupted.
+- `POST /v1/workflows/{workflow_id}/resume` — continue from the persisted workflow history.
+
+Pause/resume are cooperative workflow signals, not process suspension. Activity-level heartbeat checkpoints for long-running external work are not yet implemented.
 ## 11. Capability discovery and error semantics
 
 Call `GET /v1/capabilities` before using optional channels. A capability
@@ -421,3 +483,94 @@ rate limiting, audit logs, object ownership metadata, backup/restore, object
 lifecycle, outbox DLQ and per-projection task accounting, Temporal worker
 operations, memory-processing concurrency controls, Chinese retrieval and
 extraction evaluation, and measured p50/p95/load/failure-recovery results.
+
+
+## 2026-11-18 — Multi-user developer API onboarding (PR #51, Draft)
+
+The original single-process `MEMORY_API_KEY` setup above is a **legacy
+compatibility mode**, not the identity model for external developers. On an
+identity-enabled instance, developers first log in using the configured OIDC
+provider, choose a Workspace and use their authenticated Owner/Admin browser
+Session to create a scoped credential. This returns a secret **once only**;
+the database persists its hash, not the raw secret.
+
+**Bootstrap with the browser's authenticated Session** (send the HttpOnly
+session cookie plus the double-submit CSRF token, not the user password):
+
+```http
+POST /v1/identity/api-credentials
+X-Memory-Tenant: <your-workspace-id>
+X-CSRF-Token: <matching amc_csrf cookie>
+Cookie: amc_session=...; amc_csrf=...
+Content-Type: application/json
+
+{"name":"my-local-agent","scopes":["memory:read","memory:write"],
+ "expires_in_days":30}
+```
+
+Response 201 includes `credential_id`, `tenant_id` and `secret`. Save the
+secret privately: it will not be returned again. Owner/Admin Session is
+required for issuance, and only the issuing Principal may revoke it using
+`DELETE /v1/identity/api-credentials/{credential_id}` with the same Session and
+CSRF protection. An API Credential cannot mint a second API Credential.
+
+**Third-party SDK integration** (no browser or direct database access needed). The package has not yet been published to PyPI; for PR #51 verification, install the branch build. After publication, switch to the versioned PyPI command:
+
+```bash
+pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@feat/identity-foundation-schema-20261118'
+# After public release:
+# pip install 'agent-memory-core[api]>=0.1.0'
+export MEMORY_BASE_URL='https://your-memory-host.example'
+export MEMORY_TENANT_ID='<the-workspace-id>'
+export MEMORY_AGENT_TOKEN='<the-once-returned-amc-secret>'
+```
+
+```python
+import os
+from datetime import datetime, timezone
+from agent_memory_core.sdk import MemoryClient
+
+with MemoryClient(
+    os.environ["MEMORY_BASE_URL"],
+    os.environ["MEMORY_AGENT_TOKEN"],
+    tenant_id=os.environ["MEMORY_TENANT_ID"],
+) as memory:
+    print(memory.whoami())             # Current tenant and role
+    print(memory.capabilities())       # Do not assume optional channels
+    claim = memory.remember(
+        subject_id="user-1", predicate="preferred_language",
+        value={"language": "中文"}, source_id="agent:chat:001",
+        valid_from=datetime.now(timezone.utc).isoformat(),
+        idempotency_key="agent:chat:001:language",
+    )
+    print(memory.recall("user-1"))      # Canonical current claim
+    print(memory.search(query="语言偏好"))  # Search adapter must be enabled
+    print(memory.list_memories(include_superseded=True))
+    # Optional only when the Temporal capability is deployed:
+    if os.getenv("MEMORY_USE_TEMPORAL") == "1":
+        job = memory.verify_memory_async(claim["id"])
+        print(memory.workflow_status(job["workflow_id"]))
+    memory.forget(claim["id"])
+```
+
+For direct `curl` clients, send **both** headers on every identity-scoped
+request: `Authorization: Bearer <amc-secret>` and
+`X-Memory-Tenant: <workspace-id>`. A valid secret cannot select an
+unauthorized tenant. `GET /v1/identity/tenants` lets a client discover the
+single tenant associated with its API Credential.
+
+The SDK now exposes history browse, identity information, workspaces,
+async verification, workflow state and cancellation, in addition to existing
+memory operations, SSE events, webhooks, objects and search. All
+HTTP endpoints are documented by the runtime's `/openapi.json` and
+`/docs/swagger`.
+
+A complete external consumer project, installable independently of the server source tree, is maintained at [`examples/third_party_memory_agent`](../examples/third_party_memory_agent/README.md). Its CLI uses only `agent_memory_core.sdk.MemoryClient`; the Product E2E workflow builds the distributable wheel, provisions a short-lived credential through the real OIDC browser Session, installs the wheel into a fresh virtual environment, and runs that external project against the live API stack. This is the acceptance route for the “no internal imports / no direct database” requirement.
+
+**Important release boundary:** this contract and the PostgreSQL-backed
+SDK round-trip are under PR #51 acceptance. It is not a public hosted
+multi-tenant SaaS yet. Temporal verification requires its Worker and
+persistent backend; production API credentials need TLS, secure identity
+deployment, rate limiting and independent restore tests. An SDK client
+must never treat a timeout after a write as proof the write did not commit;
+use an idempotency key and read back.

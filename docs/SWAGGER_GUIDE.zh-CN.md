@@ -328,3 +328,14 @@ curl -X POST http://127.0.0.1:8765/v1/workflows/memory-verifications \
 响应中的 workflow_id 已由服务端加上租户前缀。后续使用完整 ID 调用 `GET /v1/workflows/{workflow_id}` 查询，或调用 `POST /v1/workflows/{workflow_id}/cancel` 请求取消。跨租户 workflow ID 会返回 404。
 
 目前只注册了 VerifyMemoryWorkflow。尚未实现任意 Workflow 注册、Signal/Update、通用长期任务调度、Worker 自动扩缩容和生产 Temporal 集群运维。取消工作流也不等于回滚已发生的外部副作用。
+
+
+### Durable Workflow 进度与暂停恢复
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/v1/workflows/{workflow_id}/progress` | 查询阶段、已完成步骤和进度百分比 |
+| POST | `/v1/workflows/{workflow_id}/pause` | 请求在下一安全阶段边界暂停 |
+| POST | `/v1/workflows/{workflow_id}/resume` | 从暂停状态继续 |
+
+暂停是协作式信号：不会强行中断正在执行的 Activity。当前两步核验工作流尚不代表通用长任务 Heartbeat 检查点已经完成。

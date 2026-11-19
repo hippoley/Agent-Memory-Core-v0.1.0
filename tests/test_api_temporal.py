@@ -13,6 +13,14 @@ class FakeWorkflowHandle:
         self.id=workflow_id
         self.result_run_id="run-001"
         self.cancelled=False
+        self.signals=[]
+    async def query(self, query_name):
+        assert query_name=="progress"
+        return {"stage":"VERIFYING_MEMORY","paused":False,
+                "completed_steps":0,"total_steps":2,"progress_percent":0,
+                "failure":None}
+    async def signal(self, signal_name):
+        self.signals.append(signal_name)
     async def describe(self):
         return SimpleNamespace(
             run_id="run-001",
@@ -63,7 +71,11 @@ def test_temporal_workflow_start_describe_cancel_and_tenant_scope():
     assert workflow_id=="tenant-a:check-001"
     assert body["status"]=="STARTED"
     assert fake.started[0][0]=="VerifyMemoryWorkflow"
-    assert fake.started[0][1]=={"tenant_id":"tenant-a","memory_id":memory_id}
+    assert fake.started[0][1]=={
+        "tenant_id":"tenant-a","memory_id":memory_id,
+        "principal_id":None,"session_id":None,"credential_id":None,
+        "membership_version":None,
+    }
     assert fake.started[0][3]=="agent-memory-core"
 
     described=client.get("/v1/workflows/"+workflow_id,headers=headers)
@@ -74,10 +86,26 @@ def test_temporal_workflow_start_describe_cancel_and_tenant_scope():
     assert cancelled.status_code==200,cancelled.text
     assert fake.handles[workflow_id].cancelled is True
 
+    progress=client.get("/v1/workflows/"+workflow_id+"/progress",headers=headers)
+    assert progress.status_code==200,progress.text
+    assert progress.json()["progress_percent"]==0
+    paused=client.post("/v1/workflows/"+workflow_id+"/pause",headers=headers)
+    assert paused.status_code==200,paused.text
+    assert paused.json()["pause_requested"] is True
+    resumed=client.post("/v1/workflows/"+workflow_id+"/resume",headers=headers)
+    assert resumed.status_code==200,resumed.text
+    assert fake.handles[workflow_id].signals==["pause","resume"]
+
     # Another tenant cannot inspect or cancel this execution.
     other,other_headers,_=make_client(tenant="tenant-b")
     assert other.get("/v1/workflows/"+workflow_id,headers=other_headers).status_code==404
     assert other.post("/v1/workflows/"+workflow_id+"/cancel",
+                      headers=other_headers).status_code==404
+    assert other.get("/v1/workflows/"+workflow_id+"/progress",
+                     headers=other_headers).status_code==404
+    assert other.post("/v1/workflows/"+workflow_id+"/pause",
+                      headers=other_headers).status_code==404
+    assert other.post("/v1/workflows/"+workflow_id+"/resume",
                       headers=other_headers).status_code==404
 
 

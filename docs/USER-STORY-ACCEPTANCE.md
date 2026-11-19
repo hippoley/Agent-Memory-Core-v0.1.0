@@ -21,7 +21,7 @@
 | S07 纠正 | 当前仅新事实；known_at=纠正前仍返回旧事实 | `test_user_story_e2e.py` | 真实数据库测试 |
 | S08 事件 | 分页、游标重连、SSE；远端 Webhook 持久重投 | `test_webhooks_integration.py`, `test_webhook_api_integration.py`, `test_s08_real_tls_receiver.py`, `test_sdk_contract.py` | 订阅、签名、退避、死信、重放已实现；独立进程 HTTPS 接收端与篡改签名的 401 见 `docs/S08-REAL-TLS-ACCEPTANCE.md`；真实公网接收端、证书轮换与接收端幂等**未验收** |
 | S09 故障恢复 | DB/Worker 故障后任务可重试、DLQ 重放、无静默丢数据 | `test_projection_deliveries.py`, `test_outbox_runtime.py`, `test_outbox_api_integration.py` | 投影与事务 Outbox 有界重试、死信、事务回滚和租户级 API 重放已有真实 PG 测试；真实进程杀死、数据库重启、积压恢复与备份恢复**未完成** |
-| S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py` | API 层已测；DB RLS **未实现** |
+| S10 隔离 | 不同租户不可读、写、引用、订阅他人资源 | `test_user_story_e2e.py`, `test_api_postgres_runtime.py`, `test_s10_principal_rls.py` | API 层已有测试；`001_principal_bound_rls.sql` 与双 LOGIN PostgreSQL 对抗测试已存在。当前是 opt-in 的 tenant-level DB fence；AGE 在 RLS 模式禁用，Worker/Temporal 身份及生产部署仍未完成独立验收。**不得标记 S10 完整 Done** |
 
 ## Provider 通道实测记录（2026-11-12，A100 单机）
 
@@ -98,3 +98,133 @@ Webhook、中文本地模型质量、DB RLS、备份恢复或 100 Agent 负载�
 - Real PostgreSQL checks live in `tests/test_predicate_cardinality.py`.
 - This domain-policy implementation does not replace the separate 200+ case
   Chinese extraction or retrieval-quality gates.
+
+
+## Identity Foundation — implementation slice 2 (2026-11-18)
+
+Implemented on the PR #51 branch:
+
+- `005_identity_foundation.sql`: Principal, external identity, tenant, membership,
+  opaque session hash, scoped API credential hash and audit-event tables.
+- `IdentityStore`: principal/tenant/membership creation; session issue, authenticate
+  and revoke; API credential issue, authenticate and revoke; active tenant discovery.
+- FastAPI identity mode via a separately provisioned `MEMORY_IDENTITY_DSN`.
+- Existing single-tenant Bearer key remains backward-compatible.
+- Identity mode supports session Bearer/cookie, scoped API credential, required
+  `X-Memory-Tenant`, live membership/role checks, reader write denial and API
+  credential scope enforcement.
+- Cookie mutation requests require CSRF double-submit validation.
+- `GET /v1/identity/tenants`, `GET /v1/identity/me`,
+  `POST /v1/auth/logout`.
+- Deployment role provisioning: `sql/postgresql/security/002_identity_service_role.sql`.
+- Automated tests: `tests/test_identity_foundation.py`,
+  `tests/test_identity_store.py`, `tests/test_identity_api.py`.
+
+The subsequent OIDC onboarding slice below implements discovery/PKCE/JWKS/callback,
+browser session-cookie issuance and first-owner bootstrap. Invitation onboarding,
+complete resource-level RBAC and arbitrary multi-tenant data-plane PostgreSQL
+isolation remain separate release gates. CI must pass on the latest head; skipped
+PostgreSQL or browser tests do not count as passes.
+
+
+## OIDC onboarding slice — implementation 2026-11-18
+
+Implemented on PR #51:
+
+- Browser Authorization Code + PKCE S256 start and callback routes.
+- Signed ten-minute HttpOnly transaction cookie; State and Nonce validation.
+- Provider Discovery issuer equality and HTTPS endpoint checks.
+- ID-token JWKS signature, Issuer, Audience, Expiry, Issued-at and Nonce verification.
+- Account identity is keyed only by issuer + subject; email is not an account-linking key.
+- Atomic Principal + External Identity + first Workspace + Owner Membership + Session creation.
+- Signup is disabled by default and requires explicit `MEMORY_OIDC_ALLOW_SIGNUP=1`.
+- HttpOnly Session cookie, readable CSRF double-submit cookie, selected-tenant cookie.
+- Observatory uses the browser session, tenant header and CSRF header; API Credential flow remains available.
+- Unit tests cover transaction tampering, expiry and state mismatch; API tests cover callback cookie issuance; PostgreSQL integration covers first login and identity reuse.
+
+### Unified browser-to-database acceptance (active PR #51 work)
+
+The Keycloak 26.2.5 test is the integration spine, not a second identity demo:
+real public self-registration → OIDC callback → atomic Principal/Workspace/Owner/
+Session provisioning → Observatory session restoration → live memory create →
+revision → active/history readback → soft-forget → reload → logout revocation.
+The same run then registers a second IdP user and checks distinct Principal and
+Workspace identity, cross-tenant read denial, cross-tenant switch denial, and
+empty active/history results in the second user's own workspace. The self-registered
+user also completes the Observatory UI create → revise → active/history readback →
+soft-forget flow in that newly provisioned workspace.
+
+The Observatory claim picker now updates the actual selected Memory ID used by
+revision and forget actions. Browser acceptance exercises the UI controls for
+create/revise/forget, then independently reads PostgreSQL-backed API results.
+This closes a prior UI-to-state gap where the picker changed presentation but did
+not update the mutation target.
+
+The first attempt at public self-registration exposed a false selector assumption:
+Keycloak 26.2.5's default registration template submits through an input inside
+#kc-register-form and does not provide #kc-register. The test now uses the form's
+actual submit semantics. Revision timestamps are generated independently and
+monotonically rather than reusing one timestamp for both versions.
+
+### Latest verified CI evidence (2026-11-18)
+
+All seven workflow groups completed successfully on candidate SHA
+`5c8baa3d8a8ed37735da0d6387aed2097cb0f012`:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| Pytest + wheel | [44234253197](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253197) | pytest + wheel build passed |
+| Lite / Standard / Full lifecycle | [44234253139](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253139) | all three profiles passed |
+| PostgreSQL / AGE / pgvector | [44234253226](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253226) | passed |
+| Temporal + S10 RLS adversarial acceptance | [44234253123](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253123) | Temporal workflow passed; Temporal integration 1/1 and S10 PostgreSQL RLS test 2/2 passed |
+| Extended AGE / Temporal smoke | [44234253280](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253280) | passed |
+| Keycloak OIDC Browser Acceptance | [44234253170](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253170) | real Keycloak + Chromium passed; 10 tests |
+| Observatory Browser Acceptance | [44234253390](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/runs/44234253390) | Chromium + Keycloak jobs passed |
+
+The two browser workflows prove the integrated local-provider path, including
+self-registration of two independent users, automatic Principal/Workspace/Owner/
+Session provisioning, Observatory create/revise/soft-forget through UI controls,
+PostgreSQL-backed active/history readback, tenant isolation, session restoration
+and logout revocation. Failure-only diagnostic steps are skipped on successful
+jobs; no required acceptance job above was skipped.
+
+The follow-on Temporal security change is also verified on this SHA:
+PostgreSQL-backed Temporal Activities reject a mismatched tenant under the
+operator-installed principal-bound RLS registry, and reject an administrative
+login when `MEMORY_TEMPORAL_REQUIRE_RLS=1`. The dedicated Temporal CI job
+installed the optional Temporal dependency and ran the adversarial S10 test;
+both tests passed.
+
+This closes the local Keycloak + Observatory browser acceptance gate and the
+single-tenant-bound Temporal Activity security check for this candidate SHA.
+It does **not** close the independent release gates listed below: external-provider
+interoperability, invitation/member management, full resource-level RBAC,
+shared multi-tenant Worker/Temporal credential routing, production RLS rollout,
+public TLS webhook operations, model quality, process/DB crash recovery,
+backup/restore, load and production security review.
+
+### Follow-on security integration (new code; revalidation pending)
+
+The Temporal PostgreSQL Activities now call
+`PostgresMemory.assert_database_tenant()` before both claim verification and
+verification-receipt insertion. A workflow's `tenant_id` is no longer treated
+as authority when the operator-installed principal-bound RLS registry is
+present. Production must set `MEMORY_TEMPORAL_REQUIRE_RLS=1`; a missing RLS
+installation then fails closed. The S10 adversarial PostgreSQL test now checks
+that a tenant-A database login can verify and write only tenant-A receipts,
+cannot read or write tenant-B data, and that an administrative login is rejected
+when the production flag is enabled.
+
+This is a verified single-tenant-bound worker safety step, not yet a
+complete multi-tenant Temporal worker router. On candidate
+`5c8baa3d8a8ed37735da0d6387aed2097cb0f012`, the Temporal CI job ran the
+Temporal integration test (1 passed) and the PostgreSQL RLS adversarial test
+(2 passed). One worker currently has one configured database DSN; tenant-aware
+credential routing or per-tenant worker/task-queue isolation remains required
+before shared multi-tenant production operation.
+
+Still separate release gates: live external-provider interoperability beyond
+Keycloak, invitation onboarding, member administration, provider logout,
+multi-provider account linking, complete resource-level RBAC, arbitrary
+multi-tenant data-plane PostgreSQL isolation including Worker/Temporal identity,
+production secret rotation/rate limiting, and independent security review.

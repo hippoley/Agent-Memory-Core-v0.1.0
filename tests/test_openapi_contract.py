@@ -7,6 +7,14 @@ from agent_memory_core.api import create_app
 
 EXPECTED={
     "/v1/health":{"get"},
+    "/v1/auth/oidc/login":{"get"},
+    "/v1/auth/oidc/callback":{"get"},
+    "/v1/identity/me":{"get"},
+    "/v1/identity/tenants":{"get","post"},
+    "/v1/identity/select-tenant":{"post"},
+    "/v1/identity/api-credentials":{"post"},
+    "/v1/identity/api-credentials/{credential_id}":{"delete"},
+    "/v1/auth/logout":{"post"},
     "/v1/ready":{"get"},
     "/v1/capabilities":{"get"},
     "/v1/evaluation/search-config":{"get"},
@@ -37,6 +45,13 @@ EXPECTED={
     "/v1/workflows/memory-verifications":{"post"},
     "/v1/workflows/{workflow_id}":{"get"},
     "/v1/workflows/{workflow_id}/cancel":{"post"},
+    "/v1/workflows/{workflow_id}/progress":{"get"},
+    "/v1/workflows/{workflow_id}/pause":{"post"},
+    "/v1/workflows/{workflow_id}/resume":{"post"},
+    "/v1/tasks":{"get","post"},
+    "/v1/tasks/{task_id}":{"get"},
+    "/v1/tasks/{task_id}/checkpoints":{"post"},
+    "/v1/tasks/{task_id}/status":{"post"},
 }
 
 def spec():
@@ -59,7 +74,7 @@ def test_every_nonpublic_operation_has_bearer_security():
     assert bearer
     for path,operations in document["paths"].items():
         for operation in operations.values():
-            if path=="/v1/health":
+            if path=="/v1/health" or path.startswith("/v1/auth/oidc/"):
                 continue
             assert any(b in item for item in operation.get("security",[]) for b in bearer), (path,operation)
 

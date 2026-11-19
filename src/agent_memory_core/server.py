@@ -10,6 +10,15 @@ from .api import create_app
 from .objects import ObjectStore, S3ObjectStore
 
 
+def identity_store_factory():
+    """Open the separately provisioned identity control-plane connection."""
+    from .identity import IdentityStore
+    dsn=os.getenv("MEMORY_IDENTITY_DSN")
+    if not dsn:
+        raise RuntimeError("MEMORY_IDENTITY_DSN is required for identity-backed auth")
+    return IdentityStore(dsn)
+
+
 def secure_store_factory():
     """Open a tenant-login database connection; reject admin or mismatched DSNs."""
     from .postgres import PostgresMemory
@@ -183,4 +192,5 @@ app = create_app(store_factory=secure_store_factory if rls_mode() else None,
                  temporal_client_factory=temporal_client_factory if flags["temporal"] else None,
                  temporal_task_queue=os.getenv("MEMORY_TEMPORAL_TASK_QUEUE","agent-memory-core"),
                  webhook_signing_key=os.getenv("MEMORY_WEBHOOK_SIGNING_KEY"),
-                 webhook_allowed_hosts={x.strip().lower() for x in os.getenv("MEMORY_WEBHOOK_ALLOWED_HOSTS","").split(",") if x.strip()})
+                 webhook_allowed_hosts={x.strip().lower() for x in os.getenv("MEMORY_WEBHOOK_ALLOWED_HOSTS","").split(",") if x.strip()},
+                 identity_store_factory=identity_store_factory if os.getenv("MEMORY_IDENTITY_DSN") else None)

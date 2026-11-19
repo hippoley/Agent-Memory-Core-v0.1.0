@@ -8,8 +8,10 @@ import os
 import asyncio
 import json
 import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -221,6 +223,33 @@ class MemoryVerificationRequest(BaseModel):
     workflow_id: str | None = Field(default=None, min_length=1, max_length=255, description="Optional stable Temporal workflow ID; generated if omitted.")
 
 
+class DurableTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_type: str = Field(min_length=1, max_length=120)
+    input: dict[str, Any]
+    workflow_id: str | None = Field(default=None, max_length=255)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class DurableCheckpointWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=0)
+    checkpoint: dict[str, Any]
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    progress_completed: int = Field(default=0, ge=0)
+    progress_total: int = Field(default=0, ge=0)
+    artifact_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    effect_key: str | None = Field(default=None, min_length=1, max_length=255)
+    effect_request: dict[str, Any] | None = None
+
+
+class DurableTaskStatusWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+
+
 class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
@@ -232,11 +261,29 @@ class SearchRequest(BaseModel):
     known_at: str | None = Field(default=None, description="Timezone-aware ISO-8601 knowledge-time filter.")
 
 
+class TenantCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=120)
+
+
+class TenantSelect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tenant_id: str = Field(min_length=1, max_length=255)
+
+
+class CredentialCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    scopes: list[str] = Field(min_length=1, max_length=8)
+    expires_in_days: int | None = Field(default=90, ge=1, le=365)
+
+
 def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                search_factory=None, object_store_factory=None, capability_flags=None,
                temporal_client_factory=None, temporal_task_queue=None, memory_extractor_factory=None,
                embedder=None, auto_embed=True,
-               webhook_signing_key=None, webhook_allowed_hosts=None):
+               webhook_signing_key=None, webhook_allowed_hosts=None,
+               identity_store_factory=None):
     """Create a single-tenant app. Tenant identity is bound server-side to the API key.
 
     ``embedder`` is an optional provider-backed object exposing ``model_id``,
@@ -247,8 +294,11 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     """
     key = api_key if api_key is not None else os.getenv("MEMORY_API_KEY")
     tenant = tenant_id if tenant_id is not None else os.getenv("MEMORY_TENANT_ID")
-    if not key or len(key) < 24 or not tenant:
-        raise RuntimeError("MEMORY_API_KEY (24+ chars) and MEMORY_TENANT_ID required")
+    legacy_auth_enabled = bool(key and len(key) >= 24 and tenant)
+    if not legacy_auth_enabled and identity_store_factory is None:
+        raise RuntimeError(
+            "Configure either MEMORY_API_KEY (24+ chars) + MEMORY_TENANT_ID "
+            "or an identity_store_factory")
 
     if store_factory is None:
         def store_factory():
@@ -272,15 +322,279 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         description="API key issued by the service operator. Send: Authorization: Bearer <key>.",
     )
 
-    def auth(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-        if credentials is None or credentials.scheme.lower() != "bearer":
+    def auth(request: Request,
+             credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        presented = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else None
+        if legacy_auth_enabled and presented and hmac.compare_digest(presented, key):
+            request.state.identity = {"auth_type": "legacy", "tenant_id": tenant}
+            return tenant
+
+        if identity_store_factory is not None:
+            selected_tenant = request.headers.get("X-Memory-Tenant")
+            session_cookie = request.cookies.get("amc_session")
+            csrf_cookie = request.cookies.get("amc_csrf")
+            csrf_header = request.headers.get("X-CSRF-Token")
+            token = session_cookie or presented
+            if not token or not selected_tenant:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Session or API credential and X-Memory-Tenant are required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if session_cookie and request.method not in ("GET", "HEAD", "OPTIONS"):
+                if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+                    raise HTTPException(status_code=403, detail="CSRF validation failed")
+            identity_store = identity_store_factory()
+            try:
+                identity = identity_store.authenticate_api_credential(secret=token) if presented and not session_cookie else None
+                auth_type = "api_credential" if identity is not None else "session"
+                if identity is None:
+                    identity = identity_store.authenticate_session(
+                        token=token, tenant_id=selected_tenant)
+                if identity is None or identity.get("tenant_id") != selected_tenant:
+                    raise HTTPException(status_code=401, detail="Invalid or expired identity")
+                method = request.method.upper()
+                safe_method = method in ("GET", "HEAD", "OPTIONS")
+                role = identity.get("role")
+                if role not in ("owner", "admin", "editor", "reader"):
+                    raise HTTPException(status_code=403, detail="Membership role is invalid")
+                if not safe_method and role == "reader":
+                    raise HTTPException(status_code=403, detail="Reader membership is read-only")
+                scopes = identity.get("scopes")
+                if scopes is not None:
+                    required_scope = "memory:read" if safe_method else "memory:write"
+                    if required_scope not in scopes and "memory:*" not in scopes:
+                        raise HTTPException(status_code=403, detail="Credential scope is insufficient")
+                identity["auth_type"] = auth_type
+                request.state.identity = identity
+                return selected_tenant
+            finally:
+                identity_store.close()
+
+        if presented is None:
             raise HTTPException(
                 status_code=401, detail="Bearer token required",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        if not hmac.compare_digest(credentials.credentials, key):
-            raise HTTPException(status_code=403, detail="Invalid credential")
-        return tenant
+        raise HTTPException(status_code=403, detail="Invalid credential")
+
+    @app.get("/v1/auth/oidc/login", tags=["Identity"], summary="Start OIDC browser login")
+    def oidc_login():
+        from .oidc import OIDCClient, OIDCConfig
+        try:
+            config = OIDCConfig.from_env()
+            authorization_url, transaction_cookie = OIDCClient(config).begin()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="OIDC login is not configured") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="OIDC provider discovery failed") from exc
+        response = RedirectResponse(authorization_url, status_code=302)
+        response.set_cookie(
+            "amc_oidc_tx", transaction_cookie, max_age=600, path="/v1/auth/oidc",
+            httponly=True, secure=config.cookie_secure, samesite="lax")
+        return response
+
+    @app.get("/v1/auth/oidc/callback", tags=["Identity"], summary="Complete OIDC browser login")
+    def oidc_callback(request: Request, code: str | None = None, state: str | None = None):
+        from .oidc import OIDCClient, OIDCConfig
+        if not code or not state or not request.cookies.get("amc_oidc_tx"):
+            raise HTTPException(status_code=400, detail="OIDC callback is incomplete")
+        try:
+            config = OIDCConfig.from_env()
+            client = OIDCClient(config)
+            transaction = client.verify_transaction(request.cookies["amc_oidc_tx"], state)
+            claims = client.exchange_and_verify(code=code, transaction=transaction)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail="OIDC login is not configured") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail="OIDC authentication failed") from exc
+
+        identity_store = identity_store_factory() if identity_store_factory else None
+        if identity_store is None:
+            raise HTTPException(status_code=503, detail="Identity control plane is unavailable")
+        try:
+            login = identity_store.complete_oidc_login(
+                issuer=config.issuer, subject=claims["sub"],
+                email=claims.get("email") if isinstance(claims.get("email"), str) else None,
+                email_verified=claims.get("email_verified") is True,
+                display_name=(claims.get("name") if isinstance(claims.get("name"), str) else
+                              claims.get("preferred_username") if isinstance(claims.get("preferred_username"), str) else None),
+                allow_signup=config.allow_signup, bootstrap_workspace=True,
+                user_agent=request.headers.get("user-agent"))
+        except LookupError as exc:
+            raise HTTPException(status_code=403, detail="Account is not provisioned for this identity") from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail="Account is not active") from exc
+        finally:
+            identity_store.close()
+
+        csrf_token = secrets.token_urlsafe(24)
+        response = RedirectResponse("/dashboard/observatory.html", status_code=303)
+        response.delete_cookie("amc_oidc_tx", path="/v1/auth/oidc",
+                               secure=config.cookie_secure, samesite="lax")
+        response.set_cookie(
+            "amc_session", login["token"], max_age=43200, path="/",
+            httponly=True, secure=config.cookie_secure, samesite="lax")
+        response.set_cookie(
+            "amc_csrf", csrf_token, max_age=43200, path="/",
+            httponly=False, secure=config.cookie_secure, samesite="lax")
+        response.set_cookie(
+            "amc_tenant", login["tenants"][0]["tenant_id"], max_age=43200, path="/",
+            httponly=False, secure=config.cookie_secure, samesite="lax")
+        return response
+
+    @app.get("/v1/identity/tenants", tags=["Identity"], summary="List active tenant memberships")
+    def identity_tenants(request: Request,
+                         credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        token = request.cookies.get("amc_session")
+        if not token and credentials and credentials.scheme.lower() == "bearer":
+            token = credentials.credentials
+        if not token or identity_store_factory is None:
+            raise HTTPException(status_code=401, detail="Identity session or API credential required")
+        identity_store = identity_store_factory()
+        try:
+            tenants = identity_store.list_session_tenants(token=token)
+            if not tenants:
+                credential = identity_store.authenticate_api_credential(secret=token)
+                if credential is not None:
+                    tenants = [{
+                        "tenant_id": credential["tenant_id"],
+                        "display_name": credential["tenant_id"],
+                        "role": credential["role"],
+                        "membership_version": credential["membership_version"],
+                    }]
+            if not tenants:
+                raise HTTPException(status_code=401, detail="Invalid or expired identity")
+            return {"items": tenants, "count": len(tenants)}
+        finally:
+            identity_store.close()
+
+    @app.post("/v1/identity/tenants", status_code=201, tags=["Identity"],
+              summary="Create a workspace owned by the current principal")
+    def identity_create_tenant(item: TenantCreate, request: Request, response: Response,
+                               t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        principal_id = identity.get("principal_id")
+        if identity.get("auth_type") != "session" or not principal_id:
+            raise HTTPException(status_code=403, detail="Workspace creation requires a browser session")
+        display_name = item.display_name.strip()
+        if not display_name:
+            raise HTTPException(status_code=422, detail="Workspace display name cannot be blank")
+        tenant_id = "ws-" + uuid4().hex
+        identity_store = identity_store_factory()
+        try:
+            identity_store.create_tenant(
+                tenant_id=tenant_id, display_name=display_name,
+                owner_principal_id=principal_id)
+        finally:
+            identity_store.close()
+        secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
+        response.set_cookie("amc_tenant", tenant_id, max_age=43200, path="/",
+                            httponly=False, secure=secure_cookie, samesite="lax")
+        return {"tenant_id": tenant_id, "display_name": display_name,
+                "role": "owner", "created": True}
+
+    @app.post("/v1/identity/select-tenant", tags=["Identity"],
+              summary="Switch the current browser session workspace")
+    def identity_select_tenant(item: TenantSelect, request: Request, response: Response,
+                               t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        token = request.cookies.get("amc_session")
+        if identity.get("auth_type") != "session" or not token:
+            raise HTTPException(status_code=403, detail="Workspace switching requires a browser session")
+        identity_store = identity_store_factory()
+        try:
+            memberships = identity_store.list_session_tenants(token=token)
+            selected = next((row for row in memberships
+                             if row.get("tenant_id") == item.tenant_id), None)
+            if selected is None:
+                raise HTTPException(status_code=403, detail="Principal is not an active member of this workspace")
+        finally:
+            identity_store.close()
+        secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
+        response.set_cookie("amc_tenant", item.tenant_id, max_age=43200, path="/",
+                            httponly=False, secure=secure_cookie, samesite="lax")
+        return {"tenant_id": item.tenant_id, "display_name": selected.get("display_name"),
+                "role": selected.get("role"), "selected": True}
+
+    @app.post("/v1/identity/api-credentials", status_code=201, tags=["Identity"],
+              summary="Create a tenant-scoped API credential for SDK integration")
+    def identity_create_api_credential(item: CredentialCreate, request: Request,
+                                       t: str = Depends(auth)):
+        # API keys must not mint replacement credentials. Explicit human
+        # sessions own the bootstrap step and receive the secret exactly once.
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") != "session" or identity.get("role") not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Owner/Admin browser session required")
+        if not item.name.strip():
+            raise HTTPException(status_code=422, detail="Credential name cannot be blank")
+        allowed = {"memory:read", "memory:write", "memory:*"}
+        if any(scope not in allowed for scope in item.scopes) or len(set(item.scopes)) != len(item.scopes):
+            raise HTTPException(status_code=422, detail="Invalid or duplicate credential scope")
+        from datetime import timedelta
+        store = identity_store_factory()
+        try:
+            issued = store.issue_api_credential(
+                principal_id=identity["principal_id"], tenant_id=t,
+                name=item.name.strip(), scopes=item.scopes,
+                ttl=timedelta(days=item.expires_in_days) if item.expires_in_days else None,
+            )
+            return {**issued, "tenant_id": t, "name": item.name.strip(),
+                    "scopes": item.scopes, "expires_in_days": item.expires_in_days}
+        finally:
+            store.close()
+
+    @app.delete("/v1/identity/api-credentials/{credential_id}", tags=["Identity"],
+                summary="Revoke one of your API credentials immediately")
+    def identity_revoke_api_credential(credential_id: str, request: Request,
+                                      t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") != "session":
+            raise HTTPException(status_code=403, detail="Browser session required")
+        cid = require_uuid(credential_id)
+        store = identity_store_factory()
+        try:
+            revoked = store.revoke_api_credential(
+                credential_id=cid, principal_id=identity["principal_id"])
+            if not revoked:
+                raise HTTPException(status_code=404, detail="Credential not found")
+            return {"credential_id": cid, "revoked": True}
+        finally:
+            store.close()
+
+    @app.get("/v1/identity/me", tags=["Identity"], summary="Get the authenticated principal and tenant membership")
+    def identity_me(request: Request, t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") == "legacy":
+            return {"tenant_id": t, "auth_type": "legacy_bearer"}
+        return {
+            "principal_id": identity.get("principal_id"),
+            "tenant_id": t,
+            "role": identity.get("role"),
+            "membership_version": identity.get("membership_version"),
+            "auth_type": identity.get("auth_type"),
+        }
+
+    @app.post("/v1/auth/logout", tags=["Identity"], summary="Revoke the current session")
+    def identity_logout(request: Request, response: Response,
+                        t: str = Depends(auth)):
+        identity = getattr(request.state, "identity", None) or {}
+        if identity.get("auth_type") == "session" and identity_store_factory is not None:
+            identity_store = identity_store_factory()
+            try:
+                identity_store.revoke_session(
+                    session_id=identity["session_id"],
+                    principal_id=identity["principal_id"])
+            finally:
+                identity_store.close()
+        secure_cookie = os.getenv("MEMORY_COOKIE_SECURE", "1") == "1"
+        response.delete_cookie("amc_session", path="/", httponly=True,
+                                secure=secure_cookie, samesite="lax")
+        response.delete_cookie("amc_csrf", path="/", secure=secure_cookie, samesite="lax")
+        response.delete_cookie("amc_tenant", path="/", secure=secure_cookie, samesite="lax")
+        response.delete_cookie("amc_oidc_tx", path="/v1/auth/oidc", httponly=True,
+                                secure=secure_cookie, samesite="lax")
+        return {"logged_out": True}
 
     @app.get(
         "/v1/health", tags=["System"], summary="Health check", response_model=HealthResponse,
@@ -1128,6 +1442,7 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         responses={503: {"description": "Temporal client is not configured or unavailable."}},
     )
     async def start_memory_verification(item: MemoryVerificationRequest,
+                                        request: Request,
                                         t: str = Depends(auth)):
         if temporal_client_factory is None or not temporal_task_queue:
             raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
@@ -1135,13 +1450,27 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             memory_id=str(UUID(item.memory_id))
             client=await temporal_client_factory()
             workflow_id=t+":"+(item.workflow_id or "memory-verify-"+str(uuid4()))
+            identity = getattr(request.state, "identity", None) or {}
+            if identity.get("auth_type") == "legacy":
+                if os.getenv("MEMORY_TEMPORAL_REQUIRE_RLS", "0") == "1":
+                    raise HTTPException(status_code=403, detail="Legacy credentials cannot enqueue revocable identity-bound work")
+            workflow_request = {
+                "tenant_id": t,
+                "memory_id": memory_id,
+                "principal_id": identity.get("principal_id"),
+                "session_id": identity.get("session_id"),
+                "credential_id": identity.get("credential_id"),
+                "membership_version": identity.get("membership_version"),
+            }
             handle=await client.start_workflow(
                 "VerifyMemoryWorkflow",
-                {"tenant_id":t,"memory_id":memory_id},
+                workflow_request,
                 id=workflow_id,task_queue=temporal_task_queue,
             )
             return {"workflow_id":handle.id,"run_id":getattr(handle,"result_run_id",None),
                     "workflow_type":"VerifyMemoryWorkflow","status":"STARTED"}
+        except HTTPException:
+            raise
         except ValueError as exc:
             raise HTTPException(status_code=422,detail="memory_id must be a valid UUID")
         except Exception:
@@ -1184,6 +1513,164 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
         except Exception:
             raise HTTPException(status_code=503,detail="Temporal workflow service is unavailable")
+
+    @app.get(
+        "/v1/workflows/{workflow_id}/progress", tags=["Workflows"],
+        summary="Read durable workflow progress",
+    )
+    async def workflow_progress(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            progress=await client.get_workflow_handle(workflow_id).query("progress")
+            return {"workflow_id":workflow_id,**progress}
+        except (KeyError, LookupError):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow progress is unavailable")
+
+    @app.post(
+        "/v1/workflows/{workflow_id}/pause", tags=["Workflows"],
+        summary="Pause a workflow at its next safe stage boundary",
+    )
+    async def pause_workflow(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            await client.get_workflow_handle(workflow_id).signal("pause")
+            return {"workflow_id":workflow_id,"pause_requested":True,
+                    "semantics":"takes effect at the next safe stage boundary"}
+        except (KeyError, LookupError):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow pause is unavailable")
+
+    @app.post(
+        "/v1/workflows/{workflow_id}/resume", tags=["Workflows"],
+        summary="Resume a paused workflow",
+    )
+    async def resume_workflow(workflow_id: str,t: str = Depends(auth)):
+        if not workflow_id.startswith(t+":"):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        if temporal_client_factory is None or not temporal_task_queue:
+            raise HTTPException(status_code=503,detail="Temporal workflow runtime is not configured")
+        try:
+            client=await temporal_client_factory()
+            await client.get_workflow_handle(workflow_id).signal("resume")
+            return {"workflow_id":workflow_id,"resume_requested":True}
+        except (KeyError, LookupError):
+            raise HTTPException(status_code=404,detail="Temporal workflow execution not found")
+        except Exception:
+            raise HTTPException(status_code=503,detail="Temporal workflow resume is unavailable")
+
+    @app.post("/v1/tasks", status_code=201, tags=["Durable Tasks"],
+                  summary="Create an idempotent durable business task")
+    def create_durable_task(item: DurableTaskCreate, request: Request,
+                            t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore, TaskConflict
+        db=store_factory()
+        try:
+            identity=getattr(request.state,"identity",None) or {}
+            tasks=DurableTaskStore(db.conn)
+            return tasks.create_task(
+                tenant_id=t,task_type=item.task_type,input=item.input,
+                created_by_principal_id=identity.get("principal_id"),
+                workflow_id=item.workflow_id,idempotency_key=item.idempotency_key,
+            )
+        except TaskConflict as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.get("/v1/tasks", tags=["Durable Tasks"],
+             summary="List durable tasks in the authenticated tenant")
+    def list_durable_tasks(limit: int = 50, offset: int = 0,
+                           t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        db=store_factory()
+        try:
+            return {"items":DurableTaskStore(db.conn).list_tasks(
+                tenant_id=t,limit=limit,offset=offset)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.get("/v1/tasks/{task_id}", tags=["Durable Tasks"],
+             summary="Read a durable task and its latest checkpoint")
+    def get_durable_task(task_id: str, t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            task=DurableTaskStore(db.conn).get_task(tenant_id=t,task_id=task_id)
+            if task is None:
+                raise HTTPException(status_code=404,detail="Task not found")
+            return task
+        finally:
+            db.close()
+
+    @app.post("/v1/tasks/{task_id}/checkpoints", status_code=201,
+              tags=["Durable Tasks"],
+              summary="Commit a versioned checkpoint and Outbox intents atomically")
+    def commit_durable_checkpoint(task_id: str, item: DurableCheckpointWrite,
+                                   t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore, TaskConflict
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            return DurableTaskStore(db.conn).commit_checkpoint(
+                tenant_id=t,task_id=task_id,expected_version=item.expected_version,
+                checkpoint=item.checkpoint,idempotency_key=item.idempotency_key,
+                progress_completed=item.progress_completed,
+                progress_total=item.progress_total,
+                artifact_sha256=item.artifact_sha256,
+                effect_key=item.effect_key,effect_request=item.effect_request,
+            )
+        except LookupError:
+            raise HTTPException(status_code=404,detail="Task not found")
+        except TaskConflict as exc:
+            raise HTTPException(status_code=409,detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.post("/v1/tasks/{task_id}/status", tags=["Durable Tasks"],
+              summary="Advance a durable task lifecycle state")
+    def update_durable_task_status(task_id: str, item: DurableTaskStatusWrite,
+                                   t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        try:
+            task_id=str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422,detail="task_id must be a UUID")
+        db=store_factory()
+        try:
+            updated=DurableTaskStore(db.conn).set_status(
+                tenant_id=t,task_id=task_id,status=item.status,
+                result=item.result,error=item.error)
+            if not updated:
+                raise HTTPException(status_code=404,detail="Task not found or already terminal")
+            return {"task_id":task_id,"status":item.status}
+        except ValueError as exc:
+            raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
 
     @app.post(
         "/v1/search", tags=["Retrieval"], summary="Hybrid memory search",

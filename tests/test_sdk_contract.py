@@ -168,3 +168,108 @@ def test_sdk_rejects_path_traversal_and_encodes_reserved_characters():
         assert sdk.recall("卧室 #1?")["items"]==[]
     assert len(requests)==1
     assert "%23" in requests[0] and "%3F" in requests[0]
+
+
+def test_sdk_scoped_credential_can_call_full_memory_workflow():
+    calls = []
+    tenant = "workspace-api-user"
+    memory_id = "123e4567-e89b-12d3-a456-426614174000"
+    def server(request):
+        calls.append((request.method, request.url.path, request))
+        assert request.headers["authorization"] == "Bearer amc_scoped_key"
+        assert request.headers["x-memory-tenant"] == tenant
+        if request.url.path == "/v1/identity/me":
+            return httpx.Response(200, json={"tenant_id":tenant,"auth_type":"api_credential"})
+        if request.url.path == "/v1/identity/tenants":
+            return httpx.Response(200, json={"items":[{"tenant_id":tenant}],"count":1})
+        if request.url.path == "/v1/memories" and request.method == "GET":
+            assert request.url.params["include_superseded"] == "true"
+            return httpx.Response(200, json={"items":[{"id":memory_id}]})
+        if request.url.path == "/v1/workflows/memory-verifications":
+            assert json.loads(request.content)["memory_id"] == memory_id
+            return httpx.Response(202, json={"workflow_id":tenant+":verify-1","status":"STARTED"})
+        if request.url.path == "/v1/workflows/"+tenant+":verify-1":
+            return httpx.Response(200, json={"workflow_id":tenant+":verify-1","status":"COMPLETED"})
+        if request.url.path.endswith("/cancel"):
+            return httpx.Response(200, json={"cancel_requested":True})
+        if request.url.path.endswith("/progress"):
+            return httpx.Response(200,json={"stage":"VERIFYING_MEMORY","progress_percent":50})
+        if request.url.path.endswith("/pause"):
+            return httpx.Response(200,json={"pause_requested":True})
+        if request.url.path.endswith("/resume"):
+            return httpx.Response(200,json={"resume_requested":True})
+        return httpx.Response(404, json={"detail":"missing"})
+    with MemoryClient("https://memory.example.test","amc_scoped_key",
+                      tenant_id=tenant,transport=httpx.MockTransport(server)) as sdk:
+        assert sdk.whoami()["auth_type"] == "api_credential"
+        assert sdk.workspaces()["items"][0]["tenant_id"] == tenant
+        assert sdk.list_memories(include_superseded=True)["items"][0]["id"] == memory_id
+        started = sdk.verify_memory_async(memory_id,workflow_id="verify-1")
+        assert sdk.workflow_status(started["workflow_id"])["status"] == "COMPLETED"
+        assert sdk.workflow_progress(started["workflow_id"])["progress_percent"] == 50
+        assert sdk.pause_workflow(started["workflow_id"])["pause_requested"]
+        assert sdk.resume_workflow(started["workflow_id"])["resume_requested"]
+        assert sdk.cancel_workflow(started["workflow_id"])["cancel_requested"]
+    assert len(calls) == 9
+
+
+def test_scoped_sdk_tenant_is_required_by_identity_gateway():
+    def server(request):
+        if request.headers.get("x-memory-tenant") != "tenant-a":
+            return httpx.Response(401,json={"detail":"X-Memory-Tenant required"})
+        return httpx.Response(200,json={"tenant_id":"tenant-a"})
+    with MemoryClient("http://memory.local","amc_key",
+                      transport=httpx.MockTransport(server)) as sdk:
+        with pytest.raises(MemoryAPIError) as exc:
+            sdk.whoami()
+    assert exc.value.status_code == 401
+    with MemoryClient("http://memory.local","amc_key",tenant_id="tenant-a",
+                      transport=httpx.MockTransport(server)) as sdk:
+        assert sdk.whoami()["tenant_id"] == "tenant-a"
+
+
+def test_sdk_evidence_objects_are_binary_and_tenant_scoped():
+    import hashlib
+    binary = b"floorplan-evidence-\x00\x01"
+    digest = hashlib.sha256(binary).hexdigest()
+    calls = []
+    def server(request):
+        calls.append(request)
+        assert request.headers["x-memory-tenant"] == "tenant-evidence"
+        if request.method == "PUT":
+            assert request.url.path == "/v1/objects"
+            assert request.headers["content-type"] == "application/octet-stream"
+            assert request.content == binary
+            return httpx.Response(201,json={"sha256":digest,"size":len(binary)})
+        assert request.method == "GET"
+        assert request.url.path == "/v1/objects/"+digest
+        return httpx.Response(200,content=binary,
+                              headers={"content-type":"application/octet-stream"})
+
+    with MemoryClient("https://memory.example","amc_evidence",
+                      tenant_id="tenant-evidence",
+                      transport=httpx.MockTransport(server)) as sdk:
+        assert sdk.upload_object(binary)["sha256"] == digest
+        assert sdk.download_object(digest) == binary
+        with pytest.raises(ValueError):
+            sdk.download_object("../invalid")
+    assert len(calls) == 2
+
+
+def test_sdk_revise_maps_to_replace_contract():
+    calls=[]
+    def server(request):
+        calls.append(request)
+        assert request.method=="POST"
+        assert request.url.path=="/v1/memories"
+        payload=json.loads(request.content)
+        assert payload["replaces_id"]=="old-memory-id"
+        assert payload["value"]=={"language":"Chinese"}
+        return httpx.Response(201,json={"id":"new-memory-id"})
+    with MemoryClient("https://memory.example","amc_key",
+                      transport=httpx.MockTransport(server)) as sdk:
+        result=sdk.revise("old-memory-id",subject_id="user-1",
+            predicate="preferred_language",value={"language":"Chinese"},
+            source_id="test:revision",valid_from="2026-11-18T00:00:00Z")
+    assert result["id"]=="new-memory-id"
+    assert len(calls)==1

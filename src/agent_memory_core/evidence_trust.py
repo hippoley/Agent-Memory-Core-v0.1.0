@@ -208,16 +208,30 @@ def verify_and_consume_evidence(
 
     with conn.transaction():
         row = conn.execute(
-            """SELECT public_key, allowed_sources, allowed_tenants, audience,
-                      not_before, expires_at, revoked_at
-               FROM memory_evidence_producer_keys
-               WHERE issuer=%s AND key_id=%s
-               FOR SHARE""",
-            (proof.issuer, proof.key_id),
+            """SELECT producer_key.public_key, producer_key.allowed_sources,
+                      producer_key.allowed_tenants, producer_key.audience,
+                      producer_key.not_before, producer_key.expires_at,
+                      producer_key.revoked_at, principal.status,
+                      principal.principal_type, tenant.status
+               FROM memory_evidence_producer_keys AS producer_key
+               JOIN memory_principals AS principal
+                 ON principal.principal_id=producer_key.principal_id
+               JOIN memory_tenants AS tenant ON tenant.tenant_id=%s
+               WHERE producer_key.issuer=%s AND producer_key.key_id=%s
+               FOR SHARE OF producer_key, principal, tenant""",
+            (item.tenant_id, proof.issuer, proof.key_id),
         ).fetchone()
         if row is None:
-            raise EvidenceTrustError("producer key is not trusted")
-        public_key, allowed_sources, allowed_tenants, audience, not_before, key_expires, revoked_at = row
+            raise EvidenceTrustError("producer key, service principal, or tenant is not trusted")
+        (
+            public_key, allowed_sources, allowed_tenants, audience,
+            not_before, key_expires, revoked_at, principal_status,
+            principal_type, tenant_status,
+        ) = row
+        if principal_status != "active" or principal_type != "service":
+            raise EvidenceTrustError("producer service principal is not active")
+        if tenant_status != "active":
+            raise EvidenceTrustError("evidence tenant is not active")
         if revoked_at is not None:
             raise EvidenceTrustError("producer key has been revoked")
         if audience != proof.audience:

@@ -5,7 +5,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS memory_evidence_producer_keys (
   issuer text NOT NULL CHECK (length(issuer) BETWEEN 1 AND 2048),
   key_id text NOT NULL CHECK (length(key_id) BETWEEN 1 AND 255),
-  principal_id uuid REFERENCES memory_principals(principal_id) ON DELETE SET NULL,
+  principal_id uuid NOT NULL REFERENCES memory_principals(principal_id) ON DELETE RESTRICT,
   public_key bytea NOT NULL CHECK (octet_length(public_key) = 32),
   allowed_sources text[] NOT NULL CHECK (cardinality(allowed_sources) > 0),
   allowed_tenants text[] NOT NULL CHECK (cardinality(allowed_tenants) > 0),

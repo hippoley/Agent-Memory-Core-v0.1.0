@@ -311,9 +311,11 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
             # typed evidence bundle. Describe metadata remains temporal_lookup,
             # not a claim that full Workflow History was fetched.
             from agent_memory_core.evidence_collector import collect_live_temporal_dispatch_evidence
-            collected = await collect_live_temporal_dispatch_evidence(
+            collection = await collect_live_temporal_dispatch_evidence(
                 db.conn, client, tenant_id=tenant_id, limit=10,
             )
+            assert collection.dispatch_scope_complete is True
+            collected = collection.require_complete()
             assert {item.source for item in collected} >= {
                 "postgres_task", "postgres_dispatch", "postgres_worker_lease",
                 "temporal_lookup",

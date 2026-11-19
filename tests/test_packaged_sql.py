@@ -95,4 +95,7 @@ def test_packaged_evidence_provenance_migration_matches_repository_sql():
     canonical=(Path(__file__).resolve().parents[1]/"sql/postgresql/010_evidence_provenance.sql").read_text()
     assert packaged==canonical
     assert "memory_evidence_producer_keys" in packaged
+    assert "memory_evidence_authority_grants" in packaged
     assert "memory_evidence_nonces" in packaged
+    assert "memory_evidence_facts" in packaged
+    assert "allow_authoritative" in packaged

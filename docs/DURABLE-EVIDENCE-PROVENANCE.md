@@ -22,13 +22,13 @@ A signature proves that the holder of a trusted private key signed a particular 
 
 Migration `010_evidence_provenance.sql` adds:
 
-- `memory_evidence_producer_keys`: issuer + key ID, raw Ed25519 public key, optional Principal, allowed sources, allowed tenants, audience, validity window and revocation timestamp.
+- `memory_evidence_producer_keys`: issuer + key ID, raw Ed25519 public key, mandatory service Principal, allowed sources, allowed tenants, audience, validity window and revocation timestamp.
 - `memory_evidence_nonces`: unique issuer/key/nonce consumption ledger with evidence digest and expiry.
 
-Only public keys are stored. Private keys must remain with the producer, preferably in a KMS/HSM. Registry writes are administrative operations and are not exposed as a public self-service API in this slice.
+Only public keys are stored. Private keys must remain with the producer, preferably in a KMS/HSM. Registry writes are administrative operations and are not exposed as a public self-service API in this slice. A producer key cannot outlive the identity anchor by deleting its Principal: the foreign key uses RESTRICT.
 
 A key is accepted only when:
-- It exists and is not revoked.
+- It exists, is not revoked, and is bound to an active Principal of type `service`. The evidence tenant must also exist and be active.
 - The attestation audience matches both the caller's expected audience and the registry.
 - The source and tenant are explicitly authorized (or tenant `*` is deliberately provisioned).
 - Issuance is within the key validity window.

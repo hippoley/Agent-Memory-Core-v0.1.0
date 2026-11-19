@@ -229,3 +229,41 @@ def test_signature_is_bound_to_tenant_task_epoch_and_run_id():
     with pytest.raises(EvidenceTrustError, match="do not bind"):
         verify_and_consume_evidence(conn, evidence, forged, expected_audience=AUDIENCE, now=NOW)
     assert not conn.nonces
+
+
+
+def test_stale_evidence_observation_is_rejected_even_with_fresh_attestation():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = EvidenceEnvelope.create(
+        evidence_id="old-event", tenant_id=TENANT, task_id="task-old",
+        source="temporal_history",
+        observed_at=(NOW-timedelta(hours=1)).isoformat(),
+        payload={"execution_status": "COMPLETED"},
+        workflow_id="workflow-old", run_id="run-old",
+    )
+    proof = sample_attestation(evidence, private_key)
+    conn = verifier(private_key)
+
+    with pytest.raises(EvidenceTrustError, match="observation is stale"):
+        verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
+    assert not conn.nonces
+
+
+def test_trusted_adjudication_verifies_attestation_before_using_evidence():
+    from agent_memory_core.evidence_trust import adjudicate_trusted_evidence
+
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence()
+    proof = sample_attestation(evidence, private_key)
+    conn = FakeConnection(
+        public_key=export_public_key(private_key),
+        allowed_sources=["temporal_history"],
+    )
+
+    result = adjudicate_trusted_evidence(
+        conn, [(evidence, proof)], expected_audience=AUDIENCE, now=NOW,
+    )
+
+    assert result.adjudication.outcome == "IN_PROGRESS"
+    assert len(result.verified_evidence) == 1
+    assert result.verified_evidence[0].issuer == ISSUER

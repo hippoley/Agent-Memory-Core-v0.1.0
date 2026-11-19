@@ -264,5 +264,6 @@ async def collect_live_temporal_dispatch_evidence(
             "activity_heartbeat",
             "provider_receipt",
             "cross-system atomic snapshot",
+            "tasks without a Temporal dispatch-ledger row",
         ),
     )

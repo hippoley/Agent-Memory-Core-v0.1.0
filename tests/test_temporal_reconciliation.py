@@ -530,6 +530,7 @@ def test_postgres_authority_matrix_fact_deduplication_and_claim_boundaries():
 
     try:
         db.migrate()
+        db.migrate()  # migration 010 must safely reapply after the trust schema exists
         with db.conn.transaction():
             db.conn.execute(
                 "INSERT INTO memory_tenants(tenant_id,display_name) VALUES (%s,%s)",

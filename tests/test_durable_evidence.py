@@ -180,3 +180,29 @@ def test_provider_receipt_without_matching_effect_intent_is_conflict():
                                 "authoritative": True, "idempotency_key": "idem"}),
     ])
     assert result.outcome == "CONFLICT"
+
+
+
+def test_adjudication_is_independent_of_input_order():
+    evidence = [
+        ev("postgres_task", {"status": "running", "effect_count": 0}, evidence_id="task"),
+        ev("postgres_dispatch", {"status": "dispatching", "lease_valid": True,
+                                 "lease_owner": "dispatcher-a"}, evidence_id="dispatch",
+           lease_epoch=7),
+        ev("temporal_lookup", {"lookup_status": "NOT_FOUND"}, evidence_id="lookup"),
+    ]
+    left = adjudicate_evidence(evidence).to_dict()
+    right = adjudicate_evidence(list(reversed(evidence))).to_dict()
+    assert left == right
+
+
+def test_incomplete_effect_inventory_is_unknown_not_conflict_or_confirmed():
+    result = adjudicate_evidence([
+        ev("postgres_task", {"status": "completed", "effect_count": 2}),
+        ev("temporal_history", {"execution_status": "COMPLETED"}, run_id=RUN),
+        ev("effect_ledger", {"effect_key": "effect-one", "status": "committed",
+                             "idempotency_key": "idem-one"}),
+    ])
+    assert result.outcome == "UNKNOWN"
+    assert result.recovery_authorization == "DENY"
+    assert any("effect_count" in reason for reason in result.reasons)

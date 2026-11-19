@@ -24,6 +24,24 @@ services:
       - "127.0.0.1:8233:8233"
     restart: unless-stopped
 
+  memory-temporal-dispatcher:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.temporal
+    command: ["python", "-m", "agent_memory_core.temporal_dispatcher"]
+    depends_on:
+      memory-db:
+        condition: service_healthy
+      memory-temporal:
+        condition: service_started
+    environment:
+      MEMORY_DSN: postgresql://memory:local-dev-only@memory-db:5432/memory
+      MEMORY_TEMPORAL_ADDRESS: memory-temporal:7233
+      MEMORY_TEMPORAL_NAMESPACE: default
+      MEMORY_TEMPORAL_TASK_QUEUE: agent-memory-core
+      MEMORY_TEMPORAL_DISPATCH_LEASE_SECONDS: "60"
+    restart: unless-stopped
+
   memory-temporal-worker:
     build:
       context: .

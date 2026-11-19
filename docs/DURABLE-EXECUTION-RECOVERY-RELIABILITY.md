@@ -18,7 +18,7 @@ The current implementation already has:
 - an epoch-fenced PostgreSQL acknowledgement;
 - recovery validation of Workflow ID, workflow type, task queue and memo identity.
 
-The current tests cover matching-existing-workflow recovery, conflicting-memo rejection, and process-level SIGKILL at the claim and Temporal-start boundaries. DA-04..DA-06 remain separate acceptance work.
+The current candidate includes process-level SIGKILL coverage for DA-01..DA-03; PostgreSQL stale-epoch acknowledgement and two-connection claim-race tests for DA-04/DA-06; and Temporal identity rejection for conflicting memo, workflow type, and task queue under DA-05. These describe implemented test coverage, not a claim that the complete release gate has passed on this HEAD.
 
 ## Required fault matrix
 
@@ -28,7 +28,7 @@ The current tests cover matching-existing-workflow recovery, conflicting-memo re
 | DA-02 | Immediately after claim commits, before Temporal start | Row is dispatching under epoch N; no Temporal execution exists | After lease expiry, replacement claims epoch N+1, starts the same deterministic Workflow ID, and records its Run ID |
 | DA-03 | After Temporal accepts start, before PostgreSQL acknowledgement | Row is dispatching under epoch N; exactly one matching Temporal execution exists | Replacement claims epoch N+1, detects and validates the existing execution, records the original Run ID, and does not create another execution |
 | DA-04 | During/after stale acknowledgement race | A newer dispatcher owns epoch N+1 | Epoch N acknowledgement is rejected; it cannot overwrite owner, status, or Run ID |
-| DA-05 | Existing Workflow ID has wrong memo/type/task queue | Conflicting Temporal execution exists | Dispatcher fails closed; it must not acknowledge the dispatch as started |
+| DA-05 | Existing Workflow ID has wrong memo/type/task queue | Conflicting Temporal execution exists | Dispatcher fails closed for each conflict independently; it must not acknowledge the dispatch as started |
 | DA-06 | Two Dispatchers claim concurrently | One pending dispatch row | Exactly one current lease owner/epoch is returned; no double claim |
 
 ## Assertions (all required)
@@ -49,6 +49,7 @@ The current tests cover matching-existing-workflow recovery, conflicting-memo re
 - Use short, bounded test leases in the isolated test database; do not weaken production defaults.
 - Always clean up subprocesses, Temporal environment, and test rows in a `finally` block.
 - Run the focused fault matrix locally before the full regression suite; run CI once against the final candidate commit.
+- DA-05 must have independent cases for memo, workflow type, and task queue. A test that only asserts a generic failure without inspecting the existing Temporal execution is insufficient.
 
 ## Release gate
 

@@ -241,13 +241,14 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
                 task_queue=task_queue,
                 memo={"agent_memory_task_identity": identity},
             )
+            started_description = await handle.describe()
             report = await inspect_temporal_dispatches(
                 db.conn, client, tenant_id=tenant_id, limit=10,
             )
             assert len(report) == 1
             assert report[0]["classification"] == "ALIGNED_NONTERMINAL"
             assert report[0]["temporal_status"] == "RUNNING"
-            assert report[0]["temporal_run_id"] == handle.result_run_id
+            assert report[0]["temporal_run_id"] == started_description.run_id
             assert report[0]["recorded_temporal_run_id"] is None
             assert report[0]["safe_for_automatic_repair"] is False
         finally:

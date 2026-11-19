@@ -144,7 +144,7 @@ def test_live_inspection_distinguishes_missing_workflow_from_lookup_failure():
         _ReadOnlyConn([_live_row()]),
         _TemporalClient(_Handle(error=WorkflowNotFoundError())),
         tenant_id="tenant-a"))
-    assert missing[0]["classification"] == "TEMPORAL_EXECUTION_MISSING"
+    assert missing[0]["classification"] == "POSTGRES_DISPATCH_STARTED_TEMPORAL_MISSING"
 
     unavailable = asyncio.run(inspect_temporal_dispatches(
         _ReadOnlyConn([_live_row()]),

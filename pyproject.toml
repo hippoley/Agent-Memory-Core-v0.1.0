@@ -21,6 +21,9 @@ oidc = ["fastapi>=0.110", "httpx>=0.27", "PyJWT[crypto]>=2.8"]
 s3 = ["boto3>=1.34"]
 embedding = ["sentence-transformers>=3.0"]
 
+[project.scripts]
+amc-temporal-reconcile = "agent_memory_core.temporal_reconciliation:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

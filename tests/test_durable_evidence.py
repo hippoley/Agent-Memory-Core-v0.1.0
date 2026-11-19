@@ -82,12 +82,28 @@ def test_running_temporal_history_is_in_progress_not_recoverable():
     assert result.recovery_authorization == "DENY"
 
 
-def test_fresh_activity_heartbeat_is_in_progress():
+def test_fresh_activity_heartbeat_is_in_progress_only_for_current_worker_epoch():
     result = adjudicate_evidence([
         ev("postgres_task", {"status": "running", "effect_count": 0}),
-        ev("activity_heartbeat", {"fresh": True, "activity_id": "activity-1"}, run_id=RUN),
+        ev("temporal_history", {"execution_status": "RUNNING"}, run_id=RUN),
+        ev("postgres_worker_lease", {"lease_valid": True, "lease_owner": "worker-a"},
+           lease_epoch=9),
+        ev("activity_heartbeat", {"fresh": True, "activity_id": "activity-1",
+                                  "worker_id": "worker-a"}, run_id=RUN, lease_epoch=9),
     ])
     assert result.outcome == "IN_PROGRESS"
+
+
+def test_stale_activity_heartbeat_cannot_prove_current_progress():
+    result = adjudicate_evidence([
+        ev("postgres_task", {"status": "running", "effect_count": 0}),
+        ev("temporal_history", {"execution_status": "COMPLETED"}, run_id=RUN),
+        ev("postgres_worker_lease", {"lease_valid": True, "lease_owner": "worker-b"},
+           lease_epoch=10),
+        ev("activity_heartbeat", {"fresh": True, "activity_id": "activity-1",
+                                  "worker_id": "worker-a"}, run_id=RUN, lease_epoch=9),
+    ])
+    assert result.outcome == "UNKNOWN"
 
 
 def test_unknown_effect_blocks_recovery_even_if_temporal_completed():

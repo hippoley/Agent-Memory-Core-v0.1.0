@@ -93,10 +93,11 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         subprocess.run(smoke_command(), cwd=ROOT, check=True)
+        subprocess.run(seed_command(), cwd=ROOT, check=True)
 
     print("\nAGENT_MEMORY_CORE_LOCAL_DEMO_READY")
     print("The API is bound to loopback; it is not published to the Internet.")
-    print("A real SDK smoke journey has created and revised a uniquely named local record.")
+    print("A real SDK smoke journey and namespaced demo memories are ready for inspection.")
     print("The credential remains in .env.local; do not paste it into chat or commit it.")
     print("\nOpen these local interfaces:")
     for label, url in PAGES:

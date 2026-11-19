@@ -338,7 +338,7 @@ def test_evidence_key_revocation_serializes_with_live_verification():
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from agent_memory_core.durable_evidence import EvidenceEnvelope
     from agent_memory_core.evidence_trust import (
-        export_public_key, sign_evidence, verify_and_consume_evidence,
+        EvidenceTrustError, export_public_key, sign_evidence, verify_and_consume_evidence,
     )
     from agent_memory_core.postgres import PostgresMemory
 
@@ -415,13 +415,14 @@ def test_evidence_key_revocation_serializes_with_live_verification():
                 expected_audience="revoke-race-test", now=now,
             )
             assert key_locked.wait(timeout=10), "verification did not acquire producer key lock"
-            revoke_future = pool.submit(
-                lambda: revoker_db.conn.execute(
-                    """UPDATE memory_evidence_producer_keys SET revoked_at=clock_timestamp()
-                       WHERE issuer=%s AND key_id=%s""",
-                    (issuer,key_id),
-                )
-            )
+            def revoke_key():
+                with revoker_db.conn.transaction():
+                    revoker_db.conn.execute(
+                        """UPDATE memory_evidence_producer_keys SET revoked_at=clock_timestamp()
+                           WHERE issuer=%s AND key_id=%s""",
+                        (issuer,key_id),
+                    )
+            revoke_future = pool.submit(revoke_key)
             time.sleep(0.2)
             assert not revoke_future.done(), "revocation must wait for in-flight FOR SHARE verification"
             release_verifier.set()
@@ -430,7 +431,7 @@ def test_evidence_key_revocation_serializes_with_live_verification():
             assert verified.fact_disposition == "NEW"
 
         # Once revocation commits, a fresh transaction must reject the old key.
-        with pytest.raises(Exception, match="revoked"):
+        with pytest.raises(EvidenceTrustError, match="revoked"):
             verify_and_consume_evidence(
                 revoker_db.conn, evidence,
                 sign_evidence(

@@ -196,8 +196,8 @@ def test_expired_attestation_is_rejected():
     evidence = sample_evidence()
     proof = sample_attestation(
         evidence, private_key,
-        issued_at=NOW - timedelta(minutes=10),
-        expires_at=NOW - timedelta(minutes=5),
+        issued_at=NOW - timedelta(minutes=4),
+        expires_at=NOW - timedelta(minutes=3),
     )
     conn = verifier(private_key)
 

@@ -28,7 +28,7 @@ class FakeConnection:
 
     def execute(self, query, params):
         self.calls.append((query, params))
-        assert params == (TENANT, 10)
+        assert params == (TENANT, 11)
         return FakeRows([self.row])
 
 
@@ -80,9 +80,13 @@ def make_row(*, task_workflow_id=WORKFLOW, effects=None):
 
 def test_live_collector_emits_scoped_pg_temporal_and_effect_observations():
     conn = FakeConnection(make_row())
-    evidence = asyncio.run(collect_live_temporal_dispatch_evidence(
+    collection = asyncio.run(collect_live_temporal_dispatch_evidence(
         conn, FakeTemporalClient(), tenant_id=TENANT, limit=10,
     ))
+    assert collection.dispatch_scope_complete is True
+    assert collection.task_count == 1
+    assert "provider_receipt" in collection.known_gaps
+    evidence = collection.require_complete()
 
     sources = [item.source for item in evidence]
     assert sources.count("postgres_task") == 1
@@ -111,9 +115,10 @@ def test_live_collector_emits_scoped_pg_temporal_and_effect_observations():
 
 def test_live_collector_preserves_task_vs_dispatch_workflow_id_mismatch():
     conn = FakeConnection(make_row(task_workflow_id="wrong-task-workflow"))
-    evidence = asyncio.run(collect_live_temporal_dispatch_evidence(
+    collection = asyncio.run(collect_live_temporal_dispatch_evidence(
         conn, FakeTemporalClient(), tenant_id=TENANT, limit=10,
     ))
+    evidence = collection.require_complete()
     task = next(item for item in evidence if item.source == "postgres_task")
     assert task.payload["dispatch_workflow_id_matches"] is False
     result = adjudicate_evidence(evidence)
@@ -132,9 +137,10 @@ def test_live_collector_does_not_treat_temporal_transport_error_as_not_found():
             return Handle()
 
     conn = FakeConnection(make_row(effects=[]))
-    evidence = asyncio.run(collect_live_temporal_dispatch_evidence(
+    collection = asyncio.run(collect_live_temporal_dispatch_evidence(
         conn, UnavailableClient(), tenant_id=TENANT, limit=10,
     ))
+    evidence = collection.require_complete()
     temporal = next(item for item in evidence if item.source == "temporal_lookup")
     assert temporal.payload["lookup_status"] == "ERROR"
     result = adjudicate_evidence(evidence)
@@ -153,3 +159,18 @@ def test_live_collector_rejects_missing_scope_and_invalid_limit():
         asyncio.run(collect_live_temporal_dispatch_evidence(
             conn, FakeTemporalClient(), tenant_id=TENANT, limit=0,
         ))
+
+
+
+def test_truncated_dispatch_scope_is_explicit_and_cannot_be_required_complete():
+    import pytest
+    row = make_row(effects=[])
+    conn = FakeConnection(row)
+    conn.execute = lambda query, params: FakeRows([row, row])
+    collection = asyncio.run(collect_live_temporal_dispatch_evidence(
+        conn, FakeTemporalClient(), tenant_id=TENANT, limit=1,
+    ))
+    assert collection.dispatch_scope_complete is False
+    assert collection.task_count == 1
+    with pytest.raises(RuntimeError, match="truncated"):
+        collection.require_complete()

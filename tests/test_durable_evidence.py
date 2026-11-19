@@ -255,3 +255,13 @@ def test_reused_evidence_id_with_different_content_is_conflict():
            evidence_id="same-evidence-id"),
     ])
     assert result.outcome == "CONFLICT"
+
+
+
+def test_terminal_business_state_conflicting_with_temporal_is_conflict():
+    result = adjudicate_evidence([
+        ev("postgres_task", {"status": "failed", "effect_count": 0}),
+        ev("temporal_history", {"execution_status": "COMPLETED"}, run_id=RUN),
+    ])
+    assert result.outcome == "CONFLICT"
+    assert result.recovery_authorization == "DENY"

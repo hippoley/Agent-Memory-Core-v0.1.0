@@ -29,7 +29,7 @@ jobs:
       - name: Start opt-in extended stack
         run: python scripts/launch_local.py up --profile extended
       - name: Install workflow test dependencies
-        run: python -m pip install -e '.[postgres,temporal]'
+        run: python -m pip install -e '.[dev,postgres,temporal]'
       - name: Verify actual Temporal workflow, idempotent PostgreSQL receipt
         run: python scripts/smoke_extended_temporal.py
       - name: Verify Dispatcher process-level SIGKILL recovery

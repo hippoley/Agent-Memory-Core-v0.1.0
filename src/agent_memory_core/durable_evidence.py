@@ -92,6 +92,15 @@ class EvidenceEnvelope:
             raise EvidenceValidationError(f"unsupported evidence source: {self.source!r}")
         if not isinstance(self.payload, Mapping):
             raise EvidenceValidationError("payload must be a JSON object")
+        if self.source in {
+            "postgres_task", "postgres_dispatch", "temporal_history",
+            "temporal_lookup", "activity_heartbeat",
+        } and not self.workflow_id:
+            raise EvidenceValidationError(f"{self.source} evidence requires workflow_id")
+        if self.source == "temporal_history" and not self.run_id:
+            raise EvidenceValidationError("temporal_history evidence requires run_id")
+        if self.source in {"effect_ledger", "provider_receipt"} and not self.payload.get("effect_key"):
+            raise EvidenceValidationError(f"{self.source} evidence requires payload.effect_key")
         _parse_timestamp(self.observed_at)
         if self.lease_epoch is not None and (
             isinstance(self.lease_epoch, bool)

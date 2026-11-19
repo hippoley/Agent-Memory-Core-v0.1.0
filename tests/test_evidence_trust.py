@@ -35,7 +35,8 @@ class FakeResult:
 
 class FakeConnection:
     def __init__(self, *, public_key, allowed_sources=None, allowed_tenants=None,
-                 audience=AUDIENCE, revoked_at=None, not_before=None, key_expires=None):
+                 audience=AUDIENCE, revoked_at=None, not_before=None, key_expires=None,
+                 principal_status="active", principal_type="service", tenant_status="active"):
         self.key = (
             public_key,
             allowed_sources or ["temporal_history", "provider_receipt"],
@@ -44,6 +45,9 @@ class FakeConnection:
             not_before or NOW - timedelta(days=1),
             key_expires,
             revoked_at,
+            principal_status,
+            principal_type,
+            tenant_status,
         )
         self.nonces = set()
 
@@ -268,3 +272,28 @@ def test_trusted_adjudication_verifies_attestation_before_using_evidence():
     assert result.adjudication.recovery_authorization == "DENY"
     assert len(result.verified_evidence) == 1
     assert result.verified_evidence[0].issuer == ISSUER
+
+
+
+def test_inactive_or_non_service_principal_cannot_attest_evidence():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence()
+    proof = sample_attestation(evidence, private_key)
+    conn = verifier(private_key, principal_status="suspended")
+
+    with pytest.raises(EvidenceTrustError, match="service principal is not active"):
+        verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
+
+    conn = verifier(private_key, principal_type="human")
+    with pytest.raises(EvidenceTrustError, match="service principal is not active"):
+        verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
+
+
+def test_inactive_tenant_cannot_accept_evidence():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence()
+    proof = sample_attestation(evidence, private_key)
+    conn = verifier(private_key, tenant_status="suspended")
+
+    with pytest.raises(EvidenceTrustError, match="tenant is not active"):
+        verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)

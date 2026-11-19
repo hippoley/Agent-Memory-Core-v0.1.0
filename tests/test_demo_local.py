@@ -44,4 +44,10 @@ def test_demo_seeds_namespaced_live_records():
     assert demo_local.seed_command() == [
         sys.executable,
         str(ROOT / "scripts" / "seed_demo.py"),
+        "--seed",
     ]
+
+
+def test_local_environment_loads_generated_key_without_printing_it():
+    env = demo_local.local_environment()
+    assert isinstance(env, dict)

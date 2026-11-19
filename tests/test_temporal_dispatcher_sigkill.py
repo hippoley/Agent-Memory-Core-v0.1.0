@@ -122,12 +122,9 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
         if expect_existing_workflow:
             async def read_original():
                 client = await Client.connect(address)
-                try:
-                    handle = client.get_workflow_handle(workflow_id)
-                    description = await handle.describe()
-                    return description.run_id
-                finally:
-                    await client.close()
+                handle = client.get_workflow_handle(workflow_id)
+                description = await handle.describe()
+                return description.run_id
             original_run_id = asyncio.run(read_original())
             assert original_run_id
 
@@ -161,12 +158,11 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
 
         async def verify_temporal():
             client = await Client.connect(address)
-            try:
-                description = await client.get_workflow_handle(workflow_id).describe()
-                assert description.run_id == after[4]
-                assert description.id == workflow_id
-                assert description.task_queue == queue
-                return description.run_id
+            description = await client.get_workflow_handle(workflow_id).describe()
+            assert description.run_id == after[4]
+            assert description.id == workflow_id
+            assert description.task_queue == queue
+            return description.run_id
 
         assert asyncio.run(verify_temporal()) == after[4]
     finally:

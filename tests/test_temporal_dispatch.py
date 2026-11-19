@@ -130,8 +130,10 @@ def test_two_independent_dispatchers_racing_claim_exactly_one_lease():
         state=setup.conn.execute(
             """SELECT status,lease_owner,lease_epoch,attempts
                FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
-        assert state==("dispatching",winners[0] and state[1],1,1)
+        assert state[0]=="dispatching"
         assert state[1] in ("dispatcher-race-a","dispatcher-race-b")
+        assert state[2:]==(1,1)
+        assert state[1]==winners[0]["lease_owner"] if "lease_owner" in winners[0] else True
         assert winners[0]["lease_epoch"]==state[2]
     finally:
         setup.close()

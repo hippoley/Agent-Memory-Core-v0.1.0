@@ -197,6 +197,7 @@ def adjudicate_evidence(
     tenant_id, task_id = next(iter(tenant_ids)), next(iter(task_ids))
     digests = tuple(sorted(item.sha256 for item in items))
     reasons: list[str] = []
+    conflicts: list[str] = []
 
     dispatch = _latest(items, "postgres_dispatch")
     task_row = _latest(items, "postgres_task")
@@ -206,7 +207,7 @@ def adjudicate_evidence(
     dispatch_epoch = dispatch.lease_epoch if dispatch else None
 
     if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "NOT_FOUND" and temporal:
-        reasons.append("Temporal lookup reports NOT_FOUND while Temporal history evidence exists.")
+        conflicts.append("Temporal lookup reports NOT_FOUND while Temporal history evidence exists.")
     if task_row and "effect_count" in task_row.payload:
         expected_effect_count = task_row.payload.get("effect_count")
         if (
@@ -224,9 +225,9 @@ def adjudicate_evidence(
     temporal_run_ids = {item.run_id for item in items if item.source == "temporal_history" and item.run_id}
     dispatch_run_ids = {item.run_id for item in items if item.source == "postgres_dispatch" and item.run_id}
     if len(temporal_run_ids) > 1 or len(dispatch_run_ids) > 1:
-        reasons.append("Conflicting Run IDs were observed within the same evidence domain.")
+        conflicts.append("Conflicting Run IDs were observed within the same evidence domain.")
     elif temporal_run_ids and dispatch_run_ids and temporal_run_ids != dispatch_run_ids:
-        reasons.append("PostgreSQL dispatch Run ID differs from Temporal execution Run ID.")
+        conflicts.append("PostgreSQL dispatch Run ID differs from Temporal execution Run ID.")
 
     task_status = str(task_row.payload.get("status", "UNKNOWN")).lower() if task_row else "UNKNOWN"
     temporal_status = str(temporal.payload.get("execution_status", "UNKNOWN")).upper() if temporal else "UNKNOWN"
@@ -240,7 +241,7 @@ def adjudicate_evidence(
     receipt_keys = {str(item.payload.get("effect_key", "")) for item in receipt_items}
     receipt_keys.discard("")
     if receipt_keys - effect_keys:
-        reasons.append("Provider receipt exists without a matching PostgreSQL effect intent.")
+        conflicts.append("Provider receipt exists without a matching PostgreSQL effect intent.")
     for key in effect_keys:
         candidates = [item for item in effect_items if item.payload.get("effect_key") == key]
         latest_effect = max(candidates, key=lambda item: (_parse_timestamp(item.observed_at), item.evidence_id))
@@ -261,7 +262,7 @@ def adjudicate_evidence(
             None,
         )
         if expected_key is not None and payload.get("idempotency_key") != expected_key:
-            reasons.append(f"Provider receipt idempotency key conflicts for effect {key!r}.")
+            conflicts.append(f"Provider receipt idempotency key conflicts for effect {key!r}.")
             effect_statuses[key] = "unknown"
             continue
         outcome = str(payload.get("outcome", "UNKNOWN")).upper()
@@ -273,7 +274,7 @@ def adjudicate_evidence(
         }.get(outcome, "unknown")
         ledger_status = effect_statuses.get(key, "unknown")
         if ledger_status in {"committed", "failed"} and provider_status in {"committed", "failed", "not_found"} and ledger_status != provider_status:
-            reasons.append(f"Provider receipt conflicts with terminal Effect Ledger state for effect {key!r}.")
+            conflicts.append(f"Provider receipt conflicts with terminal Effect Ledger state for effect {key!r}.")
             effect_statuses[key] = "unknown"
         else:
             effect_statuses[key] = provider_status
@@ -295,8 +296,9 @@ def adjudicate_evidence(
     else:
         effects_status = "NO_EFFECT_EVIDENCE"
 
-    if reasons:
+    if conflicts:
         outcome = "CONFLICT"
+        reasons.extend(conflicts)
         reasons.append("Conflicting execution identity or Run ID evidence must be investigated.")
     elif temporal_status in {"RUNNING", "CONTINUED_AS_NEW"}:
         outcome = "IN_PROGRESS"

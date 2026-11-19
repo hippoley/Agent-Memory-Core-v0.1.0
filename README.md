@@ -161,7 +161,7 @@ python -m pip install -e '.[api,postgres]'
 python scripts/demo_local.py
 ```
 
-The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and opens the Console, Observatory and API manual in your browser. It leaves uniquely named smoke records in the local database so you can inspect them; it does not call a hosted model or publish the API to the Internet.
+The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and seeds a namespaced set of real local example memories (including a 20°C → 21°C correction history), then opens the Console, Observatory and API manual in your browser. Smoke and demo records remain in the local database for inspection; the seed checks existing current versions to avoid duplicate accumulation. It does not call a hosted model or publish the API to the Internet.
 
 - **Console:** `http://127.0.0.1:8765/dashboard/` — natural-language ingestion, claim ledger, history and search.
 - **Observatory:** `http://127.0.0.1:8765/dashboard/observatory.html` — start in clearly labeled synthetic Demo mode, then connect with the local key to inspect Live API data.

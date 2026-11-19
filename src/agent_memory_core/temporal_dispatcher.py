@@ -61,6 +61,35 @@ async def _start_or_recover(client, claim: dict) -> str:
     return run_id
 
 
+
+
+def _test_failpoint(name: str) -> None:
+    """Deterministic subprocess barrier; inert unless explicitly test-enabled.
+
+    A separate pytest process observes the marker and can SIGKILL this process
+    at the exact boundary without relying on arbitrary scheduling delays.
+    """
+    if os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_MODE") != "1":
+        return
+    if os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_FAILPOINT") != name:
+        return
+    directory = os.getenv("MEMORY_TEMPORAL_DISPATCH_TEST_DIR")
+    if not directory:
+        raise RuntimeError("Dispatcher test failpoint requires TEST_DIR")
+    os.makedirs(directory, exist_ok=True)
+    reached = os.path.join(directory, name + ".reached")
+    release = os.path.join(directory, name + ".release")
+    with open(reached, "w", encoding="utf-8") as marker:
+        marker.write(str(os.getpid()))
+        marker.flush()
+        os.fsync(marker.fileno())
+    deadline = asyncio.get_running_loop().time() + 120
+    while not os.path.exists(release):
+        if asyncio.get_running_loop().time() >= deadline:
+            raise TimeoutError(f"Dispatcher test failpoint timed out: {name}")
+        import time
+        time.sleep(0.02)
+
 async def run_dispatcher(*, once: bool = False) -> None:
     try:
         from temporalio.client import Client
@@ -107,6 +136,7 @@ async def run_dispatcher(*, once: bool = False) -> None:
             await asyncio.sleep(poll_seconds)
             continue
 
+        _test_failpoint("after_claim_commit")
         try:
             run_id = await _start_or_recover(client, claim)
         except Exception as exc:
@@ -123,6 +153,7 @@ async def run_dispatcher(*, once: bool = False) -> None:
             if once:
                 raise
         else:
+            _test_failpoint("after_temporal_start_before_ack")
             db = PostgresMemory(_database_dsn())
             try:
                 acknowledged = TemporalDispatchStore(db.conn).mark_started(

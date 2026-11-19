@@ -338,14 +338,21 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
             private_key = Ed25519PrivateKey.generate()
             issuer = "https://test-evidence-producer.invalid/" + uuid4().hex
             key_id = "ephemeral-" + uuid4().hex
+            principal_id = uuid4()
             now = datetime.now(timezone.utc)
             with db.conn.transaction():
                 db.conn.execute(
+                    """INSERT INTO memory_principals
+                       (principal_id,principal_type,display_name)
+                       VALUES (%s,'service','Temporal Evidence Integration Test')""",
+                    (principal_id,),
+                )
+                db.conn.execute(
                     """INSERT INTO memory_evidence_producer_keys
-                       (issuer,key_id,public_key,allowed_sources,allowed_tenants,
+                       (issuer,key_id,principal_id,public_key,allowed_sources,allowed_tenants,
                         audience,not_before,expires_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (issuer,key_id,export_public_key(private_key),
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (issuer,key_id,principal_id,export_public_key(private_key),
                      ["temporal_lookup"],[tenant_id],"amc-live-test",
                      now-timedelta(minutes=1),now+timedelta(hours=1)),
                 )
@@ -380,6 +387,10 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
                     db.conn.execute(
                         "DELETE FROM memory_evidence_producer_keys WHERE issuer=%s AND key_id=%s",
                         (issuer,key_id),
+                    )
+                    db.conn.execute(
+                        "DELETE FROM memory_principals WHERE principal_id=%s",
+                        (principal_id,),
                     )
                 db.conn.execute(
                     "DELETE FROM memory_durable_tasks WHERE task_id=%s::uuid",

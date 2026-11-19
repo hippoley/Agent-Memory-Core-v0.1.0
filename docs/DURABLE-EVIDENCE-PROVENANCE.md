@@ -1,148 +1,132 @@
-# Durable Evidence Provenance & Live Collection
+# Durable Evidence Trust Foundation
 
-**Status:** Draft implementation / stacked PR #55  
-**Base:** PR #54 candidate `4b4549abba66e81e534cf200cc1dc78c0c0a758a`  
-**Safety boundary:** read-only collection and evidence verification; no automatic recovery
+**PR:** #55 · Draft  
+**Scope:** producer identity, four-dimensional authority, attestation verification, freshness, replay prevention and semantic fact deduplication.  
+**Explicitly out of scope:** live evidence collection, Temporal History/Heartbeat collection, Provider adapters, automatic recovery.
 
-## 1. Trust model
+## 1. Trust is not one property
 
-A digest, a signature, and an authoritative fact are different things.
-
-| Property | What this slice establishes | What it does not establish |
+| Property | Verification question | Mechanism |
 |---|---|---|
-| Integrity | Canonical SHA-256 detects envelope mutation | Who created the envelope |
-| Authenticity | Ed25519 signature verifies against a trusted public key | That the producer's underlying observation was truthful |
-| Authority | Registry constrains issuer/key to source, tenant and audience | Authority beyond the explicitly registered scope |
-| Freshness | Attestation expiry, maximum lifetime, observation age and clock skew are checked | A globally trusted clock or perfect source timestamp |
-| Completeness | Collector reports truncation and enumerates source gaps | A complete cross-system snapshot or all provider facts |
+| Integrity | Was this exact envelope changed? | Canonical SHA-256 |
+| Authenticity | Which key signed this statement? | Ed25519 |
+| Principal status | Is the signing key still attached to an active service identity? | Principal + key registry lookup |
+| Authority | May this producer assert this claim for this source and scope? | Four-dimensional authority grant |
+| Freshness | Is the attestation and observation within policy? | Expiry, max lifetime, observation age and clock-skew checks |
+| Replay resistance | Has this exact attestation nonce already been consumed? | Transactional nonce ledger |
+| Fact identity | Is this the same fact under a new nonce, or conflicting content? | Semantic fact ledger |
+| Completeness | Have all required evidence sources been observed? | Not established by this PR; collection manifest belongs to PR #56 |
 
-A signature proves that the holder of a trusted private key signed a particular statement. It does not prove that the statement itself is true. A provider receipt therefore requires a provider-specific trust relationship and adapter; a local `provider_result` JSON field is not an independent receipt.
+A signature proves that a trusted key signed a statement. It does not prove that the producer's observation is truthful, that the producer's system was uncompromised, or that the producer has authority over every claim in its payload.
 
-## 2. Producer key registry
+## 2. Four-dimensional Evidence Authority Matrix
 
-Migration `010_evidence_provenance.sql` adds:
+Every accepted attestation must match a grant across all four dimensions:
 
-- `memory_evidence_producer_keys`: issuer + key ID, raw Ed25519 public key, mandatory service Principal, allowed sources, allowed tenants, audience, validity window and revocation timestamp.
-- `memory_evidence_nonces`: unique issuer/key/nonce consumption ledger with evidence digest and expiry.
+`Producer × Evidence Source × Claim Type × Authority Scope`
 
-Only public keys are stored. Private keys must remain with the producer, preferably in a KMS/HSM. Registry writes are administrative operations and are not exposed as a public self-service API in this slice. A producer key cannot outlive the identity anchor by deleting its Principal: the foreign key uses RESTRICT.
+| Dimension | Bound to | Example |
+|---|---|---|
+| Producer | Issuer + key ID + active service Principal | `worker-prod-7 / key-2026-01` |
+| Evidence source/type | Envelope `source` | `activity_heartbeat` |
+| Claim type | Signed attestation `claim_type` | `worker.heartbeat_observed` |
+| Authority scope | Tenant + task type | `tenant-a / ventilation.control` |
 
-A key is accepted only when:
-- It exists, is not revoked, and is bound to an active Principal of type `service`. The evidence tenant must also exist and be active.
-- The attestation audience matches both the caller's expected audience and the registry.
-- The source and tenant are explicitly authorized (or tenant `*` is deliberately provisioned).
-- Issuance is within the key validity window.
-- The Ed25519 signature verifies over canonical attestation claims bound to the exact evidence digest, tenant, task, source, Workflow ID, Run ID and Lease Epoch.
+A grant is stored in `memory_evidence_authority_grants`; it is not inferred from the producer's role or from a payload boolean. Tenant and task-type scopes may use an explicit `*` wildcard, which must be deliberately provisioned. Exact tenant/task-type grants take precedence over wildcard grants.
 
-## 3. Attestation format
+### Claim authority examples
 
-`amc.evidence-attestation.v1` signs these claims:
+| Producer/source | Permitted claim example | Not implied |
+|---|---|---|
+| PostgreSQL / `postgres_task` | `task.business_status_observed` | Provider side effect committed |
+| Temporal / `temporal_history` | `workflow.execution_status` | Physical device completed action |
+| Worker / `activity_heartbeat` | `worker.heartbeat_observed` | Provider durably accepted request |
+| Provider / `provider_receipt` | `provider.effect_committed` | Whole Agent task is correct |
+| Independent verifier | `evidence.bundle_verified` | An unobserved physical fact |
 
-```json
-{
-  "schema_version": "amc.evidence-attestation.v1",
-  "issuer": "https://producer.example",
-  "key_id": "worker-key-2026-01",
-  "audience": "amc-evidence-ingest",
-  "issued_at": "2026-11-19T12:00:00Z",
-  "expires_at": "2026-11-19T12:02:00Z",
-  "nonce": "a-unique-random-value-at-least-16-chars",
-  "evidence_sha256": "<evidence-envelope-sha256>",
-  "tenant_id": "tenant-a",
-  "task_id": "task-a",
-  "source": "temporal_lookup",
-  "workflow_id": "workflow-a",
-  "run_id": "run-a",
-  "lease_epoch": 7,
-  "signature": "<base64url-ed25519-signature>"
-}
-```
+These are protocol claim names, not automatic grants. Each key must receive explicit grant rows.
 
-Canonical JSON uses sorted keys, compact separators, UTF-8 and rejects non-finite numbers. The signature is over every claim except `signature`. The attestation binds to the exact evidence envelope; it cannot be transplanted to another task, tenant, Workflow, Run, source or Epoch.
+### The authoritative flag
 
-## 4. Verification and replay prevention
+`payload.authoritative=true` is untrusted input. It is accepted only when the matching grant explicitly has `allow_authoritative=true`. Otherwise verification fails closed. The flag does not upgrade a claim beyond the source and claim type permitted by the grant.
 
-`verify_and_consume_evidence(conn, evidence, attestation, ...)`:
+## 3. Database model
 
-1. Validates the evidence digest and schema.
-2. Validates attestation schema, audience, identity binding and timestamp format.
-3. Enforces maximum attestation lifetime, observation age and clock skew.
-4. Locks the trusted key row `FOR SHARE` and checks revocation, validity and authority.
-5. Verifies Ed25519.
-6. Inserts the nonce under a unique primary key in the same transaction.
+Migration `010_evidence_provenance.sql` adds four tables:
 
-A duplicate nonce is rejected. Key revocation updates serialize against in-flight verification through the row lock. Nonce rows are retained until explicit retention cleanup; cleanup policy and operational tooling remain a follow-up.
+- `memory_evidence_producer_keys`: issuer/key ID, raw Ed25519 public key, mandatory service Principal, audience, validity and revocation.
+- `memory_evidence_authority_grants`: normalized Producer × Source × Claim Type × Tenant/Task-Type scope grants, including the authoritative-claim bit.
+- `memory_evidence_nonces`: one-time attestation nonce consumption.
+- `memory_evidence_facts`: semantic fact identity independent of attestation nonce and envelope observation time.
 
-`adjudicate_trusted_evidence(...)` verifies every item and consumes all nonces in one outer transaction. If any item fails, the evidence bundle is not adjudicated and the nonce transaction rolls back.
+Private keys are never stored in PostgreSQL. A producer key is bound to an active Principal of type `service`; the tenant must also be active. Principal deletion is restricted while a producer key references it.
 
-## 5. Live collector
+## 4. Attestation
 
-`collect_live_temporal_dispatch_evidence(conn, client, tenant_id, limit)` reads:
+Schema: `amc.evidence-attestation.v1`.
 
-- PostgreSQL durable task status and task/dispatch Workflow ID relationship.
-- Dispatch state, owner, Epoch, lease expiry and recorded Run ID.
-- Durable task worker lease owner, Epoch, expiry and heartbeat timestamp.
-- Effect Ledger status, request digest, attempt count, execution owner/Epoch, provider reference and deterministic idempotency key.
-- Temporal `describe()` metadata: execution status, Workflow Type, Task Queue, Memo identity and Run ID.
+The Ed25519 signature binds:
+- issuer, key ID and audience;
+- issued-at, expiry and nonce;
+- exact envelope SHA-256;
+- tenant, task, source and claim type;
+- Workflow ID, Run ID and Lease Epoch.
 
-Temporal `describe()` is represented as `temporal_lookup`. It is not mislabeled as full Workflow History.
+Changing the claim type or any bound identity requires a new signature. Canonical JSON uses sorted keys, compact separators, UTF-8 and rejects non-finite numbers.
 
-The returned `EvidenceCollection` reports whether the dispatch-row scope was truncated, lists the sources collected and explicitly lists known gaps. Call `require_complete()` before treating the returned dispatch-row set as complete.
+## 5. Verification and revocation linearization
 
-Known gaps in this first collector:
-- Full Temporal Workflow History is not fetched.
-- Temporal Activity Heartbeat records are not fetched.
-- Provider receipts are not fetched or fabricated from local `provider_result`.
-- Tasks without a Temporal dispatch-ledger row are outside this dispatch-scoped query.
-- PostgreSQL and Temporal are not read under one distributed atomic snapshot; each Temporal observation has its own capture time.
+`verify_and_consume_evidence(...)` performs the following in one PostgreSQL transaction:
 
-Transport errors are recorded as `lookup_status=ERROR`; only an explicit Temporal `NOT_FOUND` is represented as `NOT_FOUND`.
+1. Validate envelope digest, schema and attestation binding.
+2. Validate audience, timestamp policy and observation freshness.
+3. Lock the producer key, service Principal and tenant with `FOR SHARE`.
+4. Check active Principal, active tenant, key validity and revocation.
+5. Find and lock a matching four-dimensional authority grant.
+6. Verify Ed25519.
+7. Insert the nonce, rejecting an already-consumed nonce.
+8. Insert or compare the semantic fact identity.
 
-## 6. API usage
+A concurrent key revocation takes an update lock on the same producer-key row. If verification acquired its share lock first, verification linearizes before revocation and the revocation waits for that transaction. If revocation commits first, a later verification observes the revoked key and fails. The PostgreSQL integration test exercises this ordering.
 
-Install with the evidence and database extras:
+## 6. Replay, duplicate fact and semantic conflict
 
-```bash
-pip install -e '.[postgres,temporal,evidence]'
-```
+These are intentionally distinct outcomes:
 
-Create and sign an envelope in the producer process:
+| Case | Definition | Result |
+|---|---|---|
+| Attestation replay | Same issuer/key/nonce submitted again | `EvidenceReplayError` |
+| Evidence duplication | Same semantic fact, re-attested with a fresh nonce or envelope timestamp | Accepted as `fact_disposition=DUPLICATE`; no second fact is created |
+| Semantic conflict | Same semantic fact identity but different canonical claim payload | `EvidenceFactConflictError`; transaction rolls back |
 
-```python
-proof = sign_evidence(
-    envelope,
-    issuer=producer_issuer,
-    key_id=producer_key_id,
-    audience="amc-evidence-ingest",
-    issued_at=issued_at,
-    expires_at=expires_at,
-    nonce=cryptographically_random_nonce,
-    private_key=producer_private_key,
-)
-```
+Semantic identity is keyed by tenant, task, source, claim type, Workflow, Run, Epoch and a stable `fact_id` (or source event/receipt ID). When no stable event ID exists, the empty identity is conservative: different payloads for that same identity conflict rather than silently becoming separate facts. Producers should supply immutable source event IDs for event streams.
 
-Verify and adjudicate a complete signed bundle:
+Nonce uniqueness prevents reuse of one attestation. The fact ledger prevents the same immutable fact from being reintroduced with a new nonce. Neither substitutes for the other.
 
-```python
-trusted_result = adjudicate_trusted_evidence(
-    control_plane_connection,
-    [(envelope, proof)],
-    expected_audience="amc-evidence-ingest",
-)
-```
+## 7. Trusted adjudication
 
-The private key is never passed to the verifier and is never stored in PostgreSQL.
+`adjudicate_trusted_evidence(...)` verifies every signature and authority grant, consumes nonces and records semantic facts inside one outer transaction. The pure adjudicator receives only verified envelopes. Any invalid signature, unauthorized claim, replay or semantic conflict aborts the bundle transaction.
 
-## 7. Remaining production gates
+A valid attestation does not authorize a retry, task completion, lease mutation or external side effect. Recovery authorization remains a separate protocol decision.
 
-1. Replace manual key provisioning with an audited control-plane operation and explicit rotation/revocation workflow.
-2. Define source-specific freshness and clock trust policies; the default 15-minute observation age is not universal.
-3. Fetch actual Temporal History and Activity Heartbeats, retaining event IDs and server timestamps.
-4. Add provider-specific receipt adapters with independently verifiable signatures or authenticated lookup semantics.
-5. Add a durable, signed collection manifest with query watermark, pagination cursor, expected source inventory and missing-source reasons.
-6. Test concurrent nonce replay and key revocation against real PostgreSQL.
-7. Test the collector against real PostgreSQL + Temporal with lease changes, identity conflicts, missing dispatch rows and large tenant scopes.
-8. Add retention/partitioning and bounded cleanup for nonce rows.
-9. Keep recovery authorization separate; a valid signature does not itself authorize a retry or external side effect.
+## 8. PR #55 acceptance boundary
 
-This is a draft trust and collection layer. It is not yet a production-grade provider evidence network or complete cross-system snapshot protocol.
+Included:
+- Producer service Principal binding and active tenant check.
+- Ed25519 signing and verification.
+- Four-dimensional source/claim/tenant/task-type grants.
+- Explicit authority for `authoritative=true`.
+- Attestation freshness and replay defense.
+- Semantic fact duplicate/conflict handling.
+- Unit tests and real PostgreSQL revocation/verification concurrency test.
+
+Moved to PR #56:
+- PostgreSQL/Temporal live collectors.
+- Temporal History and Activity Heartbeat collection.
+- Provider receipt adapters.
+- Signed collection manifest and completeness proofs.
+
+Moved to PR #57:
+- Cross-system adversarial fault injection and independent conformance suite.
+
+This PR is a trust foundation, not a complete evidence collection network. No automatic recovery is performed.

@@ -264,6 +264,7 @@ def test_trusted_adjudication_verifies_attestation_before_using_evidence():
         conn, [(evidence, proof)], expected_audience=AUDIENCE, now=NOW,
     )
 
-    assert result.adjudication.outcome == "IN_PROGRESS"
+    assert result.adjudication.outcome == "UNKNOWN"
+    assert result.adjudication.recovery_authorization == "DENY"
     assert len(result.verified_evidence) == 1
     assert result.verified_evidence[0].issuer == ISSUER

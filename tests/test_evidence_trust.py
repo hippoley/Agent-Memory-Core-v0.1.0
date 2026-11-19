@@ -40,7 +40,7 @@ class FakeConnection:
                  revoked_at=None, not_before=None, key_expires=None,
                  principal_status="active", principal_type="service", tenant_status="active"):
         self.key = (
-            public_key, audience, not_before or NOW-timedelta(days=1),
+            public_key, "service-principal-test", audience, not_before or NOW-timedelta(days=1),
             key_expires, revoked_at, principal_status, principal_type, tenant_status,
         )
         self.grants = grants if grants is not None else [{
@@ -125,6 +125,8 @@ def test_valid_ed25519_attestation_is_verified_and_nonce_consumed():
     result = verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
     assert result.evidence == evidence
     assert result.issuer == ISSUER and result.key_id == KEY_ID
+    assert result.principal_id == "service-principal-test"
+    assert result.claim_type == CLAIM
     assert result.fact_disposition == "NEW"
     assert len(conn.nonces) == 1
 

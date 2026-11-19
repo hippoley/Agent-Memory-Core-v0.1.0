@@ -56,3 +56,26 @@ The current candidate includes process-level SIGKILL coverage for DA-01..DA-03; 
 P0-A remains **NOT ACCEPTED** until DA-01 through DA-06 pass on the same candidate HEAD with real process termination, PostgreSQL read-back, and Temporal read-back. Existing unit tests or the Worker-only SIGKILL test do not satisfy this gate.
 
 P0-B Worker SIGKILL, P0-C provider UNKNOWN reconciliation, P1-A 1,000-task load, and P1-B clean-room Python SDK onboarding remain separate gates.
+
+## Live PostgreSQL ↔ Temporal reconciliation (read-only)
+
+The candidate now exposes `inspect_temporal_dispatches(conn, client, tenant_id=...)` and the `amc-temporal-reconcile` command. It reads a tenant-scoped set of durable tasks, dispatch ledger rows, effect states, and the corresponding Temporal Workflow descriptions. It does not update either system.
+
+Example:
+
+```sh
+amc-temporal-reconcile --tenant-id tenant-example --limit 100
+```
+
+The JSON report distinguishes:
+- `TEMPORAL_COMPLETED_POSTGRES_NONTERMINAL`: Temporal is complete while PostgreSQL business state is not terminal.
+- `TEMPORAL_STOPPED_POSTGRES_NONTERMINAL` / `TEMPORAL_FAILED_POSTGRES_NONTERMINAL`: Temporal stopped or failed; business outcome still requires evidence.
+- `TEMPORAL_EXECUTION_MISSING`: Temporal explicitly reports the deterministic Workflow ID as missing.
+- `TEMPORAL_LOOKUP_FAILED`: Temporal could not be queried; existence is unknown, not missing.
+- `TEMPORAL_IDENTITY_CONFLICT`: Workflow type, task queue, Workflow ID, or immutable memo differs from PostgreSQL.
+- `TEMPORAL_RUN_ID_DIVERGENCE`: the discovered Temporal Run ID differs from the PostgreSQL dispatch ledger.
+- `PG_COMPLETED_WITH_UNRESOLVED_EFFECTS`: PostgreSQL says completed while an external effect remains requested, executing, unknown, or reconciling.
+
+Every report item sets `safe_for_automatic_repair=false`. A read timeout is never classified as a missing Workflow. This command is an observation and evidence-gathering boundary, not a repair mechanism.
+
+The adapter tests use contract doubles for database and Temporal boundaries. The real PostgreSQL 16 + Temporal service integration run remains required before claiming live-environment acceptance.

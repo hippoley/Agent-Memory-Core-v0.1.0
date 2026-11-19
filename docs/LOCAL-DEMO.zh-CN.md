@@ -26,7 +26,7 @@ python scripts/demo_local.py
 1. 通过 `scripts/launch_local.py` 启动 PostgreSQL + FastAPI。
 2. 等待真实 API readiness。
 3. 通过公开 Python SDK 执行真实写入、修订、当前态读取、历史读取、检索、证据对象往返和事件读取。
-4. 向本地默认租户写入一组带 `amc-demo-` 前缀的示例事实，并保留一条 20°C → 21°C 的真实修订历史；重复运行会检查当前版本，避免重复堆积。
+4. 调用仓库原有的 `scripts/seed_demo.py --seed`，通过公开文本处理 API 写入七轮中文示例故事；不调用 `--clean`，不会自动软删除任何记录。
 5. 运行成功后打开 Console、Observatory 和 API 手册三个页面。
 
 成功标志：
@@ -36,7 +36,7 @@ LOCAL_MEMORY_RUNTIME_ACCEPTED
 AGENT_MEMORY_CORE_LOCAL_DEMO_READY
 ```
 
-这条体验路径会在本地默认租户中写入带随机 subject 前缀的 smoke 记录，以及 `amc-demo-` 命名空间的固定示例记录，并保留在本地数据库供界面检查；不会自动删除。示例记录只占用专用 subject ID，不会覆盖其他 subject 的事实。它不调用云端模型，也不代表中文抽取质量、生产安全或负载验收已经通过。
+这条体验路径会在本地默认租户中写入带随机 subject 前缀的 smoke 记录，以及 source ID 以 `demo:script:` 开头的中文示例故事，并保留在本地数据库供界面检查；不会自动删除。是否成功抽取事实以 seeder 的逐轮输出为准，不把没有抽取出来的文本伪装成记忆。它不调用云端模型，也不代表中文抽取质量、生产安全或负载验收已经通过。
 
 ## 3. 打开哪些页面
 

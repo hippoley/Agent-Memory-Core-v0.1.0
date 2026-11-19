@@ -264,6 +264,11 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
             db.migrate()
             with db.conn.transaction():
                 db.conn.execute(
+                    """INSERT INTO memory_tenants(tenant_id,display_name)
+                       VALUES (%s,%s)""",
+                    (tenant_id, "Temporal Evidence Integration Test"),
+                )
+                db.conn.execute(
                     """INSERT INTO memory_durable_tasks
                        (task_id,tenant_id,task_type,workflow_id,input)
                        VALUES (%s::uuid,%s,%s,%s,%s::jsonb)""",
@@ -395,6 +400,10 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
                 db.conn.execute(
                     "DELETE FROM memory_durable_tasks WHERE task_id=%s::uuid",
                     (task_id,),
+                )
+                db.conn.execute(
+                    "DELETE FROM memory_tenants WHERE tenant_id=%s",
+                    (tenant_id,),
                 )
             db.close()
 

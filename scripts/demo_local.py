@@ -6,6 +6,7 @@ public SDK smoke journey. It does not expose the API to the network.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import webbrowser
@@ -38,7 +39,19 @@ def smoke_command() -> list[str]:
 
 
 def seed_command() -> list[str]:
-    return [sys.executable, str(ROOT / "scripts" / "seed_demo.py")]
+    return [sys.executable, str(ROOT / "scripts" / "seed_demo.py"), "--seed"]
+
+
+def local_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    env_file = ROOT / ".env.local"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                env.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    return env
 
 
 def require_sdk() -> None:
@@ -93,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         subprocess.run(smoke_command(), cwd=ROOT, check=True)
-        subprocess.run(seed_command(), cwd=ROOT, check=True)
+        subprocess.run(seed_command(), cwd=ROOT, env=local_environment(), check=True)
 
     print("\nAGENT_MEMORY_CORE_LOCAL_DEMO_READY")
     print("The API is bound to loopback; it is not published to the Internet.")

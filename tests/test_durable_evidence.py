@@ -217,3 +217,25 @@ def test_temporal_history_requires_workflow_and_run_identity():
             source="temporal_history", observed_at=STAMP,
             payload={"execution_status": "RUNNING"}, workflow_id=WORKFLOW,
         )
+
+
+
+def test_provider_receipt_requires_matching_intent_idempotency_key():
+    result = adjudicate_evidence([
+        ev("postgres_task", {"status": "running", "effect_count": 1}),
+        ev("effect_ledger", {"effect_key": "write", "status": "unknown"}),
+        ev("provider_receipt", {"effect_key": "write", "outcome": "COMMITTED",
+                                "authoritative": True, "idempotency_key": "provider-key"}),
+    ])
+    assert result.outcome == "UNKNOWN"
+    assert result.effects_status == "UNRESOLVED"
+
+
+def test_reused_evidence_id_with_different_content_is_conflict():
+    result = adjudicate_evidence([
+        ev("postgres_task", {"status": "running", "effect_count": 0},
+           evidence_id="same-evidence-id"),
+        ev("postgres_task", {"status": "completed", "effect_count": 0},
+           evidence_id="same-evidence-id"),
+    ])
+    assert result.outcome == "CONFLICT"

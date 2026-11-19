@@ -18,7 +18,7 @@ The current implementation already has:
 - an epoch-fenced PostgreSQL acknowledgement;
 - recovery validation of Workflow ID, workflow type, task queue and memo identity.
 
-The current tests cover matching-existing-workflow recovery and conflicting-memo rejection, but do not yet kill a real Dispatcher process at the two external-side-effect boundaries below.
+The current tests cover matching-existing-workflow recovery, conflicting-memo rejection, and process-level SIGKILL at the claim and Temporal-start boundaries. DA-04..DA-06 remain separate acceptance work.
 
 ## Required fault matrix
 
@@ -44,7 +44,7 @@ The current tests cover matching-existing-workflow recovery and conflicting-memo
 
 - Use PostgreSQL 16 and a real Temporal service in the integration job.
 - Start Dispatcher A and Dispatcher B as separate subprocesses.
-- Add deterministic, test-only synchronization at the exact boundaries (claim committed; Temporal start accepted; before acknowledgement). Do not use arbitrary sleeps as the synchronization mechanism.
+- Add deterministic, test-only synchronization at the exact boundaries (before claim commit; claim committed; Temporal start accepted; before acknowledgement). Do not use arbitrary sleeps as the synchronization mechanism.
 - Send SIGKILL to Dispatcher A; verify its exit status is signal 9.
 - Use short, bounded test leases in the isolated test database; do not weaken production defaults.
 - Always clean up subprocesses, Temporal environment, and test rows in a `finally` block.

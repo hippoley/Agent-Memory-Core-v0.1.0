@@ -54,3 +54,137 @@ def test_aligned_nonterminal_states_remain_observational():
 def test_terminal_records_are_not_overwritten():
     result=assess_temporal_task(task=task("failed"),temporal_status="COMPLETED")
     assert result.classification=="TERMINAL_STATE_DIVERGENCE"
+
+# Live adapter tests use a DB cursor and Temporal client contract double. The
+# production entrypoint itself uses a real psycopg connection and Temporal SDK.
+import asyncio
+from types import SimpleNamespace
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchall(self):
+        return self.rows
+
+
+class _ReadOnlyConn:
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = []
+
+    def execute(self, query, params):
+        self.calls.append((query, params))
+        return _Rows(self.rows)
+
+
+class _Handle:
+    def __init__(self, description=None, error=None):
+        self.description = description
+        self.error = error
+
+    async def describe(self):
+        if self.error:
+            raise self.error
+        return self.description
+
+
+class _TemporalClient:
+    def __init__(self, handle):
+        self.handle = handle
+
+    def get_workflow_handle(self, workflow_id):
+        return self.handle
+
+
+def _live_row(*, task_status="running", dispatch_status="started",
+              run_id="run-1", effects=None):
+    return (
+        "task-1", "tenant-a", "example.task", "wf-1", task_status,
+        dispatch_status, "queue-a", run_id, None, 2, 1, None,
+        effects or [],
+    )
+
+
+def _description(*, status="RUNNING", workflow_type="DurableTaskWorkflow",
+                 task_queue="queue-a", memo=None, run_id="run-1"):
+    return SimpleNamespace(
+        id="wf-1",
+        status=SimpleNamespace(name=status),
+        workflow_type=SimpleNamespace(name=workflow_type),
+        task_queue=task_queue,
+        memo=memo or {"agent_memory_task_identity": {
+            "tenant_id": "tenant-a", "task_id": "task-1",
+            "workflow_id": "wf-1", "task_type": "example.task",
+        }},
+        run_id=run_id,
+    )
+
+
+def test_live_inspection_detects_temporal_completed_postgres_running():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    conn = _ReadOnlyConn([_live_row()])
+    client = _TemporalClient(_Handle(_description(status="COMPLETED")))
+    result = asyncio.run(inspect_temporal_dispatches(
+        conn, client, tenant_id="tenant-a"))
+    assert result[0]["classification"] == "TEMPORAL_COMPLETED_POSTGRES_NONTERMINAL"
+    assert result[0]["safe_for_automatic_repair"] is False
+    assert conn.calls[0][1] == ("tenant-a", 100)
+    assert "WHERE t.tenant_id=%s" in conn.calls[0][0]
+
+
+def test_live_inspection_distinguishes_missing_workflow_from_lookup_failure():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+
+    class WorkflowNotFoundError(Exception):
+        pass
+
+    missing = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([_live_row()]),
+        _TemporalClient(_Handle(error=WorkflowNotFoundError())),
+        tenant_id="tenant-a"))
+    assert missing[0]["classification"] == "TEMPORAL_EXECUTION_MISSING"
+
+    unavailable = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([_live_row()]),
+        _TemporalClient(_Handle(error=ConnectionError())),
+        tenant_id="tenant-a"))
+    assert unavailable[0]["classification"] == "TEMPORAL_LOOKUP_FAILED"
+    assert unavailable[0]["safe_for_automatic_repair"] is False
+
+
+def test_live_inspection_rejects_temporal_identity_conflict():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    description = _description(task_queue="wrong-queue")
+    result = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([_live_row()]),
+        _TemporalClient(_Handle(description)),
+        tenant_id="tenant-a"))
+    assert result[0]["classification"] == "TEMPORAL_IDENTITY_CONFLICT"
+    assert result[0]["identity_conflict"]["task_queue_matches"] is False
+    assert result[0]["safe_for_automatic_repair"] is False
+
+
+def test_live_inspection_surfaces_unresolved_effects_and_run_id_divergence():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    row = _live_row(task_status="completed", run_id="recorded-run",
+                    effects=[{"effect_key": "provider-write", "status": "unknown"}])
+    result = asyncio.run(inspect_temporal_dispatches(
+        _ReadOnlyConn([row]),
+        _TemporalClient(_Handle(_description(status="COMPLETED", run_id="actual-run"))),
+        tenant_id="tenant-a"))
+    assert result[0]["classification"] == "TEMPORAL_RUN_ID_DIVERGENCE"
+    assert result[0]["unresolved_effect_keys"] == ["provider-write"]
+    assert result[0]["safe_for_automatic_repair"] is False
+
+
+def test_live_inspection_rejects_invalid_scope_and_limit():
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    conn = _ReadOnlyConn([])
+    client = _TemporalClient(_Handle(_description()))
+    with pytest.raises(ValueError, match="tenant_id"):
+        asyncio.run(inspect_temporal_dispatches(conn, client, tenant_id=""))
+    with pytest.raises(ValueError, match="limit"):
+        asyncio.run(inspect_temporal_dispatches(conn, client, tenant_id="tenant-a", limit=501))
+    assert conn.calls == []

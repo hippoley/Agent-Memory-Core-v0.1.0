@@ -142,7 +142,12 @@ async def inspect_temporal_dispatches(
         try:
             description = await client.get_workflow_handle(workflow_id).describe()
         except Exception as exc:
-            if type(exc).__name__ == "WorkflowNotFoundError":
+            # Temporal Python SDK reports a missing execution as RPCError with
+            # NOT_FOUND status; connection failures and timeouts must remain
+            # lookup-unknown rather than being treated as absence.
+            rpc_status = getattr(exc, "status", None)
+            rpc_status_name = getattr(rpc_status, "name", rpc_status)
+            if rpc_status_name == "NOT_FOUND" or type(exc).__name__ == "WorkflowNotFoundError":
                 temporal_exists = False
                 temporal_status = None
                 temporal_run_id = None
@@ -174,7 +179,8 @@ async def inspect_temporal_dispatches(
             temporal_run_id = getattr(description, "run_id", None)
             workflow_type = getattr(description, "workflow_type", None)
             workflow_type = getattr(workflow_type, "name", workflow_type)
-            memo = getattr(description, "memo", None) or {}
+            memo_value = getattr(description, "memo", None)
+            memo = await memo_value() if callable(memo_value) else (memo_value or {})
             memo_identity = memo.get("agent_memory_task_identity") if isinstance(memo, dict) else None
             expected_identity = {
                 "tenant_id": row_tenant,

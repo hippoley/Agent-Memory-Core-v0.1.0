@@ -181,6 +181,42 @@ def test_source_claim_tenant_and_task_type_authority_are_all_enforced():
         verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
 
 
+def test_claim_type_is_an_independent_authority_dimension():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence()
+    proof = sample_attestation(evidence, private_key)
+    conn = verifier(private_key, grants=[{
+        "source": "temporal_history", "claim_type": "workflow.started",
+        "tenant_scope": TENANT, "task_type_scope": TASK_TYPE,
+        "allow_authoritative": False,
+    }])
+    with pytest.raises(EvidenceTrustError, match="no authority grant"):
+        verify_and_consume_evidence(conn, evidence, proof, expected_audience=AUDIENCE, now=NOW)
+
+
+def test_task_type_scope_is_an_independent_authority_dimension():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence(payload={"task_type": "different.task"})
+    proof = sample_attestation(evidence, private_key)
+    with pytest.raises(EvidenceTrustError, match="no authority grant"):
+        verify_and_consume_evidence(verifier(private_key), evidence, proof, expected_audience=AUDIENCE, now=NOW)
+
+
+def test_claim_type_is_cryptographically_bound_to_signature():
+    private_key = Ed25519PrivateKey.generate()
+    evidence = sample_evidence()
+    proof = sample_attestation(evidence, private_key)
+    conn = verifier(private_key, grants=[
+        {"source":"temporal_history","claim_type":CLAIM,"tenant_scope":TENANT,
+         "task_type_scope":TASK_TYPE,"allow_authoritative":False},
+        {"source":"temporal_history","claim_type":"workflow.started","tenant_scope":TENANT,
+         "task_type_scope":TASK_TYPE,"allow_authoritative":False},
+    ])
+    tampered = replace(proof, claim_type="workflow.started")
+    with pytest.raises(EvidenceTrustError, match="signature verification failed"):
+        verify_and_consume_evidence(conn, evidence, tampered, expected_audience=AUDIENCE, now=NOW)
+
+
 def test_worker_key_cannot_assert_provider_receipt_claim_without_grant():
     private_key = Ed25519PrivateKey.generate()
     evidence = sample_evidence(source="provider_receipt")

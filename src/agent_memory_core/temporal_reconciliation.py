@@ -87,3 +87,155 @@ def assess_temporal_task(*, task: dict | None, temporal_status: str | None,
     return TemporalTaskAssessment(
         "UNCLASSIFIED_DIVERGENCE",False,task_id,workflow_id,pg,tw,unresolved,
         "State combination is not covered by the current recovery policy; require manual review.")
+
+async def inspect_temporal_dispatches(
+    conn: Any, client: Any, *, tenant_id: str, limit: int = 100
+) -> list[dict]:
+    """Read-only live reconciliation of PostgreSQL dispatch rows and Temporal.
+
+    The tenant predicate is mandatory. No PostgreSQL or Temporal state is
+    mutated. Lookup failures are reported separately from missing executions;
+    callers must never interpret a transport error as proof that a Workflow
+    does not exist.
+    """
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        raise ValueError("tenant_id is required")
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
+        raise ValueError("limit must be an integer between 1 and 500")
+
+    rows = conn.execute(
+        """SELECT
+               t.task_id::text, t.tenant_id, t.task_type, t.workflow_id,
+               t.status AS task_status,
+               d.status AS dispatch_status, d.task_queue, d.temporal_run_id,
+               d.lease_owner, d.lease_epoch, d.attempts, d.lease_expires_at,
+               COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object(
+                       'effect_key', e.effect_key, 'status', e.status
+                   ) ORDER BY e.effect_key)
+                   FROM memory_task_effects AS e
+                   WHERE e.task_id=t.task_id
+               ), '[]'::jsonb) AS effects
+           FROM memory_durable_tasks AS t
+           JOIN memory_temporal_dispatches AS d
+             ON d.task_id=t.task_id AND d.tenant_id=t.tenant_id
+           WHERE t.tenant_id=%s
+           ORDER BY d.updated_at, t.task_id
+           LIMIT %s""",
+        (tenant_id, limit),
+    ).fetchall()
+
+    report: list[dict] = []
+    for row in rows:
+        (
+            task_id, row_tenant, task_type, workflow_id, task_status,
+            dispatch_status, task_queue, recorded_run_id, lease_owner,
+            lease_epoch, attempts, lease_expires_at, effects,
+        ) = row
+        task = {
+            "task_id": str(task_id),
+            "tenant_id": row_tenant,
+            "task_type": task_type,
+            "workflow_id": workflow_id,
+            "status": task_status,
+        }
+        try:
+            description = await client.get_workflow_handle(workflow_id).describe()
+        except Exception as exc:
+            if type(exc).__name__ == "WorkflowNotFoundError":
+                temporal_exists = False
+                temporal_status = None
+                temporal_run_id = None
+                identity_conflict = None
+                lookup_error = None
+            else:
+                report.append({
+                    "task_id": str(task_id),
+                    "tenant_id": row_tenant,
+                    "workflow_id": workflow_id,
+                    "task_status": task_status,
+                    "dispatch_status": dispatch_status,
+                    "classification": "TEMPORAL_LOOKUP_FAILED",
+                    "safe_for_automatic_repair": False,
+                    "temporal_status": None,
+                    "temporal_run_id": None,
+                    "recorded_temporal_run_id": recorded_run_id,
+                    "identity_conflict": None,
+                    "unresolved_effect_keys": [],
+                    "reason": "Temporal lookup failed; execution existence is unknown and must not be inferred from a transport/client error.",
+                    "lookup_error": type(exc).__name__,
+                })
+                continue
+        else:
+            temporal_exists = True
+            status_value = getattr(description, "status", None)
+            temporal_status = getattr(status_value, "name", status_value)
+            temporal_status = str(temporal_status).upper() if temporal_status is not None else None
+            temporal_run_id = getattr(description, "run_id", None)
+            workflow_type = getattr(description, "workflow_type", None)
+            workflow_type = getattr(workflow_type, "name", workflow_type)
+            memo = getattr(description, "memo", None) or {}
+            memo_identity = memo.get("agent_memory_task_identity") if isinstance(memo, dict) else None
+            expected_identity = {
+                "tenant_id": row_tenant,
+                "task_id": str(task_id),
+                "workflow_id": workflow_id,
+                "task_type": task_type,
+            }
+            identity_conflict = None
+            if (
+                getattr(description, "id", None) != workflow_id
+                or workflow_type != "DurableTaskWorkflow"
+                or getattr(description, "task_queue", None) != task_queue
+                or memo_identity != expected_identity
+            ):
+                identity_conflict = {
+                    "workflow_id_matches": getattr(description, "id", None) == workflow_id,
+                    "workflow_type_matches": workflow_type == "DurableTaskWorkflow",
+                    "task_queue_matches": getattr(description, "task_queue", None) == task_queue,
+                    "memo_identity_matches": memo_identity == expected_identity,
+                }
+
+        effects_list = effects or []
+        if isinstance(effects_list, str):
+            import json
+            effects_list = json.loads(effects_list)
+        assessment = assess_temporal_task(
+            task=task,
+            temporal_status=temporal_status,
+            effects=effects_list,
+            temporal_exists=temporal_exists,
+        )
+        classification = (
+            "TEMPORAL_IDENTITY_CONFLICT" if identity_conflict else assessment.classification
+        )
+        reason = (
+            "Temporal execution exists under the expected Workflow ID but its type, task queue, or immutable memo identity differs from PostgreSQL. Preserve both records; do not acknowledge or repair automatically."
+            if identity_conflict else assessment.reason
+        )
+        if recorded_run_id and temporal_run_id and recorded_run_id != temporal_run_id:
+            classification = "TEMPORAL_RUN_ID_DIVERGENCE"
+            reason = "The Temporal Run ID differs from the Run ID recorded in PostgreSQL. Preserve both identifiers and require investigation."
+        report.append({
+            "task_id": str(task_id),
+            "tenant_id": row_tenant,
+            "workflow_id": workflow_id,
+            "task_type": task_type,
+            "task_status": task_status,
+            "dispatch_status": dispatch_status,
+            "task_queue": task_queue,
+            "lease_owner": lease_owner,
+            "lease_epoch": lease_epoch,
+            "attempts": attempts,
+            "lease_expires_at": lease_expires_at.isoformat() if hasattr(lease_expires_at, "isoformat") else lease_expires_at,
+            "classification": classification,
+            "safe_for_automatic_repair": False,
+            "temporal_status": temporal_status,
+            "temporal_run_id": temporal_run_id,
+            "recorded_temporal_run_id": recorded_run_id,
+            "identity_conflict": identity_conflict,
+            "unresolved_effect_keys": list(assessment.unresolved_effect_keys),
+            "reason": reason,
+            "lookup_error": None,
+        })
+    return report

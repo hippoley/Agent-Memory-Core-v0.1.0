@@ -252,6 +252,14 @@ def adjudicate_evidence(
     temporal_status = str(temporal.payload.get("execution_status", "UNKNOWN")).upper() if temporal else "UNKNOWN"
     dispatch_status = str(dispatch.payload.get("status", "UNKNOWN")).lower() if dispatch else "UNKNOWN"
 
+    expected_temporal_terminal = {
+        "completed": {"COMPLETED"},
+        "failed": {"FAILED"},
+        "cancelled": {"CANCELED", "CANCELLED"},
+    }
+    if task_status in expected_temporal_terminal and temporal_status not in expected_temporal_terminal[task_status]:
+        conflicts.append("Terminal PostgreSQL business state conflicts with Temporal execution status.")
+
     effect_statuses: dict[str, str] = {}
     effect_keys = {str(item.payload.get("effect_key", "")) for item in effect_items}
     effect_keys.discard("")

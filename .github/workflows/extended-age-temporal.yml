@@ -11,6 +11,7 @@ on:
       - 'tests/test_temporal_durable_task_workflow.py'
       - 'tests/test_temporal_durable_task_execution.py'
       - 'tests/test_temporal_dispatcher_recovery.py'
+      - 'tests/test_temporal_dispatcher_sigkill.py'
       - 'scripts/launch_local.py'
       - 'scripts/smoke_extended_temporal.py'
       - '.github/workflows/extended-age-temporal.yml'
@@ -31,6 +32,11 @@ jobs:
         run: python -m pip install -e '.[postgres,temporal]'
       - name: Verify actual Temporal workflow, idempotent PostgreSQL receipt
         run: python scripts/smoke_extended_temporal.py
+      - name: Verify Dispatcher process-level SIGKILL recovery
+        env:
+          MEMORY_TEST_DSN: postgresql://memory:local-dev-only@localhost:55432/memory
+          MEMORY_TEMPORAL_ADDRESS: localhost:7233
+        run: python -m pytest -q tests/test_temporal_dispatcher_sigkill.py
       - name: Diagnostics on failure
         if: failure()
         run: |

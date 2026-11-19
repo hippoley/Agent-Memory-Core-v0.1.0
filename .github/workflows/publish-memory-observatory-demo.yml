@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/local-product-demo-20261119
     paths:
       - 'src/agent_memory_core/resources/dashboard/observatory.html'
       - 'docs/demo/index.html'

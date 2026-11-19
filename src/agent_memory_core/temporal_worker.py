@@ -35,6 +35,7 @@ async def main() -> None:
         write_memory_verification_receipt,
         _database_dsn,
     )
+    from .durable_task_workflow import DurableTaskWorkflow
     from .postgres import PostgresMemory
     from .worker_identity import configured_worker_tenant, assert_worker_tenant
 
@@ -55,7 +56,7 @@ async def main() -> None:
             client,
             task_queue=task_queue,
             activity_executor=executor,
-            workflows=[VerifyMemoryWorkflow],
+            workflows=[VerifyMemoryWorkflow, DurableTaskWorkflow],
             activities=[verify_memory_record,write_memory_verification_receipt],
         )
         await worker.run()

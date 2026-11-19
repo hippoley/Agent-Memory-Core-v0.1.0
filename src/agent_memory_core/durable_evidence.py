@@ -94,7 +94,9 @@ class EvidenceEnvelope:
             raise EvidenceValidationError("payload must be a JSON object")
         _parse_timestamp(self.observed_at)
         if self.lease_epoch is not None and (
-            isinstance(self.lease_epoch, bool) or self.lease_epoch < 0
+            isinstance(self.lease_epoch, bool)
+            or not isinstance(self.lease_epoch, int)
+            or self.lease_epoch < 0
         ):
             raise EvidenceValidationError("lease_epoch must be a non-negative integer")
         expected = hashlib.sha256(_canonical_json(self.unsigned_dict()).encode("utf-8")).hexdigest()
@@ -202,6 +204,22 @@ def adjudicate_evidence(
     lookup = _latest(items, "temporal_lookup")
     lease = _latest(items, "activity_heartbeat")
     dispatch_epoch = dispatch.lease_epoch if dispatch else None
+
+    if lookup and str(lookup.payload.get("lookup_status", "")).upper() == "NOT_FOUND" and temporal:
+        reasons.append("Temporal lookup reports NOT_FOUND while Temporal history evidence exists.")
+    if task_row and "effect_count" in task_row.payload:
+        expected_effect_count = task_row.payload.get("effect_count")
+        if (
+            isinstance(expected_effect_count, bool)
+            or not isinstance(expected_effect_count, int)
+            or expected_effect_count < 0
+        ):
+            reasons.append("PostgreSQL effect_count evidence is malformed.")
+        elif expected_effect_count != len({
+            str(item.payload.get("effect_key", ""))
+            for item in effect_items if item.payload.get("effect_key")
+        }):
+            reasons.append("PostgreSQL effect_count does not match the supplied Effect Ledger evidence.")
 
     temporal_run_ids = {item.run_id for item in items if item.source == "temporal_history" and item.run_id}
     dispatch_run_ids = {item.run_id for item in items if item.source == "postgres_dispatch" and item.run_id}
@@ -315,6 +333,7 @@ def adjudicate_evidence(
         and task_row is not None
         and task_row.payload.get("effect_count") == len(effect_keys)
         and not unresolved
+        and not reasons
         and all(status in {"requested", "not_found"} for status in effect_statuses.values())
         and task_status not in TERMINAL_TASK_STATES
     ):

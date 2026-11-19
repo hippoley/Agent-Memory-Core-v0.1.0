@@ -62,3 +62,28 @@ def test_dispatcher_rejects_already_started_workflow_with_conflicting_memo():
                 )
 
     asyncio.run(scenario())
+
+def test_dispatcher_rejects_existing_workflow_on_wrong_task_queue():
+    pytest.importorskip("temporalio")
+    from temporalio.testing import WorkflowEnvironment
+    from agent_memory_core.durable_task_workflow import DurableTaskWorkflow
+    from agent_memory_core.temporal_dispatcher import _start_or_recover
+
+    async def scenario():
+        async with await WorkflowEnvironment.start_local() as env:
+            identity={
+                "tenant_id":"tenant-dispatch-recovery-queue",
+                "task_id":"00000000-0000-0000-0000-000000000041",
+                "workflow_id":"amc-dispatch-recovery-wrong-queue",
+                "task_type":"example.memory.batch.organize",
+            }
+            await env.client.start_workflow(
+                DurableTaskWorkflow.run,identity,id=identity["workflow_id"],
+                task_queue="actual-queue",memo={"agent_memory_task_identity":identity},
+            )
+            with pytest.raises(RuntimeError,match="identity"):
+                await _start_or_recover(
+                    env.client,{**identity,"task_queue":"unexpected-queue","lease_epoch":2},
+                )
+
+    asyncio.run(scenario())

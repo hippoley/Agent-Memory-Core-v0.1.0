@@ -339,6 +339,20 @@ $("demoBtn").onclick=()=>{state={...state,mode:"demo",key:"",items:demo,events:[
 function readCookie(name){let item=document.cookie.split("; ").find(x=>x.startsWith(name+"="));return item?decodeURIComponent(item.slice(name.length+1)):""}
 async function api(path,key,options={}){let ctl=new AbortController();let timer=setTimeout(()=>ctl.abort(),15000);let headers={"Content-Type":"application/json",...(options.headers||{})};if(key)headers.Authorization="Bearer "+key;else{let tenant=readCookie("amc_tenant"),csrf=readCookie("amc_csrf");if(tenant)headers["X-Memory-Tenant"]=tenant;if(csrf&&!["GET","HEAD","OPTIONS"].includes((options.method||"GET").toUpperCase()))headers["X-CSRF-Token"]=csrf}try{let r=await fetch(path,{...options,headers,credentials:"same-origin",signal:ctl.signal,cache:"no-store"});let body;try{body=await r.json()}catch{body={}}if(!r.ok)throw Error("API returned HTTP "+r.status+": "+String(body.detail||"request failed"));return body}finally{clearTimeout(timer)}}
 async function refreshLive(){let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",state.key),api("/v1/events?limit=100",state.key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Canonical readback returned an invalid response");state.items=results[0].items;state.events=results[1].items;render();draw()}
+async function readClaimHistory(subjectId,predicate){
+ // Inspect the target subject, never assume the 500-row Observatory viewport is complete.
+ const pageSize=100, maxPages=20, rows=[];
+ for(let offset=0;offset<pageSize*maxPages;offset+=pageSize){
+  const url="/v1/memories?subject_id="+encodeURIComponent(subjectId)+"&predicate="+encodeURIComponent(predicate)+
+    "&include_superseded=true&limit="+pageSize+"&offset="+offset;
+  const result=await api(url,state.key);
+  if(!result||!Array.isArray(result.items))throw Error("Targeted canonical history returned an invalid response");
+  rows.push(...result.items);
+  if(result.items.length<pageSize)return rows;
+ }
+ throw Error("Targeted canonical history exceeds verification limit; cannot establish success");
+}
+
 $("liveBtn").onclick=async()=>{let key=$("key").value.trim();if(!key&&!readCookie("amc_tenant")){$("authError").textContent="Sign in with your organization or enter an API credential.";return}let btn=$("liveBtn");btn.disabled=true;$("authError").textContent="";try{let results=await Promise.all([api("/v1/memories?limit=500&include_superseded=true",key),api("/v1/events?limit=100",key)]);if(!Array.isArray(results[0].items)||!Array.isArray(results[1].items))throw Error("Unexpected API response shape");state={...state,mode:"live",key,items:results[0].items,events:results[1].items,selection:null,position:100,scope:"all"};closeAuth();$("scope").value="all";$("mutationNote").textContent="Live API connected. Writes affect only the authenticated tenant; revisions require an explicit selected Memory ID.";$("writePanel").hidden=false;render();draw()}catch(err){$("authError").textContent=err.message||"Connection failed"}finally{btn.disabled=false}};
 
 let revisionTarget=null;
@@ -409,19 +423,20 @@ $("writeForm").onsubmit=async e=>{
   serverAccepted=true;
   if(!created||typeof created.id!=="string"||!created.id)throw Error("Write API returned no canonical memory ID");
   await refreshLive();
-  const observed=state.items.find(x=>String(x.id||x.memory_id)===created.id);
+  const verifiedHistory=await readClaimHistory(subject_id,predicate);
+  const observed=verifiedHistory.find(x=>String(x.id||x.memory_id)===created.id);
   if(!observed||observed.subject_id!==subject_id||observed.predicate!==predicate||observed.source_id!==source_id||
      JSON.stringify(canonicalJson(observed.value))!==JSON.stringify(canonicalJson(value))||observed.superseded_at||observed.forgotten_at){
     throw Error("Canonical readback did not confirm the created claim; inspect API history before retrying");
   }
   if(revisionTarget){
-    const previous=state.items.find(x=>String(x.id||x.memory_id)===revisionTarget);
+    const previous=verifiedHistory.find(x=>String(x.id||x.memory_id)===revisionTarget);
     if(!previous||!previous.superseded_at)throw Error("Canonical readback did not confirm the previous version was superseded");
   }
-  state.selection=created.id;render();draw();
+  state.selection=state.items.some(x=>String(x.id||x.memory_id)===created.id)?created.id:null;render();draw();
   $("mutationNote").textContent=(revisionTarget?"Revision committed and independently read back. New ID: ":"Memory created and independently read back. New ID: ")+created.id;
   revisionTarget=null;btn.textContent="Create memory →";$("writeValue").value="{\n  \"text\": \"\"\n}";
-  $("forgetSelected").disabled=false;
+  $("forgetSelected").disabled=!state.selection;
  }catch(err){$("mutationNote").textContent=(serverAccepted?"Write response received, but canonical readback is UNVERIFIED. Do not blindly retry. ":"Write request failed; outcome may be UNKNOWN. Check current history before retrying. ")+err.message}
  finally{btn.disabled=false}
 };
@@ -429,13 +444,16 @@ $("forgetSelected").onclick=async()=>{
  const id=state.selection;
  if(state.mode!=="live"||!id)return;
  if(!window.confirm("Soft-forget this exact Memory ID? Its audit history will be retained.\n"+id))return;
+ const target=state.items.find(x=>String(x.id||x.memory_id)===id);
+ if(!target){$("mutationNote").textContent="Selected claim is not in the current loaded page.";return}
  const btn=$("forgetSelected");btn.disabled=true;
  let serverAccepted=false;
  try{
   await api("/v1/memories/"+encodeURIComponent(id),state.key,{method:"DELETE"});
   serverAccepted=true;
   await refreshLive();
-  const observed=state.items.find(x=>String(x.id||x.memory_id)===id);
+  const verifiedHistory=await readClaimHistory(target.subject_id,target.predicate);
+  const observed=verifiedHistory.find(x=>String(x.id||x.memory_id)===id);
   if(!observed||(!observed.forgotten_at&&!observed.superseded_at)){
     throw Error("Canonical readback did not confirm the forgotten claim is historical");
   }

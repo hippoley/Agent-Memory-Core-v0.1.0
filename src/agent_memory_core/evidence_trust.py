@@ -13,7 +13,10 @@ import hashlib
 import json
 from typing import Any, Mapping
 
-from .durable_evidence import EvidenceEnvelope, EvidenceValidationError, _canonical_json, _parse_timestamp
+from .durable_evidence import (
+    Adjudication, EvidenceEnvelope, EvidenceValidationError,
+    _canonical_json, _parse_timestamp, adjudicate_evidence,
+)
 
 
 class EvidenceTrustError(ValueError):
@@ -262,3 +265,62 @@ def export_public_key(private_key: Any) -> bytes:
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
+
+
+
+@dataclass(frozen=True)
+class TrustedAdjudication:
+    adjudication: Adjudication
+    verified_evidence: tuple[VerifiedEvidence, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "adjudication": self.adjudication.to_dict(),
+            "verified_evidence": [
+                {
+                    "issuer": item.issuer,
+                    "key_id": item.key_id,
+                    "audience": item.audience,
+                    "issued_at": item.issued_at,
+                    "expires_at": item.expires_at,
+                    "nonce": item.nonce,
+                    "evidence_sha256": item.evidence.sha256,
+                    "signature_sha256": item.signature_sha256,
+                }
+                for item in self.verified_evidence
+            ],
+        }
+
+
+def adjudicate_trusted_evidence(
+    conn: Any,
+    signed_evidence: list[tuple[EvidenceEnvelope, EvidenceAttestation]]
+        | tuple[tuple[EvidenceEnvelope, EvidenceAttestation], ...],
+    *,
+    expected_audience: str,
+    now: datetime | None = None,
+    max_clock_skew: timedelta = timedelta(seconds=30),
+    max_attestation_lifetime: timedelta = timedelta(minutes=5),
+    max_evidence_age: timedelta = timedelta(minutes=15),
+) -> TrustedAdjudication:
+    """Verify every producer attestation, consume replay nonces, then adjudicate.
+
+    The outer transaction makes a multi-source evidence bundle all-or-nothing:
+    if any signature, authority, freshness or replay check fails, no nonce from
+    this bundle is committed. The adjudicator receives only verified envelopes.
+    """
+    if not signed_evidence:
+        raise EvidenceTrustError("at least one signed evidence item is required")
+    verified: list[VerifiedEvidence] = []
+    with conn.transaction():
+        for evidence, attestation in signed_evidence:
+            verified.append(verify_and_consume_evidence(
+                conn, evidence, attestation,
+                expected_audience=expected_audience,
+                now=now,
+                max_clock_skew=max_clock_skew,
+                max_attestation_lifetime=max_attestation_lifetime,
+                max_evidence_age=max_evidence_age,
+            ))
+        decision = adjudicate_evidence([item.evidence for item in verified])
+    return TrustedAdjudication(decision, tuple(verified))

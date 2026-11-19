@@ -99,7 +99,7 @@ These are intentionally distinct outcomes:
 | Evidence duplication | Same semantic fact, re-attested with a fresh nonce or envelope timestamp | Accepted as `fact_disposition=DUPLICATE`; no second fact is created |
 | Semantic conflict | Same semantic fact identity but different canonical claim payload | `EvidenceFactConflictError`; transaction rolls back |
 
-Semantic identity is keyed by tenant, task, source, claim type, Workflow, Run, Epoch and a stable `fact_id` (or source event/receipt ID). When no stable event ID exists, the empty identity is conservative: different payloads for that same identity conflict rather than silently becoming separate facts. Producers should supply immutable source event IDs for event streams.
+Semantic identity is keyed by producer issuer, tenant, task, source, claim type, Workflow, Run, Epoch and a stable `fact_id` (or source event/receipt ID). Key rotation under the same issuer preserves deduplication; unrelated producers do not collide. When no stable event ID exists, the empty identity is conservative: different payloads for that same identity conflict rather than silently becoming separate facts. Producers should supply immutable source event IDs for event streams.
 
 Nonce uniqueness prevents reuse of one attestation. The fact ledger prevents the same immutable fact from being reintroduced with a new nonce. Neither substitutes for the other.
 

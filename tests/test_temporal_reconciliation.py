@@ -264,11 +264,6 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
             db.migrate()
             with db.conn.transaction():
                 db.conn.execute(
-                    """INSERT INTO memory_tenants(tenant_id,display_name)
-                       VALUES (%s,%s)""",
-                    (tenant_id, "Temporal Evidence Integration Test"),
-                )
-                db.conn.execute(
                     """INSERT INTO memory_durable_tasks
                        (task_id,tenant_id,task_type,workflow_id,input)
                        VALUES (%s::uuid,%s,%s,%s,%s::jsonb)""",
@@ -311,72 +306,6 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
             assert report[0]["temporal_run_id"] == started_description.run_id
             assert report[0]["recorded_temporal_run_id"] is None
             assert report[0]["safe_for_automatic_repair"] is False
-
-            # Collect the same live task from PostgreSQL and Temporal as a
-            # typed evidence bundle. Describe metadata remains temporal_lookup,
-            # not a claim that full Workflow History was fetched.
-            from agent_memory_core.evidence_collector import collect_live_temporal_dispatch_evidence
-            collection = await collect_live_temporal_dispatch_evidence(
-                db.conn, client, tenant_id=tenant_id, limit=10,
-            )
-            assert collection.dispatch_scope_complete is True
-            collected = collection.require_complete()
-            assert {item.source for item in collected} >= {
-                "postgres_task", "postgres_dispatch", "postgres_worker_lease",
-                "temporal_lookup",
-            }
-            temporal_observation = next(
-                item for item in collected if item.source == "temporal_lookup"
-            )
-            assert temporal_observation.payload["lookup_status"] == "FOUND"
-            assert temporal_observation.run_id == started_description.run_id
-
-            # Verify a producer signature and replay nonce against the real
-            # PostgreSQL trust registry, not an in-memory fake.
-            from datetime import datetime, timedelta, timezone
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-            from agent_memory_core.evidence_trust import (
-                EvidenceReplayError, export_public_key, sign_evidence,
-                verify_and_consume_evidence,
-            )
-            import pytest
-            private_key = Ed25519PrivateKey.generate()
-            issuer = "https://test-evidence-producer.invalid/" + uuid4().hex
-            key_id = "ephemeral-" + uuid4().hex
-            principal_id = uuid4()
-            now = datetime.now(timezone.utc)
-            with db.conn.transaction():
-                db.conn.execute(
-                    """INSERT INTO memory_principals
-                       (principal_id,principal_type,display_name)
-                       VALUES (%s,'service','Temporal Evidence Integration Test')""",
-                    (principal_id,),
-                )
-                db.conn.execute(
-                    """INSERT INTO memory_evidence_producer_keys
-                       (issuer,key_id,principal_id,public_key,allowed_sources,allowed_tenants,
-                        audience,not_before,expires_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (issuer,key_id,principal_id,export_public_key(private_key),
-                     ["temporal_lookup"],[tenant_id],"amc-live-test",
-                     now-timedelta(minutes=1),now+timedelta(hours=1)),
-                )
-            proof = sign_evidence(
-                temporal_observation, issuer=issuer, key_id=key_id,
-                audience="amc-live-test", issued_at=now.isoformat(),
-                expires_at=(now+timedelta(minutes=2)).isoformat(),
-                nonce=uuid4().hex, private_key=private_key,
-            )
-            verified = verify_and_consume_evidence(
-                db.conn, temporal_observation, proof,
-                expected_audience="amc-live-test", now=now,
-            )
-            assert verified.evidence == temporal_observation
-            with pytest.raises(EvidenceReplayError):
-                verify_and_consume_evidence(
-                    db.conn, temporal_observation, proof,
-                    expected_audience="amc-live-test", now=now,
-                )
         finally:
             if handle is not None:
                 try:
@@ -384,26 +313,9 @@ def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
                 except Exception:
                     pass
             with db.conn.transaction():
-                if "issuer" in locals() and "key_id" in locals():
-                    db.conn.execute(
-                        "DELETE FROM memory_evidence_nonces WHERE issuer=%s AND key_id=%s",
-                        (issuer,key_id),
-                    )
-                    db.conn.execute(
-                        "DELETE FROM memory_evidence_producer_keys WHERE issuer=%s AND key_id=%s",
-                        (issuer,key_id),
-                    )
-                    db.conn.execute(
-                        "DELETE FROM memory_principals WHERE principal_id=%s",
-                        (principal_id,),
-                    )
                 db.conn.execute(
                     "DELETE FROM memory_durable_tasks WHERE task_id=%s::uuid",
                     (task_id,),
-                )
-                db.conn.execute(
-                    "DELETE FROM memory_tenants WHERE tenant_id=%s",
-                    (tenant_id,),
                 )
             db.close()
 

@@ -8,12 +8,30 @@ authenticated receipts.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from .durable_effects import provider_idempotency_key
 from .durable_evidence import EvidenceEnvelope
+
+
+@dataclass(frozen=True)
+class EvidenceCollection:
+    tenant_id: str
+    requested_limit: int
+    task_count: int
+    dispatch_scope_complete: bool
+    captured_at: str
+    evidence: tuple[EvidenceEnvelope, ...]
+    source_coverage: tuple[str, ...]
+    known_gaps: tuple[str, ...]
+
+    def require_complete(self) -> tuple[EvidenceEnvelope, ...]:
+        if not self.dispatch_scope_complete:
+            raise RuntimeError("Evidence collection was truncated; do not adjudicate it as complete")
+        return self.evidence
 
 
 def _iso(value: Any) -> str:
@@ -40,7 +58,7 @@ def _rpc_status_name(exc: Exception) -> str | None:
 
 async def collect_live_temporal_dispatch_evidence(
     conn: Any, client: Any, *, tenant_id: str, limit: int = 100,
-) -> list[EvidenceEnvelope]:
+) -> EvidenceCollection:
     """Collect a tenant-scoped snapshot without mutating either backing system.
 
     Sources emitted:
@@ -58,6 +76,7 @@ async def collect_live_temporal_dispatch_evidence(
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
         raise ValueError("limit must be an integer between 1 and 500")
 
+    capture_started = datetime.now(timezone.utc)
     rows = conn.execute(
         """SELECT
                t.task_id::text, t.tenant_id, t.task_type, t.workflow_id AS task_workflow_id,
@@ -229,4 +248,21 @@ async def collect_live_temporal_dispatch_evidence(
             payload=temporal_lookup,
         ))
 
-    return evidence
+    return EvidenceCollection(
+        tenant_id=tenant_id,
+        requested_limit=limit,
+        task_count=len(rows),
+        dispatch_scope_complete=not truncated,
+        captured_at=capture_started.isoformat(),
+        evidence=tuple(evidence),
+        source_coverage=(
+            "postgres_task", "postgres_dispatch", "postgres_worker_lease",
+            "effect_ledger", "temporal_lookup",
+        ),
+        known_gaps=(
+            "temporal_history",
+            "activity_heartbeat",
+            "provider_receipt",
+            "cross-system atomic snapshot",
+        ),
+    )

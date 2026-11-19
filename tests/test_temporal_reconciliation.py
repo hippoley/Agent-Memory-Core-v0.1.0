@@ -188,3 +188,79 @@ def test_live_inspection_rejects_invalid_scope_and_limit():
     with pytest.raises(ValueError, match="limit"):
         asyncio.run(inspect_temporal_dispatches(conn, client, tenant_id="tenant-a", limit=501))
     assert conn.calls == []
+
+@pytest.mark.integration
+def test_live_postgres_temporal_dispatch_reconciliation_reads_real_services():
+    """Exercise the adapter against PostgreSQL 16 and the real Temporal service."""
+    import os
+    from uuid import uuid4
+    if not os.getenv("MEMORY_TEST_DSN") or not os.getenv("MEMORY_TEMPORAL_ADDRESS"):
+        pytest.skip("Real PostgreSQL and Temporal services are required")
+
+    from temporalio.client import Client
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.temporal_dispatch import TemporalDispatchStore, stable_workflow_id
+    from agent_memory_core.temporal_reconciliation import inspect_temporal_dispatches
+    from agent_memory_core.durable_task_workflow import DurableTaskWorkflow
+
+    async def scenario():
+        db = PostgresMemory(os.environ["MEMORY_TEST_DSN"])
+        tenant_id = "temporal-reconcile-live-" + uuid4().hex
+        task_id = str(uuid4())
+        workflow_id = stable_workflow_id(tenant_id, task_id)
+        task_queue = "temporal-reconcile-live-" + uuid4().hex
+        client = await Client.connect(
+            os.getenv("MEMORY_TEMPORAL_ADDRESS", "localhost:7233"),
+            namespace=os.getenv("MEMORY_TEMPORAL_NAMESPACE", "default"),
+        )
+        handle = None
+        try:
+            db.migrate()
+            with db.conn.transaction():
+                db.conn.execute(
+                    """INSERT INTO memory_durable_tasks
+                       (task_id,tenant_id,task_type,workflow_id,input)
+                       VALUES (%s::uuid,%s,%s,%s,%s::jsonb)""",
+                    (task_id, tenant_id, "example.memory.batch.organize",
+                     workflow_id, "{}"),
+                )
+            TemporalDispatchStore(db.conn).enqueue(
+                tenant_id=tenant_id, task_id=task_id,
+                workflow_id=workflow_id, task_queue=task_queue,
+            )
+            identity = {
+                "tenant_id": tenant_id,
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+                "task_type": "example.memory.batch.organize",
+            }
+            handle = await client.start_workflow(
+                DurableTaskWorkflow.run,
+                identity,
+                id=workflow_id,
+                task_queue=task_queue,
+                memo={"agent_memory_task_identity": identity},
+            )
+            report = await inspect_temporal_dispatches(
+                db.conn, client, tenant_id=tenant_id, limit=10,
+            )
+            assert len(report) == 1
+            assert report[0]["classification"] == "ALIGNED_NONTERMINAL"
+            assert report[0]["temporal_status"] == "RUNNING"
+            assert report[0]["temporal_run_id"] == handle.result_run_id
+            assert report[0]["recorded_temporal_run_id"] is None
+            assert report[0]["safe_for_automatic_repair"] is False
+        finally:
+            if handle is not None:
+                try:
+                    await handle.terminate("integration test cleanup")
+                except Exception:
+                    pass
+            with db.conn.transaction():
+                db.conn.execute(
+                    "DELETE FROM memory_durable_tasks WHERE task_id=%s::uuid",
+                    (task_id,),
+                )
+            db.close()
+
+    asyncio.run(scenario())

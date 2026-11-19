@@ -478,7 +478,7 @@ def test_evidence_key_revocation_serializes_with_live_verification():
 
 @pytest.mark.integration
 def test_postgres_authority_matrix_fact_deduplication_and_claim_boundaries():
-    """Exercise four-dimensional grants and semantic fact identity in PostgreSQL."""
+    """Exercise source, claim, tenant/task scope, authoritative permission and fact identity in PostgreSQL."""
     import os
     from uuid import uuid4
     if not os.getenv("MEMORY_TEST_DSN"):

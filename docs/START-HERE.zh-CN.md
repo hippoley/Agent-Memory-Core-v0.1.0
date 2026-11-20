@@ -15,7 +15,7 @@
 - [首屏记忆演化图](assets/hero-belief-lifecycle.svg)：用月结 → 季结这个**示意例子**表达“更新事实，但保留历史证据”。
 - [运行时架构图](assets/architecture.svg)：PostgreSQL 是唯一权威事实源，pgvector 和 AGE 是检索视图，Temporal 是可选持久执行适配器。
 - [记忆生命周期图](assets/memory-lifecycle.svg)：区分写入、派生投影与带规范事实复核的召回。
-- [Memory Observatory · Draft PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30)：新前端的蓝色动态细线束、时间筛选、来源检查、合成 Demo 与只读 Live 模式；**尚未合并，也未验证正式公网部署**。
+- [Memory Observatory](../src/agent_memory_core/resources/dashboard/observatory.html)：现有前端包含时间筛选、来源检查、合成 Demo 与 Live API；**PR #56 的写入回读核验和一键 Demo 仍未合并 main**，不能把 PR 环境测试当作公开版本能力。
 
 这里的蓝色装饰线并不表示 AGE 图边、Embedding 距离或真实验证结果；新版 Observatory 的 Live 读取有限页的认证事实，不代表整个租户数据。前端截图需要真实浏览器验收之后才能放入首页，不能用视觉效果代替测量。
 
@@ -48,10 +48,10 @@
 
 ```bash
 python scripts/launch_local.py up --profile lite
-# PR #30 分支预览访问 http://127.0.0.1:8765/dashboard/observatory.html
+# main 的本地 Observatory：http://127.0.0.1:8765/dashboard/observatory.html
 ```
 
-Demo 无需密钥；Live 只应连接受保护的同源 API。**新版仍处于 [Draft PR #30](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/30)，尚未合并到 main，也没有经过完整浏览器与真实租户验收。** [查看更多设计与隐私说明](memory-observatory-preview.md)。
+Demo 无需密钥；Live 只应连接受保护的同源 API。**第三方只应从 `main` 安装。PR #56 的完整写入／修订／软遗忘验证与 `scripts/demo_local.py` 目前尚未进入 `main`，因此完整 P0-1 外部验收必须等待合并，不能指导测试者切换功能分支绕过发布门槛。** [产品设计与隐私说明](memory-observatory-preview.md)。
 
 ## 为什么有 Apache AGE 和 Temporal？
 
@@ -71,11 +71,14 @@ AGE 不是第二个事实权威，Temporal 也不是第二个记忆数据库。�
 
 ## 先跑起来
 
-前提：Python 3.10+，Docker Compose v2。
+**正式安装入口只认 `main`。** PR 和功能分支只用来内部开发；如果文档要求的文件在 `main` 缺失，属于发布阻断，不能让第三方临时切换分支。当前 `main` 可以按下面的命令运行基础服务，但 PR #56 的完整 Demo 还未合并。
+
+前提：Git、Python 3.10+，Docker Compose v2。
 
 ```bash
-git clone https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
 cd Agent-Memory-Core-v0.1.0
+git branch --show-current  # 必须显示 main
 python scripts/launch_local.py up --profile lite
 ```
 

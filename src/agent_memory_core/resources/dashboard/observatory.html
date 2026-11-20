@@ -449,6 +449,13 @@ $("forgetSelected").onclick=async()=>{
  const btn=$("forgetSelected");btn.disabled=true;
  let serverAccepted=false;
  try{
+  // A previously revised claim already has superseded_at; never treat its
+  // pre-existing historical state as evidence of a new successful DELETE.
+  const before=await readClaimHistory(target.subject_id,target.predicate);
+  const current=before.find(x=>String(x.id||x.memory_id)===id);
+  if(!current||current.superseded_at||current.forgotten_at){
+   throw Error("Selected memory was already historical or absent; no DELETE was sent. Refresh Live and select an active claim.");
+  }
   await api("/v1/memories/"+encodeURIComponent(id),state.key,{method:"DELETE"});
   serverAccepted=true;
   await refreshLive();

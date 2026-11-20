@@ -76,6 +76,12 @@ jobs:
               receipt = json.loads((root / (case + ".json")).read_text())
               assert receipt["scenario"] == case
               assert receipt["result"] == "PASS"
+              if case in ("before_claim_commit", "after_claim_commit", "after_temporal_start_before_ack"):
+                  history = receipt["temporal"]
+                  assert history["history_exported"] is True
+                  assert history["history_event_count"] == len(history["history_events"]) > 0
+                  assert history["history_events"][0]["event_type"] == "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"
+                  assert history["history_events"][0]["event_id"] > 0
               if case.startswith("DA-05"):
                   assert receipt["assertions"]["identity_rejected"]
                   assert receipt["assertions"]["existing_execution_unchanged"]

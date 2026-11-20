@@ -185,10 +185,12 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
             # PostgreSQL dispatch ledger. Never convert failed reads into PASS.
             events = []
             async for event in handle.fetch_history_events():
-                event_type = getattr(event.event_type, "name", str(event.event_type))
-                events.append({"event_id": event.event_id, "event_type": event_type})
+                # Protobuf EventType can surface as an integer rather than a
+                # Python enum; persist the protocol wire code, not its repr.
+                event_type_code = int(event.event_type)
+                events.append({"event_id": event.event_id, "event_type_code": event_type_code})
             assert events, "Temporal history was empty"
-            assert events[0]["event_type"] == "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"
+            assert events[0]["event_type_code"] == 1  # Temporal WorkflowExecutionStarted
             assert len({event["event_id"] for event in events}) == len(events)
             assert all(event["event_id"] > 0 for event in events)
             return description.run_id, events

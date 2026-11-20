@@ -51,15 +51,16 @@ This is a memory component for your existing agent stack — not a replacement f
 
 ## Quickstart
 
-The fastest path is a local development deployment. It uses Docker Compose and does not require a hosted account.
+The supported public installation source is the repository's **default `main` branch**, not a PR or feature branch. It uses Docker Compose and does not require a hosted account. Use the command below exactly as an external developer would; do not switch branches. **Release gate:** the PR #56 all-in-one `scripts/demo_local.py` / verified browser-mutation acceptance is not available from `main` until PR #56 is actually merged. The existence of an unmerged PR or its passing CI does not make those commands part of the public release.
 
 **Prerequisites:** Git, Docker Compose v2, Python 3.10+.
 
 ### 1. Start the runtime
 
 ```bash
-git clone https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
 cd Agent-Memory-Core-v0.1.0
+git branch --show-current # must print main
 
 # Fast local memory + API profile
 python scripts/launch_local.py up --profile lite
@@ -158,10 +159,10 @@ External agents use the same public REST API as Observatory. They do not import 
 
 ### Install
 
-The SDK is not yet published to PyPI. During PR #51 development, install from the integration branch:
+The SDK is not yet published to PyPI. Install from the public `main` branch; do not use a historical integration branch:
 
 ```bash
-python -m pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@feat/identity-foundation-schema-20261118'
+python -m pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@main'
 ```
 
 When a versioned PyPI release is published, the installation command will move to the versioned package. Do not assume `agent-memory-core==0.1.0` on PyPI is this repository's distribution.

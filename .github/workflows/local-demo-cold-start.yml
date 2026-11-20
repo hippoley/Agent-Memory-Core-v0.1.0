@@ -1,0 +1,140 @@
+name: Local Demo Cold Start Acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/local-demo-cold-start.yml'
+      - 'scripts/demo_local.py'
+      - 'scripts/check_restart_persistence.py'
+      - 'tests/test_restart_persistence.py'
+      - 'README.md'
+      - 'scripts/launch_local.py'
+      - 'scripts/smoke_local.py'
+      - 'scripts/seed_demo.py'
+      - 'compose*.yaml'
+      - 'docker/**'
+      - 'src/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-install-and-persistence:
+    name: Clean checkout / public demo / restart / API readback
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact PR revision on an empty hosted runner
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Assert clean initial state
+        run: |
+          test ! -e .env.local
+          test ! -e /tmp/amc-cold-start.log
+          docker compose version
+          python --version
+
+      - name: Install documented public API and SDK dependencies
+        run: python -m pip install -e '.[api,postgres]'
+
+      - name: Start using documented product demo command
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/demo_local.py --no-open | tee /tmp/amc-cold-start.log
+          grep -q '^LOCAL_MEMORY_RUNTIME_ACCEPTED$' /tmp/amc-cold-start.log
+          grep -q '^AGENT_MEMORY_CORE_LOCAL_DEMO_READY$' /tmp/amc-cold-start.log
+
+      - name: Verify real HTTP browser resources and authenticated readiness
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+          from pathlib import Path
+
+          env = {}
+          for line in Path(".env.local").read_text(encoding="utf-8").splitlines():
+              if "=" in line and not line.lstrip().startswith("#"):
+                  key, value = line.split("=", 1)
+                  env[key.strip()] = value.strip()
+
+          assert len(env["MEMORY_API_KEY"]) >= 32
+          for suffix in ("/dashboard/", "/dashboard/observatory.html", "/docs", "/openapi.json"):
+              with urllib.request.urlopen("http://127.0.0.1:8765" + suffix, timeout=10) as response:
+                  assert response.status == 200, (suffix, response.status)
+                  assert response.read(), f"empty browser/API resource: {suffix}"
+              print("HTTP_RESOURCE_OK", suffix)
+          request = urllib.request.Request(
+              "http://127.0.0.1:8765/v1/ready",
+              headers={"Authorization": "Bearer " + env["MEMORY_API_KEY"]},
+          )
+          with urllib.request.urlopen(request, timeout=10) as response:
+              ready = json.load(response)
+          assert ready.get("status") == "ready", ready
+          print("AUTHENTICATED_API_READY")
+          PY
+
+      - name: Record canonical revision receipt before restart
+        run: |
+          python scripts/check_restart_persistence.py capture
+          test -s .demo/restart-persistence.json
+
+      - name: Restart application without deleting persistent volumes
+        run: |
+          python scripts/launch_local.py down
+          python scripts/launch_local.py up --profile lite
+          python scripts/launch_local.py status
+
+      - name: Verify exact original and revised IDs and history through public SDK after restart
+        run: |
+          python scripts/check_restart_persistence.py verify
+
+      - name: Confirm the pre-restart claim survives through the public SDK
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          from agent_memory_core.sdk import MemoryClient
+
+          output = Path("/tmp/amc-cold-start.log").read_text(encoding="utf-8")
+          subject_match = re.search(r'"subject_id":\s*"([^"]+)"', output)
+          revised_match = re.search(r'"revised_memory_id":\s*"([^"]+)"', output)
+          if not subject_match or not revised_match:
+              raise AssertionError("Cannot find smoke subject/version IDs in first-boot receipt")
+          settings = {}
+          for line in Path(".env.local").read_text(encoding="utf-8").splitlines():
+              if "=" in line and not line.lstrip().startswith("#"):
+                  key, value = line.split("=", 1)
+                  settings[key.strip()] = value.strip()
+          with MemoryClient(
+              "http://127.0.0.1:8765",
+              settings["MEMORY_API_KEY"],
+              tenant_id=settings["MEMORY_TENANT_ID"],
+          ) as client:
+              readback = client.recall(subject_match.group(1))
+              assert any(
+                  item.get("id") == revised_match.group(1)
+                  for item in readback.get("items", [])
+              ), readback
+          print("COLD_START_RESTART_PERSISTENCE_ACCEPTED")
+          PY
+
+      - name: Capture service logs on failure
+        if: failure()
+        run: |
+          python scripts/launch_local.py status || true
+          docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml logs --tail=160 || true
+
+      - name: Clean up isolated runner services and volumes
+        if: always()
+        run: |
+          if test -e .env.local; then
+            docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml down -v || true
+          fi

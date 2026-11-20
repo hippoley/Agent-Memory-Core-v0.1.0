@@ -68,15 +68,22 @@ def clean(base: str, key: str) -> None:
 
 
 def seed(base: str, key: str) -> None:
+    failures: list[str] = []
     for source_id, text in STORY:
         status, body = request(base, "/v1/memories/process", key, method="POST",
                                payload={"text": text, "source_id": source_id})
         if status != 200:
+            failures.append(f"{source_id}: HTTP {status}")
             print(f"  ! {text}: {status} {body}")
             continue
         relations = ", ".join(f"{r['relation']}:{r['subject_id']}/{r['predicate']}"
                               for r in body.get("relations", [])) or "no facts"
         print(f"  {text}  ->  {relations}")
+    if failures:
+        raise RuntimeError(
+            f"Demo seed incomplete ({len(failures)}/{len(STORY)} requests failed): "
+            + ", ".join(failures)
+        )
 
 
 def main() -> None:

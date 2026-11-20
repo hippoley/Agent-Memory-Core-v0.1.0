@@ -9,8 +9,8 @@ connect to PostgreSQL, or use Observatory/browser-specific endpoints.
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-# PR #51 acceptance build (before the package is published to PyPI):
-python -m pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@feat/identity-foundation-schema-20261118'
+# Supported public source is main; feature and integration branches are NOT the external install baseline.
+python -m pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@main'
 # After the first public package release, use the versioned PyPI package instead:
 # python -m pip install 'agent-memory-core[api]>=0.1.0'
 ```

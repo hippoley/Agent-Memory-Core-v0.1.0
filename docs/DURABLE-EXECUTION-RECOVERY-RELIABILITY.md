@@ -82,3 +82,21 @@ The JSON report distinguishes:
 Every report item sets `safe_for_automatic_repair=false`. A read timeout is never classified as a missing Workflow. This command is an observation and evidence-gathering boundary, not a repair mechanism.
 
 The adapter tests use contract doubles for database and Temporal boundaries. The real PostgreSQL 16 + Temporal service integration run remains required before claiming live-environment acceptance.
+
+## CI evidence receipts (DA-01..DA-03)
+
+The extended Temporal integration workflow sets `MEMORY_DA_EVIDENCE_DIR` and, after the three real process-level SIGKILL scenarios, requires the three JSON receipts. Successful workflow runs retain them for 30 days as the `dispatcher-sigkill-receipts` artifact. Each record contains scenario, UTC boundary timestamps, the actual negative SIGKILL exit code, replacement exit code, selected pre/post PostgreSQL ledger fields, the independently described Temporal Workflow/Run identity, and explicit assertion outcomes. Credentials, DSNs and process environments are not written to receipts.
+
+**Evidence limitation:** these receipts cover DA-01..DA-03 and Temporal **describe** readback only, not a complete Temporal execution history export. DA-04..DA-06 are exercised in other tests but have no analogous retained machine-readable receipts here. This addition does not alone satisfy the entire P0-A release gate, and only a successful workflow run on the exact resulting candidate HEAD would establish acceptance of the new receipt path. Neither a passing workflow nor an emitted receipt substitutes for final release review.
+
+## Expanded proof contract (candidate, subject to exact-HEAD CI)
+
+In addition to the three process-level SIGKILL receipts, the extended Temporal workflow now runs the real-PostgreSQL stale-Epoch/dual-claim tests and the real-Temporal conflicting-memo/task-queue/workflow-type tests. The acceptance check requires **eight** JSON receipts: DA-01, DA-02, DA-03, DA-04, DA-05-memo, DA-05-task-queue, DA-05-workflow-type, and DA-06. DA-04 captures database state before and after the rejected stale acknowledgement; DA-06 captures both independent connection claim outcomes plus the resulting persisted owner and Epoch; DA-05 captures independent before/after Temporal descriptions for each conflict and asserts an unchanged Run ID/type/queue.
+
+These are separate real-service tests rather than one end-to-end process-level SIGKILL matrix for all scenarios. **Do not equate the DA-04..DA-06 receipts with killed-Dispatcher-process tests.** There is still no exported full Temporal event history, and the test-only failpoints, correctness of the identity evidence and cross-system state must be reviewed before marking the complete P0-A release gate accepted. The existence of source code or a green unrelated test is not acceptance; check the exact candidate HEAD and the uploaded eight-file artifact.
+
+## Actual Temporal event-history evidence (candidate)
+
+The DA-01..DA-03 SIGKILL acceptance now calls `WorkflowHandle.fetch_history_events()` with the recovered **Run ID**, separately from the PostgreSQL dispatch ledger. It requires a nonempty, unique-ID event sequence starting with `EVENT_TYPE_WORKFLOW_EXECUTION_STARTED`, and retains event IDs and types in the JSON receipt. The workflow also rejects receipts lacking this event history. A Temporal describe response alone no longer fulfills this history check.
+
+The candidate now retains the full serialized Temporal protobuf bytes for **each event** in DA-01..DA-03 using Base64 and a per-event SHA-256 checksum. The CI checker decodes each event with the Temporal SDK, verifies event IDs and type codes, and rejects altered or missing event bytes. This is possible because these acceptance runs use **synthetic fixture data only**; do not copy this raw-history export pattern to live customer workflows without payload redaction, encryption, access control and a retention policy. SHA-256 detects modification relative to the stored checksum but does **not** authenticate the server or protect against malicious replacement of both data and checksum. The recording is still a test artifact, not an independently signed producer attestation. Acceptance requires same-HEAD real-service CI, review of the recorded evidence, and final release-gate review.

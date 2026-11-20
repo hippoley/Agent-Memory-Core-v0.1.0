@@ -177,3 +177,179 @@ def test_canvas_domain_labels_have_safe_horizontal_margins(ui,width):
     canvas_width=ui.locator("#art").evaluate("el => el.getBoundingClientRect().width")
     assert labels, "Expected domain annotation positions"
     assert all(120<=x<=canvas_width-120 for x in labels), (canvas_width,labels)
+
+
+def test_write_ack_without_canonical_readback_never_reports_success(ui):
+    """A successful POST alone is not verified memory state."""
+    import json
+    requests = []
+    def respond(route):
+        method = route.request.method
+        url = route.request.url
+        requests.append((method, url))
+        if method == "POST" and url.endswith("/v1/memories"):
+            route.fulfill(status=201, content_type="application/json",
+                          body=json.dumps({"id": "accepted-but-unseen"}))
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"items": []}))
+    ui.route("**/v1/**", respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#writeSubject").fill("negative-test-subject")
+    ui.locator("#writePredicate").fill("preference")
+    ui.locator("#writeValue").fill('{"temperature":21}')
+    ui.locator("#writeSource").fill("test:stale-read")
+    ui.locator("#saveMemory").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
+    assert "independently read back. New ID" not in ui.locator("#mutationNote").inner_text()
+    expect(ui.locator("#total")).to_have_text("0")
+    assert any(method == "POST" and url.endswith("/v1/memories") for method, url in requests)
+
+
+def test_forget_ack_with_stale_canonical_readback_never_reports_success(ui):
+    """A successful DELETE with an unchanged active record stays unverified."""
+    import json
+    row = {"id": "stable-active-record", "subject_id": "test-subject",
+           "predicate": "preference", "value": {"temperature": 21},
+           "source_id": "test:original", "recorded_at": "2026-11-19T00:00:00Z"}
+    methods = []
+    def respond(route):
+        methods.append(route.request.method)
+        if route.request.method == "DELETE":
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"forgotten": [row["id"]]}))
+        else:
+            result = {"items": [row]} if "/v1/memories?" in route.request.url else {"items": []}
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(result))
+    ui.route("**/v1/**", respond)
+    ui.on("dialog", lambda dialog: dialog.accept())
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#claimPicker").select_option(row["id"])
+    ui.locator("#forgetSelected").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
+    expect(ui.locator("#active")).to_have_text("1")
+    assert "DELETE" in methods
+
+
+
+def test_already_superseded_selection_never_sends_soft_forget(ui):
+    """A pre-existing superseded_at must not be mistaken for a new DELETE."""
+    import json
+
+    row = {"id": "already-revised", "subject_id": "test-subject",
+           "predicate": "preference", "value": {"temperature": 20},
+           "source_id": "test:original",
+           "recorded_at": "2026-11-19T00:00:00Z",
+           "superseded_at": "2026-11-19T01:00:00Z"}
+    methods = []
+
+    def respond(route):
+        methods.append(route.request.method)
+        result = {"items": [row]} if "/v1/memories?" in route.request.url else {"items": []}
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps(result))
+
+    ui.route("**/v1/**", respond)
+    ui.on("dialog", lambda dialog: dialog.accept())
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#claimPicker").select_option(row["id"])
+    ui.locator("#forgetSelected").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("already historical")
+    expect(ui.locator("#mutationNote")).not_to_contain_text("Soft-forget committed")
+    assert "DELETE" not in methods, "A superseded claim must not receive a DELETE"
+
+
+
+def test_revision_ack_without_old_version_supersession_is_unverified(ui):
+    """A new version alone is insufficient if the previous version stayed active."""
+    import json
+    old = {"id": "old-claim", "subject_id": "revision-subject",
+           "predicate": "preferred_temperature", "value": {"degrees": 20},
+           "source_id": "test:old", "recorded_at": "2026-11-19T00:00:00Z"}
+    new = {"id": "new-claim", "subject_id": "revision-subject",
+           "predicate": "preferred_temperature", "value": {"degrees": 21},
+           "source_id": "test:new"}
+    accepted = {"value": False}
+    def respond(route):
+        url, method = route.request.url, route.request.method
+        if method == "POST" and url.endswith("/v1/memories"):
+            accepted["value"] = True
+            route.fulfill(status=201, content_type="application/json",
+                          body=json.dumps({"id": new["id"]}))
+        else:
+            # The old version is intentionally *not* superseded.
+            rows = [old, new] if accepted["value"] else [old]
+            payload = {"items": rows} if "/v1/memories?" in url else {"items": []}
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(payload))
+    ui.route("**/v1/**", respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#claimPicker").select_option(old["id"])
+    ui.locator("#targetSelected").click()
+    ui.locator("#writeValue").fill('{"degrees":21}')
+    ui.locator("#writeSource").fill("test:new")
+    ui.locator("#saveMemory").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("UNVERIFIED")
+    expect(ui.locator("#active")).to_have_text("2")
+    assert "Revision committed and independently read back" not in ui.locator("#mutationNote").inner_text()
+
+
+def test_mutation_readback_is_independent_of_500_row_visual_page(ui):
+    """An API-verified claim beyond the visual page is not a false failure."""
+    import json
+    visible = [
+        {"id": f"other-{i:03d}", "subject_id": f"other-subject-{i:03d}",
+         "predicate": "unrelated", "value": {"index": i}, "source_id": "test:other",
+         "recorded_at": "2026-11-19T00:00:00Z"}
+        for i in range(500)
+    ]
+    created = {"id": "claim-beyond-visible-page", "subject_id": "target-subject",
+               "predicate": "preferred_temperature", "value": {"degrees": 21},
+               "source_id": "test:target", "recorded_at": "2026-11-19T01:00:00Z"}
+    accepted = {"value": False}
+    targeted_queries = []
+    def respond(route):
+        url, method = route.request.url, route.request.method
+        if method == "POST" and url.endswith("/v1/memories"):
+            accepted["value"] = True
+            route.fulfill(status=201, content_type="application/json",
+                          body=json.dumps({"id": created["id"]}))
+        else:
+            if "/v1/memories?subject_id=target-subject" in url:
+                targeted_queries.append(url)
+                rows = [created] if accepted["value"] else []
+            elif "/v1/memories?" in url:
+                rows = visible
+            else:
+                rows = []
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"items": rows}))
+    ui.route("**/v1/**", respond)
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-visual-page-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#total")).to_have_text("500")
+    ui.locator("#writeSubject").fill("target-subject")
+    ui.locator("#writePredicate").fill("preferred_temperature")
+    ui.locator("#writeValue").fill('{"degrees":21}')
+    ui.locator("#writeSource").fill("test:target")
+    ui.locator("#saveMemory").click()
+    expect(ui.locator("#mutationNote")).to_contain_text(
+        "Memory created and independently read back"
+    )
+    assert targeted_queries, "Expected filtered canonical history request"
+    assert ui.locator("#claimPicker option").count() == 501
+    assert ui.locator("#claimPicker").input_value() == ""

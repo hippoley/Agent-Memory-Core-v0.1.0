@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +37,38 @@ def local_settings() -> dict[str, str]:
         if not values.get(key):
             raise RuntimeError(f"Missing {key} in .env.local")
     return values
+
+
+def compose_container_ids() -> dict[str, str]:
+    """Read Docker container identities; an unchanged instance is not a restart."""
+    result = {}
+    for service in ("memory-api", "memory-db"):
+        cmd = [
+            "docker", "compose", "--env-file", str(ENV),
+            "-f", "compose.yaml", "-f", "compose.app.yaml",
+            "ps", "-q", service,
+        ]
+        completed = subprocess.run(
+            cmd, cwd=ROOT, capture_output=True, text=True, check=True,
+            timeout=20,
+        )
+        container_id = completed.stdout.strip()
+        if not re.fullmatch(r"[0-9a-f]{12,64}", container_id):
+            raise AssertionError(f"{service}: missing or invalid running container ID")
+        result[service] = container_id
+    return result
+
+
+def assert_restarted(receipt: dict, current: dict[str, str]) -> None:
+    previous = receipt.get("container_ids")
+    if not isinstance(previous, dict):
+        raise AssertionError("Restart receipt has no container identity baseline")
+    for service in ("memory-api", "memory-db"):
+        old, new = previous.get(service), current.get(service)
+        if not isinstance(old, str) or not old or not isinstance(new, str) or not new:
+            raise AssertionError(f"{service}: incomplete restart identity evidence")
+        if old == new:
+            raise AssertionError(f"{service}: container identity unchanged; actual Compose restart not proven")
 
 
 def require_rows(response: object, label: str) -> list[dict]:
@@ -102,6 +136,7 @@ def capture(client, tenant_id: str) -> None:
         "original_id": first_id, "revised_id": revised_id,
     }
     verify_receipt(client, receipt)
+    receipt["container_ids"] = compose_container_ids()
     RECEIPT.parent.mkdir(exist_ok=True)
     RECEIPT.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print("RESTART_BASELINE_CAPTURED")
@@ -116,6 +151,7 @@ def verify(client, tenant_id: str) -> None:
     if receipt.get("tenant_id") != tenant_id:
         raise AssertionError("Tenant mismatch: cannot verify a different local instance")
     verify_receipt(client, receipt)
+    assert_restarted(receipt, compose_container_ids())
     print("RESTART_PERSISTENCE_ACCEPTED")
     print(f"Original and revised memory IDs and history survived the restart for {receipt['subject_id']}")
 

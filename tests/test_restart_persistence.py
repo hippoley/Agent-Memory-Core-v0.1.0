@@ -62,3 +62,38 @@ def test_capture_refuses_to_replace_existing_receipt(tmp_path, monkeypatch):
     monkeypatch.setattr(probe, "RECEIPT", receipt)
     with pytest.raises(RuntimeError, match="Existing"):
         probe.capture(FakeClient(), "demo-home")
+
+
+@pytest.mark.parametrize("bad_current", [
+    {"memory-api": "a" * 64, "memory-db": "b" * 64},
+    {"memory-api": "c" * 64, "memory-db": "b" * 64},
+    {"memory-api": "a" * 64, "memory-db": "d" * 64},
+    {},
+])
+def test_restart_requires_both_container_instances_to_change(bad_current):
+    baseline = {"container_ids": {
+        "memory-api": "a" * 64, "memory-db": "b" * 64,
+    }}
+    with pytest.raises(AssertionError):
+        probe.assert_restarted(baseline, bad_current)
+
+
+def test_restart_requires_original_container_evidence():
+    with pytest.raises(AssertionError, match="no container identity baseline"):
+        probe.assert_restarted(RECEIPT, {
+            "memory-api": "c" * 64, "memory-db": "d" * 64,
+        })
+
+
+def test_restart_accepts_changed_api_and_database_instances():
+    probe.assert_restarted({
+        "container_ids": {"memory-api": "a" * 64, "memory-db": "b" * 64},
+    }, {"memory-api": "c" * 64, "memory-db": "d" * 64})
+
+
+def test_container_identity_readback_rejects_missing_service(monkeypatch):
+    class Result:
+        stdout = ""
+    monkeypatch.setattr(probe.subprocess, "run", lambda *args, **kwargs: Result())
+    with pytest.raises(AssertionError, match="missing or invalid"):
+        probe.compose_container_ids()

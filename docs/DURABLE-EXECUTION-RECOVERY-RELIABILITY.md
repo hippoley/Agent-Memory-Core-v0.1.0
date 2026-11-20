@@ -82,3 +82,9 @@ The JSON report distinguishes:
 Every report item sets `safe_for_automatic_repair=false`. A read timeout is never classified as a missing Workflow. This command is an observation and evidence-gathering boundary, not a repair mechanism.
 
 The adapter tests use contract doubles for database and Temporal boundaries. The real PostgreSQL 16 + Temporal service integration run remains required before claiming live-environment acceptance.
+
+## CI evidence receipts (DA-01..DA-03)
+
+The extended Temporal integration workflow sets `MEMORY_DA_EVIDENCE_DIR` and, after the three real process-level SIGKILL scenarios, requires the three JSON receipts. Successful workflow runs retain them for 30 days as the `dispatcher-sigkill-receipts` artifact. Each record contains scenario, UTC boundary timestamps, the actual negative SIGKILL exit code, replacement exit code, selected pre/post PostgreSQL ledger fields, the independently described Temporal Workflow/Run identity, and explicit assertion outcomes. Credentials, DSNs and process environments are not written to receipts.
+
+**Evidence limitation:** these receipts cover DA-01..DA-03 and Temporal **describe** readback only, not a complete Temporal execution history export. DA-04..DA-06 are exercised in other tests but have no analogous retained machine-readable receipts here. This addition does not alone satisfy the entire P0-A release gate, and only a successful workflow run on the exact resulting candidate HEAD would establish acceptance of the new receipt path. Neither a passing workflow nor an emitted receipt substitutes for final release review.

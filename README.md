@@ -192,16 +192,22 @@ python scripts/launch_local.py status
 
 Open the Console and Observatory URLs printed by the launcher. Find `MEMORY_API_KEY` in the private, generated `.env.local` and enter it **only in the local UI** when asked. Observatory starts in **synthetic Demo** mode: explicitly switch to **Live** to inspect and change real API records. In Live, create a fact, revise it, inspect history, and soft-forget its new version; do not treat an API write acknowledgment without canonical readback as proven success.
 
-To verify that a restart does not erase the stored data, run the smoke journey and record its printed `subject_id` and `revised_memory_id` (never paste credentials). Restart **without deleting Compose volumes**:
+To verify that a restart does not erase data, use the included **two-phase public-SDK acceptance probe**. It first writes one uniquely identified fact, revises it, verifies both versions, and saves a local **non-secret** receipt at `.demo/restart-persistence.json` (ignored by Git). Run these commands from the repository root in order:
 
 ```bash
-python scripts/smoke_local.py
+python scripts/check_restart_persistence.py capture
+# Expected: RESTART_BASELINE_CAPTURED
 python scripts/launch_local.py down
 python scripts/launch_local.py up --profile lite
 python scripts/launch_local.py status
+# Expected: PRODUCT STATUS: READY
+python scripts/check_restart_persistence.py verify
+# Expected: RESTART_PERSISTENCE_ACCEPTED
 ```
 
-Use the public REST API / SDK to query the recorded `subject_id` again, and confirm the same `revised_memory_id` and prior history remain. The smoke script itself verifies initial write, revision, history, search, and evidence, but does **not** automatically perform this post-restart comparison.
+The `verify` command independently reconnects to the restarted HTTP API through the public Python SDK. It asserts that the exact original and revised memory IDs survive, the revised fact remains current, the original is still in retained history with `superseded_at`, and both values are unchanged. A failed/missing readback returns a **nonzero exit status** and prints `RESTART_PERSISTENCE_FAILED`. It never queries PostgreSQL directly or reads the UI's in-memory state. Do **not** run `docker compose down -v`, erase volumes or remove `.env.local` between phases. A receipt can be checked again using `verify`; to start a *new* baseline, archive or delete only the non-secret `.demo/restart-persistence.json` once prior evidence is recorded.
+
+This validates persistent local memory history over a real container restart, not independent human onboarding, production backup/restore, Temporal crash recovery, or external source trust.
 
 ### If installation or startup fails
 

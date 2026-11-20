@@ -61,6 +61,8 @@ async def _start_or_recover(client, claim: dict) -> str:
     return run_id
 
 
+
+
 async def run_dispatcher(*, once: bool = False) -> None:
     try:
         from temporalio.client import Client
@@ -69,7 +71,7 @@ async def run_dispatcher(*, once: bool = False) -> None:
 
     from .postgres import PostgresMemory
     from .temporal_adapter import _database_dsn
-    from .temporal_dispatch import TemporalDispatchStore
+    from .temporal_dispatch import TemporalDispatchStore, _test_failpoint
 
     address = os.getenv("MEMORY_TEMPORAL_ADDRESS", "localhost:7233")
     namespace = os.getenv("MEMORY_TEMPORAL_NAMESPACE", "default")
@@ -107,6 +109,7 @@ async def run_dispatcher(*, once: bool = False) -> None:
             await asyncio.sleep(poll_seconds)
             continue
 
+        _test_failpoint("after_claim_commit")
         try:
             run_id = await _start_or_recover(client, claim)
         except Exception as exc:
@@ -123,6 +126,7 @@ async def run_dispatcher(*, once: bool = False) -> None:
             if once:
                 raise
         else:
+            _test_failpoint("after_temporal_start_before_ack")
             db = PostgresMemory(_database_dsn())
             try:
                 acknowledged = TemporalDispatchStore(db.conn).mark_started(

@@ -1,7 +1,30 @@
 """PostgreSQL integration tests for durable Temporal dispatch claims."""
+import json
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 import pytest
+
+
+def _write_recovery_receipt(case, payload):
+    """Emit evidence only after live PostgreSQL assertions have passed."""
+    root = os.getenv("MEMORY_DA_EVIDENCE_DIR")
+    if not root:
+        return
+    target = Path(root)
+    target.mkdir(parents=True, exist_ok=True)
+    body = {
+        "schema": "amc.dispatcher-recovery.v1",
+        "scenario": case,
+        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "result": "PASS",
+        **payload,
+    }
+    (target / (case + ".json")).write_text(
+        json.dumps(body, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.integration
@@ -69,9 +92,104 @@ def test_expired_temporal_dispatch_lease_can_be_reclaimed_with_new_epoch():
         db.conn.commit()
         second=store.claim(dispatcher_id="recovery-dispatcher",lease_seconds=30,task_queue=task_queue)
         assert second and second["lease_epoch"]==first["lease_epoch"]+1
+        before_stale_ack=db.conn.execute(
+            """SELECT status,lease_owner,lease_epoch,temporal_run_id
+               FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
+        assert before_stale_ack==("dispatching","recovery-dispatcher",second["lease_epoch"],None)
         assert not store.mark_started(task_id=task_id,dispatcher_id="dead-dispatcher",
                                       lease_epoch=first["lease_epoch"],temporal_run_id="stale")
+        after_stale_ack=db.conn.execute(
+            """SELECT status,lease_owner,lease_epoch,temporal_run_id
+               FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
+        assert after_stale_ack==before_stale_ack
         assert store.mark_started(task_id=task_id,dispatcher_id="recovery-dispatcher",
                                   lease_epoch=second["lease_epoch"],temporal_run_id="run-recovered")
+        final=db.conn.execute(
+            """SELECT status,lease_owner,lease_epoch,temporal_run_id
+               FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
+        assert final==("started",None,second["lease_epoch"],"run-recovered")
+        _write_recovery_receipt("DA-04", {
+            "task_id": task_id,
+            "postgresql": {
+                "before_stale_ack": list(before_stale_ack),
+                "after_stale_ack": list(after_stale_ack),
+                "after_new_owner_ack": list(final),
+            },
+            "assertions": {
+                "stale_epoch_rejected": True,
+                "stale_ack_did_not_mutate_state": True,
+                "current_epoch_ack_succeeded": True,
+            },
+        })
     finally:
         db.close()
+
+@pytest.mark.integration
+def test_two_independent_dispatchers_racing_claim_exactly_one_lease():
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("Real PostgreSQL required")
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.temporal_dispatch import TemporalDispatchStore,stable_workflow_id
+
+    dsn=os.environ["MEMORY_TEST_DSN"]
+    tenant="temporal-dispatch-race-"+uuid4().hex
+    task_id=str(uuid4())
+    task_queue="dispatch-race-"+uuid4().hex
+    setup=PostgresMemory(dsn)
+    try:
+        setup.migrate()
+        with setup.conn.transaction():
+            setup.conn.execute(
+                """INSERT INTO memory_durable_tasks(task_id,tenant_id,task_type,input)
+                   VALUES (%s::uuid,%s,'dispatch-race','{}'::jsonb)""",(task_id,tenant))
+        TemporalDispatchStore(setup.conn).enqueue(
+            tenant_id=tenant,task_id=task_id,
+            workflow_id=stable_workflow_id(tenant,task_id),task_queue=task_queue)
+
+        barrier=Barrier(2)
+        def contender(dispatcher_id):
+            db=PostgresMemory(dsn)
+            try:
+                barrier.wait(timeout=10)
+                claim=TemporalDispatchStore(db.conn).claim(
+                    dispatcher_id=dispatcher_id,lease_seconds=30,task_queue=task_queue)
+                return dispatcher_id,claim
+            finally:
+                db.close()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(contender,("dispatcher-race-a","dispatcher-race-b")))
+
+        winners=[item for item in results if item[1] is not None]
+        losers=[item for item in results if item[1] is None]
+        assert len(winners)==1
+        assert len(losers)==1
+        winner_id,winner_claim=winners[0]
+        assert winner_claim["task_id"]==task_id
+        assert winner_claim["lease_epoch"]==1
+        state=setup.conn.execute(
+            """SELECT status,lease_owner,lease_epoch,attempts
+               FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
+        assert state==("dispatching",winner_id,1,1)
+        assert winner_claim["lease_epoch"]==state[2]
+        _write_recovery_receipt("DA-06", {
+            "task_id": task_id,
+            "claim_results": [
+                {"dispatcher_id": dispatcher_id, "claimed": claim is not None,
+                 "lease_epoch": claim["lease_epoch"] if claim else None}
+                for dispatcher_id, claim in results
+            ],
+            "postgresql": {
+                "status": state[0], "lease_owner": state[1],
+                "lease_epoch": state[2], "attempts": state[3],
+            },
+            "assertions": {
+                "independent_postgresql_connections": True,
+                "one_winner_one_loser": True,
+                "winner_is_current_lease_owner": True,
+            },
+        })
+    finally:
+        setup.close()

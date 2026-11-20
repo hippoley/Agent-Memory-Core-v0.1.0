@@ -36,6 +36,8 @@ LOCAL_MEMORY_RUNTIME_ACCEPTED
 AGENT_MEMORY_CORE_LOCAL_DEMO_READY
 ```
 
+如果七轮中文故事中有任何一轮 HTTP 请求失败，启动脚本现在会以非零状态退出，并且**不会**打印 `AGENT_MEMORY_CORE_LOCAL_DEMO_READY`。HTTP 200 但未抽取事实则仅显示 `no facts`，不会伪装成写入成功。
+
 这条体验路径会在本地默认租户中写入带随机 subject 前缀的 smoke 记录，以及 source ID 以 `demo:script:` 开头的中文示例故事，并保留在本地数据库供界面检查；不会自动删除。是否成功抽取事实以 seeder 的逐轮输出为准，不把没有抽取出来的文本伪装成记忆。它不调用云端模型，也不代表中文抽取质量、生产安全或负载验收已经通过。
 
 ## 3. 打开哪些页面
@@ -61,7 +63,7 @@ Observatory 首次打开默认是 **Demo**，显示明确标记的合成样本�
 
 Lite profile 默认使用本地 `rule` 抽取器。它适合让界面和 API 跑通，不代表本地 LLM 的理解质量；模型质量应使用独立标注语料和评测脚本测量。
 
-## 4. 想体验身份和长任务
+## 5. 想体验身份和长任务
 
 ```bash
 python scripts/launch_local.py down
@@ -70,7 +72,7 @@ python scripts/launch_local.py up --profile extended --identity
 
 这会增加本地 Keycloak 身份服务和 Temporal 开发环境。它适合体验 OIDC、Workspace 和长任务工作流；不是生产身份部署模板。
 
-## 5. 查看运行状态与停止
+## 6. 查看运行状态与停止
 
 ```bash
 python scripts/launch_local.py status
@@ -84,7 +86,7 @@ docker compose ps
 docker compose logs --tail=150
 ```
 
-## 6. 安全边界
+## 7. 安全边界
 
 - 默认 API 仅绑定 `127.0.0.1`，不应直接映射到公网。
 - `.env.local` 是本机生成的私密配置，不要提交。

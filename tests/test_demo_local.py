@@ -52,3 +52,22 @@ def test_local_environment_pins_requests_to_loopback():
     env = demo_local.local_environment()
     assert env["MEMORY_BASE"] == "http://127.0.0.1:8765"
     assert env["MEMORY_BASE_URL"] == "http://127.0.0.1:8765"
+
+
+def test_partial_seed_failure_never_prints_demo_ready(monkeypatch, capsys):
+    import subprocess
+    import pytest
+
+    monkeypatch.setattr(demo_local, "require_sdk", lambda: None)
+    seen = []
+    def fake_run(command, **kwargs):
+        seen.append(command)
+        if command == demo_local.seed_command():
+            raise subprocess.CalledProcessError(1, command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(demo_local.subprocess, "run", fake_run)
+    with pytest.raises(subprocess.CalledProcessError):
+        demo_local.main(["--no-open"])
+    assert demo_local.seed_command() in seen
+    assert "AGENT_MEMORY_CORE_LOCAL_DEMO_READY" not in capsys.readouterr().out

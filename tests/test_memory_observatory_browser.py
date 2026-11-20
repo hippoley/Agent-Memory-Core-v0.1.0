@@ -238,6 +238,38 @@ def test_forget_ack_with_stale_canonical_readback_never_reports_success(ui):
     assert "DELETE" in methods
 
 
+
+def test_already_superseded_selection_never_sends_soft_forget(ui):
+    """A pre-existing superseded_at must not be mistaken for a new DELETE."""
+    import json
+
+    row = {"id": "already-revised", "subject_id": "test-subject",
+           "predicate": "preference", "value": {"temperature": 20},
+           "source_id": "test:original",
+           "recorded_at": "2026-11-19T00:00:00Z",
+           "superseded_at": "2026-11-19T01:00:00Z"}
+    methods = []
+
+    def respond(route):
+        methods.append(route.request.method)
+        result = {"items": [row]} if "/v1/memories?" in route.request.url else {"items": []}
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps(result))
+
+    ui.route("**/v1/**", respond)
+    ui.on("dialog", lambda dialog: dialog.accept())
+    ui.locator("#connectBtn").click()
+    ui.locator("#key").fill("browser-negative-test-key")
+    ui.locator("#liveBtn").click()
+    expect(ui.locator("#pageMark")).to_have_text("/ LIVE")
+    ui.locator("#claimPicker").select_option(row["id"])
+    ui.locator("#forgetSelected").click()
+    expect(ui.locator("#mutationNote")).to_contain_text("already historical")
+    expect(ui.locator("#mutationNote")).not_to_contain_text("Soft-forget committed")
+    assert "DELETE" not in methods, "A superseded claim must not receive a DELETE"
+
+
+
 def test_revision_ack_without_old_version_supersession_is_unverified(ui):
     """A new version alone is insufficient if the previous version stayed active."""
     import json

@@ -51,15 +51,16 @@ This is a memory component for your existing agent stack — not a replacement f
 
 ## Quickstart
 
-The fastest path is a local development deployment. It uses Docker Compose and does not require a hosted account.
+The supported public installation source is the repository's **default `main` branch**, not a PR or feature branch. It uses Docker Compose and does not require a hosted account. Use the command below exactly as an external developer would; do not switch branches. **Release gate:** the PR #56 all-in-one `scripts/demo_local.py` and verified browser-mutation experience count as published only when those files are present in the checked-out `main` revision. The existence of a PR or passing feature-branch CI does not establish public availability.
 
 **Prerequisites:** Git, Docker Compose v2, Python 3.10+.
 
 ### 1. Start the runtime
 
 ```bash
-git clone https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
 cd Agent-Memory-Core-v0.1.0
+git branch --show-current # must print main
 
 # Fast local memory + API profile
 python scripts/launch_local.py up --profile lite
@@ -120,13 +121,20 @@ See [Temporal Durable Execution and Recovery](docs/TEMPORAL-DURABLE-EXECUTION.md
 Then connect to the local API using the development key from `.env.local`:
 
 ```python
-import os
+from pathlib import Path
 from datetime import datetime, timezone
 from agent_memory_core.sdk import MemoryClient
 
+# The local launcher saves credentials in .env.local; it does not export
+# them to your terminal. Read the locally generated key without printing it.
+settings = dict(
+    line.split("=", 1) for line in Path(".env.local").read_text(encoding="utf-8").splitlines()
+    if "=" in line and not line.lstrip().startswith("#")
+)
 with MemoryClient(
     "http://127.0.0.1:8765",
-    os.environ["MEMORY_API_KEY"],
+    settings["MEMORY_API_KEY"].strip(),
+    tenant_id=settings["MEMORY_TENANT_ID"].strip(),
 ) as memory:
     claim = memory.remember(
         subject_id="supplier-a",
@@ -152,16 +160,80 @@ To stop the local stack:
 python scripts/launch_local.py down
 ```
 
+## Run the product locally in a browser
+
+For a **`main` revision that contains `scripts/demo_local.py`**, use this all-in-one browser walkthrough. Verify that the script exists after cloning. If it is missing from that `main` checkout, record the P0-1 full-browser acceptance as **BLOCKED (feature not released)**; do not switch to a PR branch as a workaround.
+
+```bash
+git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+cd Agent-Memory-Core-v0.1.0
+python -m pip install -e '.[api,postgres]'
+python scripts/demo_local.py
+```
+
+The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and runs the existing seven-turn Chinese demo-story seeder through the public text-processing API (without invoking its optional cleanup mode), then opens the Console, Observatory and API manual in your browser. Smoke and demo records remain in the local database for inspection. The seeder prints the actual extraction relations; unextracted utterances are not presented as successful memories. Lite defaults to the local `rule` extractor, so this is a UI/API walkthrough, not evidence of LLM quality. It does not call a hosted model or publish the API to the Internet.
+
+- **Console:** `http://127.0.0.1:8765/dashboard/` — natural-language ingestion, claim ledger, history and search.
+- **Observatory:** `http://127.0.0.1:8765/dashboard/observatory.html` — start in clearly labeled synthetic Demo mode, then connect with the local key to inspect Live API data.
+- **API manual:** `http://127.0.0.1:8765/docs`.
+
+The key is generated locally in `.env.local` as `MEMORY_API_KEY`; paste it only into the local browser page. Stop the stack with `python scripts/launch_local.py down`. See [the Chinese local demo guide](docs/LOCAL-DEMO.zh-CN.md) for profiles, identity mode and safety boundaries.
+
+## Verify installation, persistence, and troubleshooting
+
+The commands above are for a **local development instance**. Use the **Lite** profile for the first installation; `extended --identity` is a separate development scenario, not a prerequisite for the basic demo.
+
+After `python scripts/demo_local.py`, look for **both** `LOCAL_MEMORY_RUNTIME_ACCEPTED` and `AGENT_MEMORY_CORE_LOCAL_DEMO_READY`. Verify the application and authenticated PostgreSQL readiness:
+
+```bash
+python scripts/launch_local.py status
+# Expected: PRODUCT STATUS: READY
+```
+
+Open the Console and Observatory URLs printed by the launcher. Find `MEMORY_API_KEY` in the private, generated `.env.local` and enter it **only in the local UI** when asked. Observatory starts in **synthetic Demo** mode: explicitly switch to **Live** to inspect and change real API records. In Live, create a fact, revise it, inspect history, and soft-forget its new version; do not treat an API write acknowledgment without canonical readback as proven success.
+
+To verify that a restart does not erase data, use the included **two-phase public-SDK acceptance probe**. It first writes one uniquely identified fact, revises it, verifies both versions, and saves a local **non-secret** receipt at `.demo/restart-persistence.json` (ignored by Git). Run these commands from the repository root in order:
+
+```bash
+python scripts/check_restart_persistence.py capture
+# Expected: RESTART_BASELINE_CAPTURED
+python scripts/launch_local.py down
+python scripts/launch_local.py up --profile lite
+python scripts/launch_local.py status
+# Expected: PRODUCT STATUS: READY
+python scripts/check_restart_persistence.py verify
+# Expected: RESTART_PERSISTENCE_ACCEPTED
+```
+
+The `verify` command independently reconnects to the restarted HTTP API through the public Python SDK. It asserts that the exact original and revised memory IDs survive, the revised fact remains current, the original is still in retained history with `superseded_at`, and both values are unchanged. It also checks Docker Compose container identities for **both `memory-api` and `memory-db`**: the two IDs must differ from the pre-restart receipt. Simply running `capture` followed by `verify` without a real Compose restart now fails closed. This validates instance replacement, not backup/restore or host-machine reboot. A failed/missing readback returns a **nonzero exit status** and prints `RESTART_PERSISTENCE_FAILED`. It never queries PostgreSQL directly or reads the UI's in-memory state. Do **not** run `docker compose down -v`, erase volumes or remove `.env.local` between phases. A receipt can be checked again using `verify`; to start a *new* baseline, archive or delete only the non-secret `.demo/restart-persistence.json` once prior evidence is recorded.
+
+This validates persistent local memory history over a real container restart, not independent human onboarding, production backup/restore, Temporal crash recovery, or external source trust.
+
+### If installation or startup fails
+
+- `git branch --show-current` must print `main`; confirm `scripts/demo_local.py` exists before running it.
+- Make sure the Docker daemon is running (`docker info`) and Compose v2 is available (`docker compose version`). Confirm `python --version` reports Python 3.10 or newer.
+- A local port collision on `8765`, or unavailable Docker image downloads, can prevent startup. Record the actual error; do not expose services on a public interface as a workaround.
+- Run `python scripts/launch_local.py status` to check service health and authenticated database readiness. For the default Lite stack, inspect logs using the same Compose file set as the launcher:
+
+```bash
+docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml ps
+docker compose --env-file .env.local -f compose.yaml -f compose.app.yaml logs --tail=150
+```
+
+- `.env.local` is generated on first successful setup. Never upload its contents, bearer tokens, database passwords, or unredacted logs to GitHub issues. If reporting a failure in [P0-1 external acceptance](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57), include OS, Python/Docker versions, `main` commit SHA, exact failing command, redacted error and whether Live mode was reached.
+- The local development profile is **not** a production security deployment. For identity and Temporal, use `python scripts/launch_local.py up --profile extended --identity` and the linked specialized guides; do not expose the development admin credentials or bind the local API to the Internet.
+
 ## Connect an agent with the Python SDK
 
 External agents use the same public REST API as Observatory. They do not import server modules, access PostgreSQL, or use browser-only business endpoints.
 
 ### Install
 
-The SDK is not yet published to PyPI. During PR #51 development, install from the integration branch:
+The SDK is not yet published to PyPI. Install from the public `main` branch; do not use a historical integration branch:
 
 ```bash
-python -m pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@feat/identity-foundation-schema-20261118'
+python -m pip install 'agent-memory-core[api] @ git+https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git@main'
 ```
 
 When a versioned PyPI release is published, the installation command will move to the versioned package. Do not assume `agent-memory-core==0.1.0` on PyPI is this repository's distribution.

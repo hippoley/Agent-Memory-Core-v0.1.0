@@ -1,7 +1,30 @@
 """PostgreSQL integration tests for durable Temporal dispatch claims."""
+import json
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 import pytest
+
+
+def _write_recovery_receipt(case, payload):
+    """Emit evidence only after live PostgreSQL assertions have passed."""
+    root = os.getenv("MEMORY_DA_EVIDENCE_DIR")
+    if not root:
+        return
+    target = Path(root)
+    target.mkdir(parents=True, exist_ok=True)
+    body = {
+        "schema": "amc.dispatcher-recovery.v1",
+        "scenario": case,
+        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "result": "PASS",
+        **payload,
+    }
+    (target / (case + ".json")).write_text(
+        json.dumps(body, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.integration
@@ -81,6 +104,23 @@ def test_expired_temporal_dispatch_lease_can_be_reclaimed_with_new_epoch():
         assert after_stale_ack==before_stale_ack
         assert store.mark_started(task_id=task_id,dispatcher_id="recovery-dispatcher",
                                   lease_epoch=second["lease_epoch"],temporal_run_id="run-recovered")
+        final=db.conn.execute(
+            """SELECT status,lease_owner,lease_epoch,temporal_run_id
+               FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
+        assert final==("started",None,second["lease_epoch"],"run-recovered")
+        _write_recovery_receipt("DA-04", {
+            "task_id": task_id,
+            "postgresql": {
+                "before_stale_ack": list(before_stale_ack),
+                "after_stale_ack": list(after_stale_ack),
+                "after_new_owner_ack": list(final),
+            },
+            "assertions": {
+                "stale_epoch_rejected": True,
+                "stale_ack_did_not_mutate_state": True,
+                "current_epoch_ack_succeeded": True,
+            },
+        })
     finally:
         db.close()
 
@@ -134,5 +174,22 @@ def test_two_independent_dispatchers_racing_claim_exactly_one_lease():
                FROM memory_temporal_dispatches WHERE task_id=%s::uuid""",(task_id,)).fetchone()
         assert state==("dispatching",winner_id,1,1)
         assert winner_claim["lease_epoch"]==state[2]
+        _write_recovery_receipt("DA-06", {
+            "task_id": task_id,
+            "claim_results": [
+                {"dispatcher_id": dispatcher_id, "claimed": claim is not None,
+                 "lease_epoch": claim["lease_epoch"] if claim else None}
+                for dispatcher_id, claim in results
+            ],
+            "postgresql": {
+                "status": state[0], "lease_owner": state[1],
+                "lease_epoch": state[2], "attempts": state[3],
+            },
+            "assertions": {
+                "independent_postgresql_connections": True,
+                "one_winner_one_loser": True,
+                "winner_is_current_lease_owner": True,
+            },
+        })
     finally:
         setup.close()

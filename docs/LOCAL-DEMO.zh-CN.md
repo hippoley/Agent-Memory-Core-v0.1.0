@@ -1,6 +1,6 @@
 # Agent Memory Core · 本地产品体验
 
-这份指南描述 **PR #56 合并到默认分支 `main` 之后**的产品体验流程。外部开发者只从 `main` 安装，不使用开发者功能分支。**截至目前 PR #56 尚未合并，因此 `main` 没有 `scripts/demo_local.py`；在合并前这份指南不构成可执行的正式 main 安装说明，独立 P0-1 验收应记为 BLOCKED（发布流程），而不是要求测试者切换 PR 分支。** 发布后此流程启动本机真实 API 与 PostgreSQL，而非静态截图或云端模型。
+这份指南只适用于**已包含 `scripts/demo_local.py` 的 `main` 检出版本**。外部开发者只从 `main` 安装，不使用开发者功能分支。若实际检出的 `main` 缺少该脚本，则该版本尚不支持本指南所述的完整产品演示，P0-1 验收应记为 **BLOCKED（未发布）**，而不是切换到 PR 分支。支持该脚本的版本将启动本机真实 API 与 PostgreSQL，而非静态截图或云端模型。
 
 ## 1. 环境要求
 
@@ -20,7 +20,7 @@ python -m pip install -e '.[api,postgres]'
 
 如果 `main` 尚无 `scripts/demo_local.py`，停止验收并在 [Issue #57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57) 标记 BLOCKED；不要从 `feat/local-product-demo-20261119` 安装来冒充正式版本。
 
-## 2. `main` 发布 PR #56 后：一条命令启动并体验
+## 2. 仅当检出的 `main` 包含脚本时：一条命令启动并体验
 
 ```bash
 python scripts/demo_local.py

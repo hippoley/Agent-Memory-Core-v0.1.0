@@ -6,6 +6,8 @@ then starts a replacement and independently reads PostgreSQL + Temporal.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import signal
@@ -188,7 +190,16 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
                 # Protobuf EventType can surface as an integer rather than a
                 # Python enum; persist the protocol wire code, not its repr.
                 event_type_code = int(event.event_type)
-                events.append({"event_id": event.event_id, "event_type_code": event_type_code})
+                raw_event = event.SerializeToString()
+                # This acceptance test sends only synthetic fixture data.
+                # Preserve full protobuf bytes so an auditor can deserialize
+                # and independently validate the recorded event sequence.
+                events.append({
+                    "event_id": event.event_id,
+                    "event_type_code": event_type_code,
+                    "protobuf_b64": base64.b64encode(raw_event).decode("ascii"),
+                    "sha256": hashlib.sha256(raw_event).hexdigest(),
+                })
             assert events, "Temporal history was empty"
             assert events[0]["event_type_code"] == 1  # Temporal WorkflowExecutionStarted
             assert len({event["event_id"] for event in events}) == len(events)
@@ -240,6 +251,7 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
                     "history_exported": True,
                     "history_event_count": len(temporal_events),
                     "history_events": temporal_events,
+                    "history_payload_format": "temporalio.api.history.v1.HistoryEvent/protobuf+b64",
                 },
                 "assertions": {
                     "sigkill_exit_verified": True,

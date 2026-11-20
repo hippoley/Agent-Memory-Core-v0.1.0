@@ -75,7 +75,7 @@ def verify_receipt(client, receipt: dict) -> None:
 def capture(client, tenant_id: str) -> None:
     if RECEIPT.exists():
         raise RuntimeError(
-            f"Existing {RECEIPT.relative_to(ROOT)}: verify it before capturing again; "
+            f"Existing {RECEIPT}: verify it before capturing again; "
             "delete only after preserving the previous evidence."
         )
     subject = "restart-acceptance-" + uuid4().hex

@@ -175,13 +175,25 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
 
         async def verify_temporal():
             client = await Client.connect(address)
-            description = await client.get_workflow_handle(workflow_id).describe()
+            handle = client.get_workflow_handle(workflow_id, run_id=after[4])
+            description = await handle.describe()
             assert description.run_id == after[4]
             assert description.id == workflow_id
             assert description.task_queue == queue
-            return description.run_id
 
-        verified_run_id = asyncio.run(verify_temporal())
+            # Read the actual Temporal event history independently of the
+            # PostgreSQL dispatch ledger. Never convert failed reads into PASS.
+            events = []
+            async for event in handle.fetch_history_events():
+                event_type = getattr(event.event_type, "name", str(event.event_type))
+                events.append({"event_id": event.event_id, "event_type": event_type})
+            assert events, "Temporal history was empty"
+            assert events[0]["event_type"] == "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"
+            assert len({event["event_id"] for event in events}) == len(events)
+            assert all(event["event_id"] > 0 for event in events)
+            return description.run_id, events
+
+        verified_run_id, temporal_events = asyncio.run(verify_temporal())
         assert verified_run_id == after[4]
 
         # Write receipts only after all assertions have passed. No DSNs or secrets.
@@ -223,7 +235,9 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
                     "described_run_id": verified_run_id,
                     "pre_kill_run_id": original_run_id,
                     "task_queue": queue,
-                    "history_exported": False,
+                    "history_exported": True,
+                    "history_event_count": len(temporal_events),
+                    "history_events": temporal_events,
                 },
                 "assertions": {
                     "sigkill_exit_verified": True,
@@ -231,6 +245,7 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
                     "expected_fencing_epoch": expected_epoch,
                     "postgres_started": True,
                     "temporal_run_id_matches": True,
+                    "temporal_history_nonempty_and_started": True,
                     "original_run_id_preserved_if_preexisting": True,
                 },
                 "result": "PASS",

@@ -6,11 +6,14 @@ then starts a replacement and independently reads PostgreSQL + Temporal.
 """
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -109,6 +112,7 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
             stderr=subprocess.PIPE,
         )
         _wait_for(os.path.join(barrier_dir, failpoint + ".reached"), process)
+        barrier_at = datetime.now(timezone.utc).isoformat()
 
         before = db.conn.execute(
             """SELECT status,lease_owner,lease_epoch,attempts,temporal_run_id
@@ -140,6 +144,7 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
         process.send_signal(signal.SIGKILL)
         _, stderr = process.communicate(timeout=10)
         assert process.returncode == -signal.SIGKILL, stderr.decode(errors="replace")
+        killed_at = datetime.now(timezone.utc).isoformat()
 
         if failpoint != "before_claim_commit":
             _wait_for_lease_expiry(db, task_id)
@@ -153,6 +158,7 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
             env=recovery_env, capture_output=True, text=True, timeout=45,
         )
         assert recovered.returncode == 0, recovered.stderr
+        recovery_at = datetime.now(timezone.utc).isoformat()
 
         after = db.conn.execute(
             """SELECT status,lease_owner,lease_epoch,attempts,temporal_run_id
@@ -175,7 +181,67 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
             assert description.task_queue == queue
             return description.run_id
 
-        assert asyncio.run(verify_temporal()) == after[4]
+        verified_run_id = asyncio.run(verify_temporal())
+        assert verified_run_id == after[4]
+
+        # Write receipts only after all assertions have passed. No DSNs or secrets.
+        evidence_dir = os.getenv("MEMORY_DA_EVIDENCE_DIR")
+        if evidence_dir:
+            evidence = {
+                "schema": "amc.dispatcher-sigkill.v1",
+                "scenario": failpoint,
+                "task_id": str(task_id),
+                "workflow_id": workflow_id,
+                "timestamps_utc": {
+                    "barrier_reached": barrier_at,
+                    "dispatcher_killed": killed_at,
+                    "recovery_completed": recovery_at,
+                },
+                "process": {
+                    "kill_signal": "SIGKILL",
+                    "dispatcher_exit_code": process.returncode,
+                    "replacement_exit_code": recovered.returncode,
+                },
+                "postgresql": {
+                    "before": {
+                        "status": before[0],
+                        "lease_owner": before[1],
+                        "lease_epoch": before[2],
+                        "attempts": before[3],
+                        "temporal_run_id": before[4],
+                    },
+                    "after": {
+                        "status": after[0],
+                        "lease_owner": after[1],
+                        "lease_epoch": after[2],
+                        "attempts": after[3],
+                        "temporal_run_id": after[4],
+                    },
+                },
+                "temporal": {
+                    "described_workflow_id": workflow_id,
+                    "described_run_id": verified_run_id,
+                    "pre_kill_run_id": original_run_id,
+                    "task_queue": queue,
+                    "history_exported": False,
+                },
+                "assertions": {
+                    "sigkill_exit_verified": True,
+                    "replacement_success": True,
+                    "expected_fencing_epoch": expected_epoch,
+                    "postgres_started": True,
+                    "temporal_run_id_matches": True,
+                    "original_run_id_preserved_if_preexisting": True,
+                },
+                "result": "PASS",
+            }
+            target = Path(evidence_dir)
+            target.mkdir(parents=True, exist_ok=True)
+            filename = target / f"{failpoint}.json"
+            filename.write_text(
+                json.dumps(evidence, indent=2, sort_keys=True) + "\\n",
+                encoding="utf-8",
+            )
     finally:
         if process is not None and process.poll() is None:
             process.kill()

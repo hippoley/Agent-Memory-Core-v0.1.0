@@ -239,7 +239,7 @@ def test_dispatcher_sigkill_recovers_both_external_side_effect_windows(
             target.mkdir(parents=True, exist_ok=True)
             filename = target / f"{failpoint}.json"
             filename.write_text(
-                json.dumps(evidence, indent=2, sort_keys=True) + "\\n",
+                json.dumps(evidence, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
     finally:

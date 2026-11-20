@@ -153,6 +153,25 @@ To stop the local stack:
 python scripts/launch_local.py down
 ```
 
+## Run the product locally in a browser
+
+For a **`main` revision that contains `scripts/demo_local.py`**, use this all-in-one browser walkthrough. Verify that the script exists after cloning. If it is missing from that `main` checkout, record the P0-1 full-browser acceptance as **BLOCKED (feature not released)**; do not switch to a PR branch as a workaround.
+
+```bash
+git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+cd Agent-Memory-Core-v0.1.0
+python -m pip install -e '.[api,postgres]'
+python scripts/demo_local.py
+```
+
+The launcher starts the loopback-only Docker Compose stack, runs a real SDK lifecycle (create → revise → current/history readback → search → evidence object round-trip → events), and runs the existing seven-turn Chinese demo-story seeder through the public text-processing API (without invoking its optional cleanup mode), then opens the Console, Observatory and API manual in your browser. Smoke and demo records remain in the local database for inspection. The seeder prints the actual extraction relations; unextracted utterances are not presented as successful memories. Lite defaults to the local `rule` extractor, so this is a UI/API walkthrough, not evidence of LLM quality. It does not call a hosted model or publish the API to the Internet.
+
+- **Console:** `http://127.0.0.1:8765/dashboard/` — natural-language ingestion, claim ledger, history and search.
+- **Observatory:** `http://127.0.0.1:8765/dashboard/observatory.html` — start in clearly labeled synthetic Demo mode, then connect with the local key to inspect Live API data.
+- **API manual:** `http://127.0.0.1:8765/docs`.
+
+The key is generated locally in `.env.local` as `MEMORY_API_KEY`; paste it only into the local browser page. Stop the stack with `python scripts/launch_local.py down`. See [the Chinese local demo guide](docs/LOCAL-DEMO.zh-CN.md) for profiles, identity mode and safety boundaries.
+
 ## Connect an agent with the Python SDK
 
 External agents use the same public REST API as Observatory. They do not import server modules, access PostgreSQL, or use browser-only business endpoints.

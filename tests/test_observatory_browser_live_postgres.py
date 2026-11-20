@@ -260,7 +260,7 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             page.locator("#writeValue").fill('{"months":1}')
             page.locator("#writeSource").fill("ui-test:original")
             page.locator("#saveMemory").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Memory created. New ID:")
+            expect(page.locator("#mutationNote")).to_contain_text("Memory created and independently read back. New ID:")
             first_id = page.locator("#detail .provenance").nth(0).inner_text()
             assert first_id
 
@@ -268,7 +268,7 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             page.locator("#writeValue").fill('{"months":3}')
             page.locator("#writeSource").fill("ui-test:correction")
             page.locator("#saveMemory").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Revision committed.")
+            expect(page.locator("#mutationNote")).to_contain_text("Revision committed and independently read back.")
             expect(page.locator("#total")).to_have_text(str(baseline_total + 2))
             expect(page.locator("#active")).to_have_text(str(baseline_active + 1))
             expect(page.locator("#old")).to_have_text(str(baseline_old + 1))
@@ -276,7 +276,7 @@ def test_live_browser_create_revision_and_soft_forget_against_postgres(runtime):
             assert second_id and second_id != first_id
 
             page.locator("#forgetSelected").click()
-            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed")
+            expect(page.locator("#mutationNote")).to_contain_text("Soft-forget committed and independently read back")
             expect(page.locator("#total")).to_have_text(str(baseline_total + 2))
             expect(page.locator("#active")).to_have_text(str(baseline_active))
             expect(page.locator("#old")).to_have_text(str(baseline_old + 2))

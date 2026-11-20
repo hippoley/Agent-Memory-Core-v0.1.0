@@ -42,7 +42,7 @@ def test_seed_failure_propagates_instead_of_claiming_demo_ready(monkeypatch):
         return 200, {"relations": [{"relation": "created", "subject_id": "test", "predicate": "p"}]}
 
     monkeypatch.setattr(seed_demo, "request", fake_request)
-    with pytest.raises(RuntimeError, match=r"Demo seed incomplete \\(1/7 requests failed\\)"):
+    with pytest.raises(RuntimeError, match=r"Demo seed incomplete \(1/7 requests failed\)"):
         seed_demo.seed("http://127.0.0.1:8765", "fixture-secret")
     assert calls == [source for source, _ in seed_demo.STORY]
 

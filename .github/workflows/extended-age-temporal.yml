@@ -54,6 +54,37 @@ jobs:
               assert receipt["result"] == "PASS"
           print("DISPATCHER_SIGKILL_RECEIPTS_ACCEPTED")
           PY
+      - name: Verify DA-04 fencing, DA-05 Temporal identity, and DA-06 claim race
+        env:
+          MEMORY_TEST_DSN: postgresql://memory:local-dev-only@localhost:55432/memory
+          MEMORY_TEMPORAL_ADDRESS: localhost:7233
+          MEMORY_DA_EVIDENCE_DIR: .evidence/dispatcher-sigkill
+        run: |
+          python -m pytest -q tests/test_temporal_dispatch.py tests/test_temporal_dispatcher_recovery.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path(".evidence/dispatcher-sigkill")
+          cases = (
+              "before_claim_commit", "after_claim_commit",
+              "after_temporal_start_before_ack", "DA-04",
+              "DA-05-memo", "DA-05-task-queue", "DA-05-workflow-type", "DA-06",
+          )
+          actual = {path.stem for path in root.glob("*.json")}
+          assert actual == set(cases), (actual, cases)
+          for case in cases:
+              receipt = json.loads((root / (case + ".json")).read_text())
+              assert receipt["scenario"] == case
+              assert receipt["result"] == "PASS"
+              if case.startswith("DA-05"):
+                  assert receipt["assertions"]["identity_rejected"]
+                  assert receipt["assertions"]["existing_execution_unchanged"]
+              if case == "DA-04":
+                  assert receipt["assertions"]["stale_ack_did_not_mutate_state"]
+              if case == "DA-06":
+                  assert receipt["assertions"]["one_winner_one_loser"]
+          print("DA_01_TO_06_RECEIPTS_ACCEPTED")
+          PY
       - name: Upload non-secret dispatcher failure-injection receipts
         if: always()
         uses: actions/upload-artifact@v4

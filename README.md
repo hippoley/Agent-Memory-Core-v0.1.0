@@ -51,7 +51,7 @@ This is a memory component for your existing agent stack — not a replacement f
 
 ## Quickstart
 
-The supported public installation source is the repository's **default `main` branch**, not a PR or feature branch. It uses Docker Compose and does not require a hosted account. Use the command below exactly as an external developer would; do not switch branches. **Release gate:** the PR #56 all-in-one `scripts/demo_local.py` / verified browser-mutation acceptance is not available from `main` until PR #56 is actually merged. The existence of an unmerged PR or its passing CI does not make those commands part of the public release.
+The supported public installation source is the repository's **default `main` branch**, not a PR or feature branch. It uses Docker Compose and does not require a hosted account. Use the command below exactly as an external developer would; do not switch branches. **Release gate:** the PR #56 all-in-one `scripts/demo_local.py` and verified browser-mutation experience count as published only when those files are present in the checked-out `main` revision. The existence of a PR or passing feature-branch CI does not establish public availability.
 
 **Prerequisites:** Git, Docker Compose v2, Python 3.10+.
 

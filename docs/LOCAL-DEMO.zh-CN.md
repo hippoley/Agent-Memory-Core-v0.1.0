@@ -1,6 +1,6 @@
 # Agent Memory Core · 本地产品体验
 
-这份指南把仓库已有的 API、PostgreSQL、Python SDK、Console 和 Observatory 串成一条可重复的体验路径。它启动的是**本机真实服务**，不是静态截图，也不使用云端模型。
+这份指南描述 **PR #56 合并到默认分支 `main` 之后**的产品体验流程。外部开发者只从 `main` 安装，不使用开发者功能分支。**截至目前 PR #56 尚未合并，因此 `main` 没有 `scripts/demo_local.py`；在合并前这份指南不构成可执行的正式 main 安装说明，独立 P0-1 验收应记为 BLOCKED（发布流程），而不是要求测试者切换 PR 分支。** 发布后此流程启动本机真实 API 与 PostgreSQL，而非静态截图或云端模型。
 
 ## 1. 环境要求
 
@@ -9,13 +9,18 @@
 - Python 3.10+
 - 可用的本机浏览器
 
-建议先从仓库根目录执行：
+从公共默认分支安装（**不要**执行 `git switch` 到 PR 分支）：
 
 ```bash
+git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
+cd Agent-Memory-Core-v0.1.0
+git branch --show-current  # 必须显示 main
 python -m pip install -e '.[api,postgres]'
 ```
 
-## 2. 一条命令启动并体验
+如果 `main` 尚无 `scripts/demo_local.py`，停止验收并在 [Issue #57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57) 标记 BLOCKED；不要从 `feat/local-product-demo-20261119` 安装来冒充正式版本。
+
+## 2. `main` 发布 PR #56 后：一条命令启动并体验
 
 ```bash
 python scripts/demo_local.py

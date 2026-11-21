@@ -17,5 +17,4 @@ CREATE TABLE IF NOT EXISTS memory_knowledge_source_revisions (
 -- A control-plane administrator, not a model/tenant SQL login, registers
 -- active revisions. There is no user-facing route to update this table.
 REVOKE ALL ON memory_knowledge_source_revisions FROM PUBLIC;
-REVOKE ALL ON memory_knowledge_source_revisions FROM memory_tenant;
 COMMIT;

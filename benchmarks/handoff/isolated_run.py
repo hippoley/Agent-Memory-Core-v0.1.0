@@ -17,7 +17,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from urllib.parse import quote, unquote, urlsplit
-from benchmarks.handoff.provider_fencing import provider_fence
+try:
+    from benchmarks.handoff.provider_fencing import provider_fence
+except ModuleNotFoundError:
+    # Running the probe directly by script path without PYTHONPATH=repo root.
+    from provider_fencing import provider_fence
 
 
 def decide(pack: dict) -> dict:
@@ -251,6 +255,11 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str, *,
         state = reconcile_provider(provider_url, request_id, effect_key, business_payload)
         if state != "committed":
             raise RuntimeError("AMC_EFFECT_NOT_COMMITTED; Agent B cannot dispatch")
+        # A remote receipt does not authorize a canonical success claim until
+        # the fenced AMC reconciler has also committed the durable task.
+        completed = api.get_task(pack["task_id"])
+        if completed.get("status") != "completed":
+            raise RuntimeError("AMC_TASK_UNRESOLVED; Provider receipt alone is insufficient")
         api.remember(
             subject_id=subject_id, predicate="handoff_decision", value=decision,
             source_id="handoff:" + handoff_id,

@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from urllib.parse import quote, unquote, urlsplit
+from benchmarks.handoff.provider_fencing import provider_fence
 
 
 def decide(pack: dict) -> dict:
@@ -105,22 +106,28 @@ def serve_provider(db_path: str, host: str, port: int, after_commit_gate: str | 
             except (ValueError, TypeError):
                 self.send_error(400)
                 return
-            with sqlite3.connect(db_path, timeout=5) as conn:
-                conn.execute("BEGIN IMMEDIATE")
-                prior = conn.execute(
-                    "SELECT effect_key,payload_json FROM effect_events WHERE request_id=? AND executed=1",
-                    (event["request_id"],)).fetchone()
-                canonical_payload = json.dumps(event["payload"], sort_keys=True)
-                if prior and prior != (event["effect_key"], canonical_payload):
-                    conn.rollback()
-                    self.send_error(409, "idempotency key reused with different effect")
+            # Provider rechecks the current fenced owner at the actual effect
+            # commit boundary, not merely when the executor prepared its POST.
+            with provider_fence(event, self.headers) as authorized:
+                if not authorized:
+                    self.send_error(403, "AMC fenced execution admission rejected")
                     return
-                executed = 0 if prior else 1
-                conn.execute(
-                    "INSERT INTO effect_events(effect_key,request_id,executed,payload_json) VALUES(?,?,?,?)",
-                    (event["effect_key"], event["request_id"], executed,
-                     json.dumps(event["payload"], sort_keys=True)))
-                conn.commit()
+                with sqlite3.connect(db_path, timeout=5) as conn:
+                    conn.execute("BEGIN IMMEDIATE")
+                    prior = conn.execute(
+                        "SELECT effect_key,payload_json FROM effect_events WHERE request_id=? AND executed=1",
+                        (event["request_id"],)).fetchone()
+                    canonical_payload = json.dumps(event["payload"], sort_keys=True)
+                    if prior and prior != (event["effect_key"], canonical_payload):
+                        conn.rollback()
+                        self.send_error(409, "idempotency key reused with different effect")
+                        return
+                    executed = 0 if prior else 1
+                    conn.execute(
+                        "INSERT INTO effect_events(effect_key,request_id,executed,payload_json) VALUES(?,?,?,?)",
+                        (event["effect_key"], event["request_id"], executed,
+                         json.dumps(event["payload"], sort_keys=True)))
+                    conn.commit()
             # Fault-injection only: signal AFTER the SQLite commit and BEFORE
             # emitting an HTTP response. A supervising test can SIGKILL B here.
             # A replay is not blocked because the first attempt already committed.

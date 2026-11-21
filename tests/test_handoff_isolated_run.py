@@ -66,6 +66,18 @@ def test_provider_deduplicates_execution_and_journals_retries(tmp_path):
                 f"http://127.0.0.1:{port}/effects", data=payload,
                 headers={"Content-Type": "application/json"}), timeout=3) as response:
                 assert response.status == 200
+        # Reusing the same idempotency key for different semantics must fail.
+        different = json.dumps({
+            "effect_key": "supplier-payment",
+            "request_id": "handoff-01:approval",
+            "payload": {"period": "quarterly"},
+        }).encode()
+        from urllib.error import HTTPError
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(
+                f"http://127.0.0.1:{port}/effects", data=different,
+                headers={"Content-Type": "application/json"}), timeout=3)
+        assert error.value.code == 409
         with sqlite3.connect(db) as conn:
             events = conn.execute(
                 "SELECT executed FROM effect_events ORDER BY id").fetchall()

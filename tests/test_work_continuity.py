@@ -25,7 +25,6 @@ def test_context_budget_and_subjects_fail_closed():
 def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
     if not os.getenv("MEMORY_TEST_DSN"):
         pytest.skip("US-C01 requires real PostgreSQL")
-    pytest.importorskip("httpx")
     import asyncio
     import httpx
     from agent_memory_core.postgres import PostgresMemory

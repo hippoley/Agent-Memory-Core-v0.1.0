@@ -109,6 +109,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert worker.returncode == 0, worker.stderr
         worker_result = json.loads(worker.stdout)
         assert worker_result["checkpoint_version"] == 1
+        assert worker_result["effect_attempt_count"] == 1
         if kill_after_provider_commit:
             # The provider writes the marker only AFTER it has committed the
             # real SQLite effect and BEFORE it sends the HTTP response.
@@ -137,6 +138,23 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         else:
             first = invoke(*b_args, env=env)
             assert "AGENT_B_FINISHED" in first.stdout
+        # Recovery runs in a new fenced process against the real AMC effect
+        # state machine: EXECUTING -> UNKNOWN -> RECONCILING -> COMMITTED.
+        # The old worker has exited; this test injects its lease expiry.
+        recovery = subprocess.run(
+            [sys.executable, str(ROOT / "benchmarks" / "handoff" / "recover_worker.py"),
+             "--task-id", manifest["task_id"],
+             "--effect-key", "supplier-approval-request",
+             "--old-worker-id", worker_result["worker_id"],
+             "--old-epoch", str(worker_result["lease_epoch"]),
+             "--provider-url", f"http://127.0.0.1:{provider_port}"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=35,
+        )
+        assert recovery.returncode == 0, recovery.stderr
+        recovered = json.loads(recovery.stdout)
+        assert recovered["classification"] == "COMMITTED"
+        assert recovered["reexecuted"] is False
+        assert recovered["lease_epoch"] > worker_result["lease_epoch"]
         # A distinct B process resumes after clean exit or SIGKILL, and the
         # provider still has its committed effect from the first attempt.
         # Receipt readback must suppress even the otherwise idempotent POST replay.
@@ -173,7 +191,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         finally:
             db.close()
         assert recorded is not None
-        assert recorded["status"] == "requested"
+        assert recorded["status"] == "committed"
         result = assess_effect(
             recorded=recorded,
             request_id=hid + ":supplier-approval-request",
@@ -184,9 +202,9 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
                      "effect_key": "supplier-approval-request",
                      "payload": {"subject": subject, "period": "quarterly"}},
         )
-        # A matching Provider receipt is NOT enough to mark AMC committed:
-        # authorized status transition remains an explicit next release gate.
-        assert result.classification == "MATCHED_RECEIPT_AMC_UNRESOLVED"
+        # Cross-ledger comparison alone is never authorization. Only the
+        # independently fenced Worker above was permitted to resolve UNKNOWN.
+        assert result.classification == "RECEIPTS_CONSISTENT_READ_ONLY"
         assert result.matches_recorded_intent is True
         assert result.safe_for_automatic_completion is False
     finally:

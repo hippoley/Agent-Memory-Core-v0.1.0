@@ -209,8 +209,23 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert recovered["lease_epoch"] > worker_result["lease_epoch"]
         # Agent B independently reads the Provider receipt only AFTER the
         # fenced recovery worker has committed the corresponding AMC effect.
-        second = invoke(*b_args, env=env)
-        assert "AGENT_B_FINISHED" in second.stdout
+        # Two independent B instances race on the SAME accepted handoff.
+        # Neither holds the Provider secret; both must converge on one
+        # canonical idempotent AMC decision without another remote effect.
+        b1 = subprocess.Popen(
+            [sys.executable, str(SCRIPT), *b_args],
+            cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        b2 = subprocess.Popen(
+            [sys.executable, str(SCRIPT), *b_args],
+            cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        for competing in (b1, b2):
+            out, err = competing.communicate(timeout=35)
+            assert competing.returncode == 0, err
+            assert "AGENT_B_FINISHED" in out
         with sqlite3.connect(db_path) as conn:
             events = conn.execute(
                 "SELECT request_id, effect_key, executed FROM effect_events ORDER BY id"

@@ -119,7 +119,9 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         issuer_pub = issuer_key.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         issuer_port = free_port()
-        issuer_env = {**env, "AMC_TEST_ISSUER_PRIVATE_KEY":
+        issuer_id = "independent-contract-source-" + uuid4().hex
+        issuer_env = {**env, "AMC_TEST_ISSUER_ID": issuer_id,
+                      "AMC_TEST_ISSUER_PRIVATE_KEY":
                       base64.urlsafe_b64encode(issuer_raw).decode(),
                       "AMC_TEST_ISSUER_TENANT": tenant,
                       "AMC_TEST_ISSUER_SUBJECT": subject,
@@ -150,13 +152,13 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
                        (issuer,key_id,principal_id,public_key,audience,not_before)
                        VALUES(%s,'issuer-key-01',%s::uuid,%s,'amc-knowledge-source',
                               clock_timestamp()-interval '1 hour')""",
-                    ("independent-contract-source", principal, issuer_pub))
+                    (issuer_id, principal, issuer_pub))
                 trust_db.conn.execute(
                     """INSERT INTO memory_knowledge_source_revisions
                        (tenant_id,subject_id,predicate,source_id,issuer,key_id)
                        VALUES(%s,%s,'payment_period','supplier-contract:v3',
-                              'independent-contract-source','issuer-key-01')""",
-                    (tenant, subject))
+                              %s,'issuer-key-01')""",
+                    (tenant, subject, issuer_id))
         finally:
             trust_db.close()
         receipt_path = tmp_path / "signed-contract-v3.json"

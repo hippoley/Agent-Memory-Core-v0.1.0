@@ -78,7 +78,7 @@ def test_sigkill_worker_activity_retries_on_replacement_process(tmp_path):
             assert event_ids and event_ids[0] == 1
             assert len(event_ids) == len(set(event_ids))
             assert event_types[0] == 1  # WorkflowExecutionStarted
-            assert 10 in event_types  # ActivityTaskCompleted
+            assert 12 in event_types  # ActivityTaskCompleted
             assert 2 in event_types  # WorkflowExecutionCompleted
             evidence_dir = os.getenv("MEMORY_WORKER_CRASH_EVIDENCE_DIR")
             if evidence_dir:

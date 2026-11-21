@@ -93,6 +93,19 @@ def review_handoff_claim(*, accepted_handoff: Mapping[str, Any],
     pack = accepted_handoff.get("payload")
     if not isinstance(pack, Mapping) or pack.get("schema") != "amc.context-pack.v1":
         return deny("DENIED", "INVALID_HANDOFF_PAYLOAD")
+    # Even for a read-only recommendation, never trust a locally edited
+    # handoff packet. This is payload integrity, NOT issuer authentication:
+    # the caller must still obtain the packet via authenticated AMC HTTP.
+    pack_digest = pack.get("sha256")
+    try:
+        intact = (isinstance(pack_digest, str) and len(pack_digest) == 64
+                  and pack_digest == sha256(_canonical({
+                      k: v for k, v in pack.items() if k != "sha256"
+                  })).hexdigest())
+    except (TypeError, ValueError, OverflowError):
+        intact = False
+    if not intact:
+        return deny("DENIED", "HANDOFF_PAYLOAD_INTEGRITY_FAILURE")
     if pack.get("omitted_claim_ids") or pack.get("unresolved_effects"):
         return deny("DENIED", "INCOMPLETE_OR_UNRESOLVED_CONTEXT")
     if subject_id not in pack.get("subjects", []):

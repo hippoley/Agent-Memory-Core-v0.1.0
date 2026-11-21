@@ -47,7 +47,8 @@ reconciles the committed effect. Tests require:
   Agent B cannot claim completion.
 - A stale Worker epoch or wrong tenant cannot dispatch an effect.
 - The recovered task and AMC effect become COMMITTED only from the current
-  fenced Worker; one canonical `handoff_decision` is persisted.
+  fenced Worker; **two concurrent Agent B receiver processes** converge on
+  one canonical `handoff_decision` through AMC's idempotent memory API.
 - Intent and external receipt must have the same request ID, effect key,
   business payload and request digest.
 

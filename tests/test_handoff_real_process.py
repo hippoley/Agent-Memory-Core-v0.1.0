@@ -62,6 +62,8 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
     env = dict(os.environ, MEMORY_API_KEY=key, MEMORY_TENANT_ID=tenant,
                MEMORY_API_URL=f"http://127.0.0.1:{api_port}")
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    # Never inherit a Provider executor secret into the Agent A/B environment.
+    env.pop("PROVIDER_EFFECT_TOKEN", None)
     db_path = str(tmp_path / "provider.sqlite")
     gate = str(tmp_path / "provider-committed")
     provider_token = secrets.token_urlsafe(32)

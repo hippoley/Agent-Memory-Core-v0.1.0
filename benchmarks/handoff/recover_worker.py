@@ -86,7 +86,8 @@ def recover(*, tenant_id: str, task_id: str, effect_key: str,
                 error={"reason": "PROVIDER_RECEIPT_UNAVAILABLE", "type": type(exc).__name__},
             )
             return {"classification": "UNKNOWN", "reexecuted": False}
-        if (receipt.get("status") != "committed"
+        if (not isinstance(receipt, dict)
+                or receipt.get("status") != "committed"
                 or receipt.get("request_id") != rid
                 or receipt.get("effect_key") != effect_key
                 or receipt.get("payload") != request.get("payload")):

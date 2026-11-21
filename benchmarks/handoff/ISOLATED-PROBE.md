@@ -99,22 +99,34 @@ the 404/POST behavior as a safe generic retry algorithm. The result
 observer remains fail-closed and must not be scored as a verified benchmark.
 
 
-## Seventh-round explicit cross-ledger release gate
+## Eighth-round fenced-intent acceptance (real PostgreSQL)
 
-The new `effect_reconciliation.py` is **read-only** and compares tenant-scoped
-AMC `memory_task_effects` records, request SHA-256 and external Provider
-receipts. It never mutates task/effect status or infers success from a
-missing Provider response.
+The earlier negative control at seventh-round HEAD `a0cf4d875377` proved
+that Agent B could dispatch an effect without an AMC-owned intent. This is
+now a regression test: a B subprocess with no registered intent is refused
+**before any Provider POST**.
 
-The real PostgreSQL process test intentionally checks the present weakness:
-the synthetic Agent B **does not** register its Provider effect through AMC's
-fenced checkpoint/outbox contract. The Provider can prove one execution,
-but AMC returns `AMC_INTENT_MISSING`, and `safe_for_automatic_completion`
-remains `false`. This is an explicit negative control, not a regression to
-ignore or a reason to counterfeit a committed effect. Cross-ledger consistency
-does not itself authenticate third-party receipts.
+The real process acceptance test now explicitly orders:
 
-Product release still requires a properly leased/fenced Worker to create the
-effect intent and outbox **before** dispatch, then an authorized reconciliation
-transition based on independently verified Provider evidence. Until this is
-implemented and tested, the observer must remain fail-closed.
+1. Agent A creates the task/claims/handoff and exits.
+2. An independent Agent B process accepts the handoff without dispatch.
+3. A second Agent B process attempts dispatch with no registered intent;
+   it **must fail**, leaving the Provider SQLite ledger empty.
+4. A distinct `fenced_worker.py` subprocess claims a lease through the
+   existing `DurableTaskLeaseStore` and atomically commits checkpoint,
+   effect request digest and Outbox event in PostgreSQL.
+5. Agent B confirms the exact current persisted checkpoint via the public
+   task read API, then performs the Provider action.
+6. The clean-restart and commit-before-response SIGKILL scenarios run.
+   Fresh Agent B reads the committed Provider receipt and does not POST again.
+7. A read-only cross-ledger check confirms request hash and receipt match,
+   but still classifies `MATCHED_RECEIPT_AMC_UNRESOLVED`. It intentionally
+   does **not** claim an authorized effect status transition.
+
+The worker is a disposable controlled test harness with PostgreSQL access.
+The Agent B client itself uses only the public AMC and Provider HTTP APIs.
+This **does not** yet prove production separation of worker credentials,
+ownership of provider dispatch by AMC, authenticated evidence, fencing
+across the external Provider, or a safe `unknown -> committed` transition.
+It must remain Draft until an authorized reconciler is implemented and
+tested with negative/conflict/revocation cases.

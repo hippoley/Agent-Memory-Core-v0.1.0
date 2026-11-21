@@ -66,6 +66,21 @@ def test_provider_deduplicates_execution_and_journals_retries(tmp_path):
                 f"http://127.0.0.1:{port}/effects", data=payload,
                 headers={"Content-Type": "application/json"}), timeout=3) as response:
                 assert response.status == 200
+        # A cold Agent B can safely reconstruct success from Provider's ledger.
+        base_url = f"http://127.0.0.1:{port}"
+        assert module.reconcile_provider(
+            base_url, "handoff-01:approval",
+            "supplier-approval-request", {"period": "quarterly"},
+        ) == "committed"
+        with pytest.raises(RuntimeError, match="CONFLICT"):
+            module.reconcile_provider(
+                base_url, "handoff-01:approval",
+                "supplier-payment", {"period": "quarterly"},
+            )
+        assert module.reconcile_provider(
+            base_url, "not-committed:approval",
+            "supplier-approval-request", {"period": "quarterly"},
+        ) == "absent"
         # Reusing the same idempotency key for different semantics must fail.
         different = json.dumps({
             "effect_key": "supplier-payment",
@@ -120,3 +135,15 @@ def test_observer_is_handoff_scoped_and_never_claims_reconciled(tmp_path, monkey
     assert trace["observed_effects"] == [{"effect_key": "supplier-approval-request"}]
     assert trace["observation_complete"] is False
     assert trace["unresolved_unknown"] is True
+
+
+def test_provider_reconciliation_unreachable_is_unknown():
+    # A network error MUST NOT be interpreted as "no effect committed".
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        unused_port = sock.getsockname()[1]
+    with pytest.raises(RuntimeError, match="UNKNOWN"):
+        module.reconcile_provider(
+            f"http://127.0.0.1:{unused_port}", "handoff-x:approval",
+            "supplier-approval-request", {"period": "quarterly"},
+        )

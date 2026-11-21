@@ -21,6 +21,29 @@ def test_context_budget_and_subjects_fail_closed():
     assert _tokens({"x": "hello"}) > 0
 
 
+def test_public_python_sdk_routes_are_real_http_contracts():
+    import httpx
+    from agent_memory_core.sdk import MemoryClient
+
+    seen = []
+    def respond(request):
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json={"ok": True})
+
+    with MemoryClient("http://amc.local", "x" * 32,
+                      tenant_id="tenant-a",
+                      transport=httpx.MockTransport(respond)) as client:
+        assert client.prepare_context(task_id="task", subject_ids=["supplier"])["ok"]
+        assert client.create_handoff(task_id="task", source_agent="A",
+                                     target_agent="B", subject_ids=["supplier"])["ok"]
+        assert client.accept_handoff("handoff", target_agent="B")["ok"]
+    assert seen == [
+        ("POST", "/v1/context/prepare"),
+        ("POST", "/v1/handoffs"),
+        ("POST", "/v1/handoffs/handoff/accept"),
+    ]
+
+
 @pytest.mark.integration
 def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
     if not os.getenv("MEMORY_TEST_DSN"):

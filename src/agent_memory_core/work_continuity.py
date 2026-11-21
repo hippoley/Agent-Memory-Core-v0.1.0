@@ -62,9 +62,10 @@ class ContinuityStore:
         if task is None:
             raise LookupError("Task not found")
         effects = self.conn.execute(
-            """SELECT effect_key,status FROM memory_task_effects
-               WHERE tenant_id=%s AND task_id=%s::uuid
-               ORDER BY effect_key""", (tenant_id, task_id)
+            """SELECT e.effect_key,e.status FROM memory_task_effects AS e
+               JOIN memory_durable_tasks AS t ON t.task_id=e.task_id
+               WHERE t.tenant_id=%s AND e.task_id=%s::uuid
+               ORDER BY e.effect_key""", (tenant_id, task_id)
         ).fetchall()
         pending_effects = [{"effect_key": k, "status": state} for k, state in effects
                            if state != "committed"]

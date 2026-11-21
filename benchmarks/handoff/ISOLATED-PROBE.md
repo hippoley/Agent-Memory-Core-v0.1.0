@@ -8,11 +8,13 @@ Start AMC with its documented PostgreSQL API profile. Export:
 `MEMORY_API_URL`, `MEMORY_API_KEY`, and `MEMORY_TENANT_ID`.
 Use a disposable tenant. Never publish credentials, case records or raw customer data.
 
-Agent A creates a task and canonical source-linked facts using the existing public SDK. For the supplier example, use **two facts on the same subject**:
-- `payment_period` with `{"payment_period":"quarterly"}`
-- `requires_approval` with `{"requires_approval":true}`
+Agent A seeds the task and two canonical source-linked facts in its **own process**, freezes the handoff and exits:
 
-Agent A freezes a handoff targeting label `agent-B` and exits. Preserve only `handoff_id` and `subject_id` for Agent B, plus the same authorized tenant credential. Do not pass the raw transcript or A's process memory.
+```bash
+python benchmarks/handoff/isolated_run.py agent-a --subject-id supplier-probe-001
+```
+
+Record the returned `handoff_id` and `subject_id` (and estimate). The two source-linked facts are `payment_period=quarterly` and `requires_approval=true`. The same subject must be used when running Agent B. No raw transcript or Agent-A process memory is passed to B. This is a clean *process exit* test, not yet a forced SIGKILL race test.
 
 ## Three separate processes
 

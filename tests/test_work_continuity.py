@@ -151,6 +151,29 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
                 json={"target_agent": "agent-B"})
             assert stale_result.status_code == 409, stale_result.text
 
+            # Fault injection is performed by the test harness, not Agent B.
+            # An effect goes UNKNOWN after handoff creation: accept must
+            # re-read current PostgreSQL state rather than trust the snapshot.
+            pending = await agent_b.post("/v1/handoffs", json={
+                **base, "source_agent": "agent-A", "target_agent": "agent-B",
+            })
+            assert pending.status_code == 201, pending.text
+            fault_db = PostgresMemory(dsn)
+            try:
+                with fault_db.conn.transaction():
+                    fault_db.conn.execute(
+                        """INSERT INTO memory_task_effects
+                           (task_id,effect_key,request_sha256,status)
+                           VALUES (%s::uuid,%s,%s,%s)""",
+                        (task_id, "provider-side-effect", "0" * 64, "unknown"),
+                    )
+            finally:
+                fault_db.close()
+            unknown = await agent_b.post(
+                f"/v1/handoffs/{pending.json()['handoff_id']}/accept",
+                json={"target_agent": "agent-B"})
+            assert unknown.status_code == 409, unknown.text
+
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=other),
                                      base_url="http://amc.other", headers=headers) as other_tenant:
             cross_tenant = await other_tenant.post(

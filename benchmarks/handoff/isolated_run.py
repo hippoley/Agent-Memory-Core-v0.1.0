@@ -66,10 +66,15 @@ def serve_provider(db_path: str, host: str, port: int):
                 return
             with sqlite3.connect(db_path, timeout=5) as conn:
                 conn.execute("BEGIN IMMEDIATE")
-                exists = conn.execute(
-                    "SELECT 1 FROM effect_events WHERE request_id=? AND executed=1",
+                prior = conn.execute(
+                    "SELECT effect_key,payload_json FROM effect_events WHERE request_id=? AND executed=1",
                     (event["request_id"],)).fetchone()
-                executed = 0 if exists else 1
+                canonical_payload = json.dumps(event["payload"], sort_keys=True)
+                if prior and prior != (event["effect_key"], canonical_payload):
+                    conn.rollback()
+                    self.send_error(409, "idempotency key reused with different effect")
+                    return
+                executed = 0 if prior else 1
                 conn.execute(
                     "INSERT INTO effect_events(effect_key,request_id,executed,payload_json) VALUES(?,?,?,?)",
                     (event["effect_key"], event["request_id"], executed,

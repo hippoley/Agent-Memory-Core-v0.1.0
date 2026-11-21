@@ -9,6 +9,8 @@ import argparse
 import json
 import os
 import sqlite3
+import time
+from pathlib import Path
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
@@ -45,7 +47,7 @@ def initialize(conn):
     conn.commit()
 
 
-def serve_provider(db_path: str, host: str, port: int):
+def serve_provider(db_path: str, host: str, port: int, after_commit_gate: str | None = None):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             if self.path != "/effects":
@@ -80,6 +82,17 @@ def serve_provider(db_path: str, host: str, port: int):
                     (event["effect_key"], event["request_id"], executed,
                      json.dumps(event["payload"], sort_keys=True)))
                 conn.commit()
+            # Fault-injection only: signal AFTER the SQLite commit and BEFORE
+            # emitting an HTTP response. A supervising test can SIGKILL B here.
+            # A replay is not blocked because the first attempt already committed.
+            if after_commit_gate is not None and executed:
+                marker = Path(after_commit_gate)
+                marker.write_text(event["request_id"], encoding="utf-8")
+                deadline = time.monotonic() + 20
+                while not Path(after_commit_gate + ".release").exists():
+                    if time.monotonic() > deadline:
+                        return  # no success response: unsafe ambiguity is preserved
+                    time.sleep(0.01)
             body = json.dumps({"executed": bool(executed)}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -183,6 +196,7 @@ def main():
     p.add_argument("--db", required=True)
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8799)
+    p.add_argument("--after-commit-gate", help="Test-only pause after persistent provider commit")
     a = commands.add_parser("agent-a")
     a.add_argument("--subject-id", required=True)
     b = commands.add_parser("agent-b")
@@ -198,7 +212,7 @@ def main():
     o.add_argument("--context-tokens", type=int, required=True)
     args = parser.parse_args()
     if args.command == "provider":
-        serve_provider(args.db, args.host, args.port)
+        serve_provider(args.db, args.host, args.port, args.after_commit_gate)
     elif args.command == "agent-a":
         agent_a(args.subject_id)
     elif args.command == "agent-b":

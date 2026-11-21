@@ -23,7 +23,10 @@ iteration notes are recorded in PR #62.
    not receive this secret.
 5. **External Provider** (`isolated_run.py provider`) independently journals
    the business effect in SQLite. It requires `PROVIDER_EFFECT_TOKEN` for
-   POST and supports read-only committed receipt lookup by request ID.
+   POST, and the **test-only** `PROVIDER_REQUIRE_AMC_FENCE=1` mode rechecks the
+   current tenant/task/worker/epoch and request hash from PostgreSQL while
+   holding its task row lock through the SQLite business commit. It supports
+   read-only committed receipt lookup by request ID.
 6. **Recovery Worker** (`recover_worker.py`) uses **test-only** expiration of
    the old lease; claims a higher epoch, marks stale `EXECUTING` as
    `UNKNOWN`, moves to `RECONCILING`, verifies receipt + canonical request
@@ -46,6 +49,9 @@ reconciles the committed effect. Tests require:
 - A forged/uncredentialed Agent B POST receives **403**, and a pre-receipt
   Agent B cannot claim completion.
 - A stale Worker epoch or wrong tenant cannot dispatch an effect.
+- Even a Worker **holding the correct Provider token** is refused at the
+  Provider after its epoch has been superseded; no extra SQLite event is
+  recorded.
 - The recovered task and AMC effect become COMMITTED only from the current
   fenced Worker; **two concurrent Agent B receiver processes** converge on
   one canonical `handoff_decision` through AMC's idempotent memory API.
@@ -71,3 +77,28 @@ no production credential-delegation, durable executor supervision, remote
 fencing enforcement or real LLM/Mem0 comparison. A successful integration
 test demonstrates the **specified experiment**, not universal exactly-once
 delivery or a 9.5/10 product score. PR #62 remains Draft.
+
+
+## Eleventh-round Provider admission gate (controlled only)
+
+Previously the executor checked its lease **before** making a network POST,
+leaving a time-of-check/time-of-use gap: an obsolete Worker could retain the
+shared bearer token. The test-only Provider admission path now checks AMC's
+fenced task row **at the moment of Provider admission**, locks it while the
+independent SQLite transaction commits, and verifies the executing effect
+owner, epoch, canonical SHA-256 and exact request payload.
+
+The gate runs **only** with `PROVIDER_REQUIRE_AMC_FENCE=1`; standalone
+Provider unit tests continue exercising bearer-only simulation. The real
+PostgreSQL integration runs with admission enabled and includes a replay
+using a superseded Worker epoch plus the still-valid bearer token; 403 and
+no additional SQLite row are required.
+
+This is *not* production distributed atomicity: the test Provider directly
+trusts a privileged PostgreSQL connection; different PostgreSQL and SQLite
+failure domains are not coordinated by two-phase commit, and the Provider
+credential is still a shared bearer token. Real integrations need a provider-
+enforced authorization/fencing contract or provider-specific guarantees,
+alongside authenticated independently verified receipts and real Worker
+credential isolation. The user-facing Agent B never receives an executor
+credential.

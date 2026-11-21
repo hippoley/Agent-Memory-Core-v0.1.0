@@ -211,3 +211,42 @@ source revision registry with independently authorized updates.
 ```bash
 python -m pytest -q tests/test_independent_contract_issuer.py
 ```
+
+## PostgreSQL-owned source authority (incremental P0 slice)
+
+`012_knowledge_source_revisions.sql` adds **only** the tenant/subject/predicate
+current-revision authorization table. It does not duplicate
+`memory_evidence_producer_keys` or `memory_principals`; its FK points
+directly at the existing evidence producer-key registry. The table is a
+control-plane object with no PUBLIC access. Production deployments must
+use a restricted service role with least-privilege SELECT to validate
+sources; the API and untrusted Agent principals must never be able to
+edit revision authority.
+
+`postgres_source_authority.review_registry_handoff_claim` reads the
+current revision, pre-existing producer key and its owning *active service
+principal*, active tenant, key audience `amc-knowledge-source`, key
+validity and revocation **under PostgreSQL FOR SHARE locks**. It then
+verifies the signed knowledge envelope against the database-owned key
+while those locks remain held. Changing the current revision or revoking
+the issuer invalidates a new evaluation; a previously returned read-only
+decision is not a durable capability.
+
+`tests/test_postgres_source_authority.py` includes deterministic negative
+checks and a real-PostgreSQL test with a test-only admin creating an
+issuer key and revision, then changing the revision and revoking the key.
+It reuses the current signed-source contract and does not invoke
+PR #62's execution path.
+
+**Important remaining security caveat:** the registry-read function
+accepts a `conn` supplied by its host. The security boundary is the
+host's database principal and service deployment, not this function
+signature. It does not yet prove a low-privilege dedicated read role,
+authenticated external registrar or a genuine underlying document
+signature. Model-untrusted code must not be given a raw database
+connection, an editable trust policy, or execution capabilities.
+
+```bash
+python -m pytest -q tests/test_postgres_source_authority.py
+MEMORY_TEST_DSN='postgresql://...' python -m pytest -q -rs tests/test_postgres_source_authority.py
+```

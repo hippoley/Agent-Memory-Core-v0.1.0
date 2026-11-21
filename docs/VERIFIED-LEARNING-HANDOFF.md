@@ -46,9 +46,11 @@ Agent B: accepted handoff ----- Trusted source adapter
 The model decides what might be valuable to remember; **it does not
 self-certify that its proposed rule is true**. The host must fetch and
 authenticate an independent current document before constructing a
-`TrustedSource`. The module's SHA-256 verifies consistency of that
-snapshot in this call; it is **not** a signature or proof that the
-original source was authentic. Trust anchors and authenticity verification
+`TrustedSource`. The module also checks the accepted context pack's self-consistency SHA-256
+before considering any claim. Both digests protect against accidental or
+unsynchronized mutation, **not** issuer authentication. A malicious caller
+can fabricate a new self-consistent packet or source; authenticating the
+AMC HTTP response and the independent document remains the host's duty. Trust anchors and authenticity verification
 remain the host's responsibility.
 
 ## API (pure read-only gate, no database migration)

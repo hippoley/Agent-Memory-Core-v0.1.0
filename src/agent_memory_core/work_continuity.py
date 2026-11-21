@@ -165,8 +165,20 @@ class ContinuityStore:
                 return {"handoff_id": handoff_id, "status": status, "payload": pack,
                         "verified_at": None, "idempotent": True}
             task = DurableTaskStore(self.conn).get_task(tenant_id=tenant_id, task_id=task_id)
-            if not task or task["checkpoint_version"] != pack["checkpoint_version"]:
-                raise HandoffConflict("Task checkpoint changed since handoff")
+            if (not task or task["checkpoint_version"] != pack["checkpoint_version"]
+                    or task["status"] != pack["task_status"]):
+                raise HandoffConflict("Task status or checkpoint changed since handoff")
+            # The frozen effect list is not enough: a new UNKNOWN effect can
+            # appear after the handoff was created.
+            effects = self.conn.execute(
+                """SELECT e.effect_key,e.status FROM memory_task_effects AS e
+                   JOIN memory_durable_tasks AS t ON t.task_id=e.task_id
+                   WHERE t.tenant_id=%s AND e.task_id=%s::uuid
+                   ORDER BY e.effect_key""",
+                (tenant_id, task_id),
+            ).fetchall()
+            if any(status != "committed" for _, status in effects):
+                raise HandoffConflict("Current external effects need reconciliation")
             # A new fact can be as dangerous as a forgotten one: prevent an
             # old snapshot from claiming to be the entire current subject view.
             expected_ids = {claim["id"] for claim in pack["claims"]}

@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from agent_memory_core.postgres import PostgresMemory
 from agent_memory_core.worker_leases import DurableTaskLeaseStore
+from agent_memory_core.durable_effects import DurableTaskEffectStore
 
 
 def register_intent(*, tenant_id: str, task_id: str, handoff_id: str,
@@ -46,9 +47,19 @@ def register_intent(*, tenant_id: str, task_id: str, handoff_id: str,
             effect_key=request["effect_key"],
             effect_request=request,
         )
-        return {"task_id": task_id, "lease_epoch": claimed["lease_epoch"],
+        # Before any remote call, the current lease epoch owns an EXECUTING
+        # effect. If the caller dies, the next owner must classify it UNKNOWN.
+        started = DurableTaskEffectStore(db.conn).begin_execution(
+            tenant_id=tenant_id, task_id=task_id,
+            effect_key=request["effect_key"], worker_id=worker_id,
+            lease_epoch=claimed["lease_epoch"],
+        )
+        return {"task_id": task_id, "worker_id": worker_id,
+                "lease_epoch": claimed["lease_epoch"],
                 "checkpoint_version": result["version"],
-                "effect_request": request, "replayed": result["replayed"]}
+                "effect_request": request, "replayed": result["replayed"],
+                "effect_idempotency_key": started["idempotency_key"],
+                "effect_attempt_count": started["attempt_count"]}
     finally:
         db.close()
 

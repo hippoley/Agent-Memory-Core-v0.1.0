@@ -126,6 +126,41 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         with pytest.raises(HTTPError) as forbidden:
             urlopen(forged, timeout=3)
         assert forbidden.value.code == 403
+        # Even possession of the bearer token is insufficient in the real
+        # fenced Provider mode: identity headers and exact recorded payload
+        # are independently validated at the Provider commit boundary.
+        token_only = Request(
+            f"http://127.0.0.1:{provider_port}/effects",
+            data=json.dumps(worker_result["effect_request"]).encode(),
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer " + provider_token},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as missing_identity:
+            urlopen(token_only, timeout=3)
+        assert missing_identity.value.code == 403
+        forged_payload = {
+            **worker_result["effect_request"],
+            "payload": {"subject": subject, "period": "monthly"},
+        }
+        authenticated_but_mismatched = Request(
+            f"http://127.0.0.1:{provider_port}/effects",
+            data=json.dumps(forged_payload).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + provider_token,
+                "X-AMC-Tenant": tenant,
+                "X-AMC-Task": manifest["task_id"],
+                "X-AMC-Worker": worker_result["worker_id"],
+                "X-AMC-Epoch": str(worker_result["lease_epoch"]),
+            },
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as mismatched:
+            urlopen(authenticated_but_mismatched, timeout=3)
+        assert mismatched.value.code == 403
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
         no_receipt = subprocess.run(
             [sys.executable, str(SCRIPT), *b_args],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=35,

@@ -130,3 +130,38 @@ ownership of provider dispatch by AMC, authenticated evidence, fencing
 across the external Provider, or a safe `unknown -> committed` transition.
 It must remain Draft until an authorized reconciler is implemented and
 tested with negative/conflict/revocation cases.
+
+
+## Ninth-round existing AMC effect state machine exercise (CI gate)
+
+The controlled integration now exercises the **existing**
+`agent_memory_core.durable_effects.DurableTaskEffectStore`, rather than
+introducing a second effect ledger or claiming that a read-only cross-ledger
+comparison has authority to update state:
+
+1. The separate fenced Worker records the checkpoint, effect intent and
+   Outbox transaction, then calls `begin_execution` under its current epoch.
+2. Agent B is denied before the recorded intent exists, and otherwise
+   performs the same external Provider call. The real SIGKILL test still kills
+   B after the Provider commits but before it replies.
+3. An independent recovery Worker is started. The test **injects expiry of
+   the previous lease in PostgreSQL**, then claims a newer epoch using the
+   normal lease machinery.
+4. `mark_stale_executions_unknown` fences the old execution;
+   `begin_reconciliation` marks the effect as reconciling; the Worker
+   independently reads the Provider receipt, checks the exact effect
+   identity/payload and SHA-256 intent digest, then calls the existing
+   `resolve_reconciliation` transition.
+5. An unreadable, absent or conflicting receipt is **not** converted to
+   committed; the effect remains UNKNOWN. A matching committed receipt
+   allows the new fenced Worker to record COMMITTED and finish the task.
+   Agent B does not get this reconciliation privilege and never executes a
+   second Provider POST on recovery.
+
+All mutations occur in the existing PostgreSQL transactional effect/task
+tables, with Outbox events. The recovery harness's lease-expiry UPDATE is
+**test-only** and must not be copied into production code. The Provider is a
+synthetic local SQLite+HTTP service, its receipt is not cryptographically
+authenticated, and this is not yet a credential-separated production
+reconciler or three-arm real-model benchmark. Full latest-HEAD CI must pass
+before counting this controlled end-to-end experiment as accepted.

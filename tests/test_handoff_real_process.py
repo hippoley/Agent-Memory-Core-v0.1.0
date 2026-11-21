@@ -191,6 +191,18 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
             )
             assert first.returncode == 0, first.stderr
             assert "FENCED_PROVIDER_DISPATCH_FINISHED" in first.stdout
+        # The Provider has committed its side effect, but AMC is still
+        # EXECUTING. B must NOT publish a completion based on that receipt.
+        premature = subprocess.run(
+            [sys.executable, str(SCRIPT), *b_args],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=35,
+        )
+        assert premature.returncode != 0
+        assert "AMC_TASK_UNRESOLVED" in premature.stderr
+        from agent_memory_core.sdk import MemoryClient
+        with MemoryClient(env["MEMORY_API_URL"], key, tenant_id=tenant) as before:
+            early = before.recall(subject)["items"]
+        assert not any(c["predicate"] == "handoff_decision" for c in early)
         # Recovery runs in a new fenced process against the real AMC effect
         # state machine: EXECUTING -> UNKNOWN -> RECONCILING -> COMMITTED.
         # The old worker has exited; this test injects its lease expiry.

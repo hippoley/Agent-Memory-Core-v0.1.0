@@ -278,6 +278,23 @@ class SearchRequest(BaseModel):
     known_at: str | None = Field(default=None, description="Timezone-aware ISO-8601 knowledge-time filter.")
 
 
+class ContinuityPrepare(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str
+    subject_ids: list[str] = Field(min_length=1, max_length=20)
+    token_budget: int = Field(default=2048, ge=256, le=8192)
+
+
+class HandoffCreate(ContinuityPrepare):
+    source_agent: str = Field(min_length=1, max_length=120)
+    target_agent: str = Field(min_length=1, max_length=120)
+
+
+class HandoffAccept(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_agent: str = Field(min_length=1, max_length=120)
+
+
 class TenantCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str = Field(min_length=1, max_length=120)
@@ -1620,6 +1637,73 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
             raise HTTPException(status_code=409,detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=422,detail=str(exc))
+        finally:
+            db.close()
+
+    @app.post("/v1/context/prepare", tags=["Work Continuity"],
+              summary="Build a bounded and source-linked context pack")
+    def prepare_work_context(item: ContinuityPrepare, t: str = Depends(auth)):
+        from .work_continuity import ContinuityStore, HandoffConflict
+        try:
+            task_id = str(UUID(item.task_id))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="task_id must be a UUID")
+        db = store_factory()
+        try:
+            return ContinuityStore(db).prepare_context(
+                tenant_id=t, task_id=task_id, subject_ids=item.subject_ids,
+                token_budget=item.token_budget)
+        except LookupError:
+            raise HTTPException(status_code=404, detail="Task not found")
+        except HandoffConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        finally:
+            db.close()
+
+    @app.post("/v1/handoffs", status_code=201, tags=["Work Continuity"],
+              summary="Freeze a scoped, immutable Agent work handoff")
+    def create_work_handoff(item: HandoffCreate, t: str = Depends(auth)):
+        from .work_continuity import ContinuityStore, HandoffConflict
+        try:
+            task_id = str(UUID(item.task_id))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="task_id must be a UUID")
+        db = store_factory()
+        try:
+            return ContinuityStore(db).create_handoff(
+                tenant_id=t, task_id=task_id, source_agent=item.source_agent,
+                target_agent=item.target_agent, subject_ids=item.subject_ids,
+                token_budget=item.token_budget)
+        except LookupError:
+            raise HTTPException(status_code=404, detail="Task not found")
+        except HandoffConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        finally:
+            db.close()
+
+    @app.post("/v1/handoffs/{handoff_id}/accept", tags=["Work Continuity"],
+              summary="Revalidate and accept a frozen handoff without executing effects")
+    def accept_work_handoff(handoff_id: str, item: HandoffAccept,
+                            t: str = Depends(auth)):
+        from .work_continuity import ContinuityStore, HandoffConflict
+        try:
+            handoff_id = str(UUID(handoff_id))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="handoff_id must be a UUID")
+        db = store_factory()
+        try:
+            return ContinuityStore(db).accept_handoff(
+                tenant_id=t, handoff_id=handoff_id, target_agent=item.target_agent)
+        except LookupError:
+            raise HTTPException(status_code=404, detail="Handoff not found")
+        except HandoffConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
         finally:
             db.close()
 

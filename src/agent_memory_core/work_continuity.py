@@ -85,9 +85,15 @@ class ContinuityStore:
         if _tokens(core) > token_budget:
             raise HandoffConflict("Required task context exceeds token budget")
         claims = []
+        as_of = datetime.now(timezone.utc)
         for subject in subjects:
-            claims.extend(self.db.list_claims(tenant_id=tenant_id, subject_id=subject,
-                                              include_superseded=False, valid_at=datetime.now(timezone.utc), limit=100))
+            page = self.db.list_claims(
+                tenant_id=tenant_id, subject_id=subject, include_superseded=False,
+                valid_at=as_of, limit=500,
+            )
+            if len(page) == 500:
+                raise HandoffConflict("Too many claims for one subject; refusing silent truncation")
+            claims.extend(page)
         claims = sorted(claims, key=lambda c: (c["subject_id"], c["predicate"], c["id"]))
         for claim in claims:
             item = {k: _wire(claim[k]) for k in (
@@ -95,17 +101,17 @@ class ContinuityStore:
                 "valid_from", "valid_to", "recorded_at", "object_sha256"
             )}
             candidate = {**core, "claims": [*core["claims"], item]}
-            if _tokens(candidate) <= token_budget:
+            if _tokens({**candidate, "estimated_tokens": 8192, "sha256": "0" * 64}) <= token_budget:
                 core["claims"].append(item)
             else:
                 core["omitted_claim_ids"].append(item["id"])
         # Even the omission ledger is bounded; never silently drop it.
         if _tokens(core) > token_budget:
             raise HandoffConflict("Claim omission manifest exceeds token budget")
-        core["estimated_tokens"] = _tokens(core)
+        core["estimated_tokens"] = _tokens({**core, "estimated_tokens": 8192, "sha256": "0" * 64})
+        core["sha256"] = _hash(core)
         if _tokens(core) > token_budget:
             raise HandoffConflict("Context budget exceeded by metadata")
-        core["sha256"] = _hash(core)
         return core
 
     def create_handoff(self, *, tenant_id, task_id, source_agent, target_agent,
@@ -161,6 +167,21 @@ class ContinuityStore:
             task = DurableTaskStore(self.conn).get_task(tenant_id=tenant_id, task_id=task_id)
             if not task or task["checkpoint_version"] != pack["checkpoint_version"]:
                 raise HandoffConflict("Task checkpoint changed since handoff")
+            # A new fact can be as dangerous as a forgotten one: prevent an
+            # old snapshot from claiming to be the entire current subject view.
+            expected_ids = {claim["id"] for claim in pack["claims"]}
+            actual_ids = set()
+            for subject in pack["subjects"]:
+                page = self.db.list_claims(
+                    tenant_id=tenant_id, subject_id=subject,
+                    include_superseded=False, valid_at=datetime.now(timezone.utc),
+                    limit=500,
+                )
+                if len(page) == 500:
+                    raise HandoffConflict("Subject claim set too large to verify")
+                actual_ids.update(row["id"] for row in page)
+            if actual_ids != expected_ids:
+                raise HandoffConflict("Subject claims changed since handoff")
             # Revalidate current claim *identity*, including revisions and forgets.
             for claim in pack["claims"]:
                 found = self.conn.execute(

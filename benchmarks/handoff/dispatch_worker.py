@@ -44,7 +44,11 @@ def dispatch(*, tenant_id, task_id, effect_key, worker_id, lease_epoch, provider
         provider_url.rstrip("/") + "/effects",
         data=json.dumps(request).encode(),
         headers={"Content-Type": "application/json",
-                 "Authorization": "Bearer " + token},
+                 "Authorization": "Bearer " + token,
+                 "X-AMC-Tenant": tenant_id,
+                 "X-AMC-Task": task_id,
+                 "X-AMC-Worker": worker_id,
+                 "X-AMC-Epoch": str(lease_epoch)},
         method="POST",
     )
     with urlopen(req, timeout=8) as response:

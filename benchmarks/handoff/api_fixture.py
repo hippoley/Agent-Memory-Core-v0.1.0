@@ -5,8 +5,11 @@ from agent_memory_core.api import create_app
 from agent_memory_core.postgres import PostgresMemory
 
 dsn = os.environ["MEMORY_TEST_DSN"]
-with PostgresMemory(dsn) as _db:
+_db = PostgresMemory(dsn)
+try:
     _db.migrate()
+finally:
+    _db.close()
 
 app = create_app(
     api_key=os.environ["MEMORY_API_KEY"],

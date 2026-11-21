@@ -84,6 +84,19 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             assert accepted.status_code == 200, accepted.text
             assert accepted.json()["status"] == "accepted"
             assert accepted.json()["idempotent"] is False
+            # Agent B performs new work through the public canonical memory API,
+            # not through Agent A's process state or a privileged database handle.
+            continuation = await agent_b.post("/v1/memories", json={
+                "subject_id": subject, "predicate": "review_note",
+                "value": {"reviewed": True, "handoff_id": handoff_id},
+                "source_id": "handoff:" + handoff_id,
+                "valid_from": datetime.now(timezone.utc).isoformat(),
+            })
+            assert continuation.status_code == 201, continuation.text
+            reviewed_id = continuation.json()["id"]
+            reviewed = await agent_b.get(f"/v1/memories/{subject}")
+            assert reviewed.status_code == 200
+            assert reviewed_id in [c["id"] for c in reviewed.json()["items"]]
             again = await agent_b.post(f"/v1/handoffs/{handoff_id}/accept",
                                        json={"target_agent": "agent-B"})
             assert again.status_code == 200
@@ -117,7 +130,9 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
                                      base_url="http://amc.local", headers=headers) as check:
             response = await check.get(f"/v1/memories/{subject}")
             assert response.status_code == 200
-            values = [c["value"]["period"] for c in response.json()["items"]]
+            values = [c["value"]["period"] for c in response.json()["items"]
+                      if c["predicate"] == "payment_period"]
             assert values == ["quarterly"]
+            assert any(c["predicate"] == "review_note" for c in response.json()["items"])
 
     asyncio.run(scenario())

@@ -180,3 +180,34 @@ benchmarks remain untested.
 python -m pip install -e '.[dev,postgres,api]'
 python -m pytest -q tests/test_source_attestation.py tests/test_verified_learning.py
 ```
+
+
+## Independent TCP signer probe (controlled environment)
+
+`benchmarks/handoff/independent_contract_issuer.py` serves a freshly
+Ed25519-signed current contract revision over a **separate loopback TCP
+process**. `tests/test_independent_contract_issuer.py` verifies the
+attestation with a host-pinned *public* key, checks that a replacement
+signature by an unrelated actor is rejected, and verifies that
+knowledge acceptance cannot grant an approval action.
+
+This demonstrates independent signer **process ownership**, not
+production source authenticity: this test's harness explicitly creates
+the private key and injects it into the issuer process; the HTTP
+transport is loopback and unauthenticated, and the host still constructs
+the trust policy in-process. It does **not** validate an external
+contract registrar, source-document byte provenance, a durable
+server-owned trust registry, revocation persistence, or a second
+independent real LLM. Never describe it as a fully production-secure
+issuer or a PR #62 combined execution acceptance.
+
+Do **not** build another parallel trust registry. AMC already has
+`evidence_trust.py` and PostgreSQL
+`memory_evidence_producer_keys` / `memory_evidence_authority_grants`.
+The production follow-on should reuse those existing issuer and service
+principal authority primitives, adding a narrowly scoped knowledge
+source revision registry with independently authorized updates.
+
+```bash
+python -m pytest -q tests/test_independent_contract_issuer.py
+```

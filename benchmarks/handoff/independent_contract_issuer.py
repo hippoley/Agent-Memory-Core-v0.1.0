@@ -38,7 +38,7 @@ def run(port):
                 "subject_id": subject,
                 "predicate": "payment_period",
                 "source_id": "supplier-contract:v3",
-                "value": {"period": "quarterly"},
+                "value": {os.environ.get("AMC_TEST_ISSUER_VALUE_FIELD", "period"): "quarterly"},
                 "issued_at": now.isoformat(),
                 "expires_at": (now + timedelta(minutes=5)).isoformat(),
             }

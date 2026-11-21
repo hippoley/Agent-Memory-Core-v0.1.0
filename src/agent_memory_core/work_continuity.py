@@ -87,7 +87,7 @@ class ContinuityStore:
         claims = []
         for subject in subjects:
             claims.extend(self.db.list_claims(tenant_id=tenant_id, subject_id=subject,
-                                              include_superseded=False, limit=100))
+                                              include_superseded=False, valid_at=datetime.now(timezone.utc), limit=100))
         claims = sorted(claims, key=lambda c: (c["subject_id"], c["predicate"], c["id"]))
         for claim in claims:
             item = {k: _wire(claim[k]) for k in (

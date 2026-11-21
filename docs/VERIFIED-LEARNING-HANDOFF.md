@@ -127,3 +127,56 @@ source-use gate against the new claim. It makes **no Provider calls**.
 reuse constraints and work execution authority survive changes of model
 provider. Whether this offers a net gain over strong model-native memory
 systems remains an empirical question.
+
+## Authenticated source envelope — next trust-boundary probe
+
+`src/agent_memory_core/source_attestation.py` adds an **opt-in**
+Ed25519-verified source envelope. The signature covers issuer, tenant,
+subject, predicate, exact source revision, claim value, issue time and
+expiry. A host-managed `SourceTrustPolicy` separately pins authorized
+issuer public keys, the currently active revision for each
+tenant/subject/predicate tuple, and revoked issuer/source IDs. These
+policy values **must not** come from an Agent prompt or envelope.
+
+```text
+Independent contract registry -- signs claim + revision + scope
+                                  |
+                                  v
+                             Signed envelope
+                                  |
+ Host-owned key registry -------> + signature verification
+ Host-owned active revisions ---> + currency / revocation check
+                                  |
+                                  v
+                        Verified source comparison
+                                  |
+                   answer/plan only; no side-effect authority
+```
+
+Use `review_signed_handoff_claim(..., signed_source_envelope=...,
+policy=host_trust_policy, tenant_id=...)` in place of the untrusted
+`TrustedSource.from_verified_document(...)` fixture route. The old
+`review_handoff_claim` remains a lower-level, application-side content
+comparison and **must not** be treated as a production trust boundary.
+
+Acceptance tests cover authorized Ed25519 signature; self-signed forged
+data; changed signed content; unrecognized/revoked issuers; revoked or
+non-current source revisions; wrong tenant/predicate; future issued
+time; expiration; and the continued requirement that execution uses
+separate Worker authority. The tests use ephemeral keys generated during
+the run, not committed credentials.
+
+**Still not production-complete:** this adapter receives the host's
+public-key/revocation/current-revision snapshot as an argument.
+There is no external authenticated source issuer service, immutable
+source-fetch proof, live revocation subscription, durable registry/tenant
+authorization, freshness guarantee on the policy snapshot, or
+tamper-resistant audit receipt. The host is trusted and its own
+authorization is not yet independently demonstrated; a malicious host
+can supply a forged trust policy. Model A/B learning and competitor
+benchmarks remain untested.
+
+```bash
+python -m pip install -e '.[dev,postgres,api]'
+python -m pytest -q tests/test_source_attestation.py tests/test_verified_learning.py
+```

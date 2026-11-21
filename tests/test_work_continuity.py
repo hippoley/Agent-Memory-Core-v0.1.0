@@ -96,6 +96,11 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             })
             assert handoff.status_code == 201, handoff.text
             handoff_id = handoff.json()["handoff_id"]
+            old_context = await agent_a.post("/v1/handoffs", json={
+                **base, "source_agent": "agent-A", "target_agent": "agent-B",
+            })
+            assert old_context.status_code == 201, old_context.text
+            old_context_id = old_context.json()["handoff_id"]
 
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                      base_url="http://amc.local", headers=headers) as agent_b:
@@ -120,6 +125,10 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             reviewed = await agent_b.get(f"/v1/memories/{subject}")
             assert reviewed.status_code == 200
             assert reviewed_id in [c["id"] for c in reviewed.json()["items"]]
+            added_fact_conflict = await agent_b.post(
+                f"/v1/handoffs/{old_context_id}/accept",
+                json={"target_agent": "agent-B"})
+            assert added_fact_conflict.status_code == 409, added_fact_conflict.text
             again = await agent_b.post(f"/v1/handoffs/{handoff_id}/accept",
                                        json={"target_agent": "agent-B"})
             assert again.status_code == 200

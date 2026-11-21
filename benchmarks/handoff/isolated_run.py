@@ -197,7 +197,8 @@ def reconcile_provider(provider_url: str, request_id: str, effect_key: str,
     return "committed"
 
 
-def agent_b(handoff_id: str, subject_id: str, provider_url: str):
+def agent_b(handoff_id: str, subject_id: str, provider_url: str, *,
+            accept_only: bool = False):
     """No direct DB or Agent-A session access: only public HTTP clients."""
     with amc_client() as api:
         accepted = api.accept_handoff(handoff_id, target_agent="agent-B")
@@ -207,9 +208,27 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str):
         if subject_id not in pack.get("subjects", []):
             raise ValueError("subject is not in accepted context")
         decision = decide(pack)
+        if accept_only:
+            print("AGENT_B_ACCEPTED")
+            return
         effect_key = "supplier-approval-request"
         request_id = handoff_id + ":" + effect_key
         business_payload = {"subject": subject_id, "period": decision["payment_period"]}
+        expected_request = {
+            "effect_key": effect_key, "request_id": request_id,
+            "payload": business_payload,
+        }
+        # Agent B cannot create intent or impersonate the fenced Worker.
+        # It only checks that a separate Worker committed the exact request
+        # before any contact with the external Provider.
+        task = api.get_task(pack["task_id"])
+        latest = task.get("checkpoint") or {}
+        intent = latest.get("checkpoint") or {}
+        if (latest.get("version") != task.get("checkpoint_version")
+                or intent.get("phase") != "effect-intent-registered"
+                or intent.get("handoff_id") != handoff_id
+                or intent.get("effect_request") != expected_request):
+            raise RuntimeError("AMC_EFFECT_INTENT_MISSING_OR_CONFLICT; dispatch denied")
         state = reconcile_provider(provider_url, request_id, effect_key, business_payload)
         if state == "absent":
             payload = json.dumps({
@@ -274,6 +293,7 @@ def main():
     b.add_argument("--handoff-id", required=True)
     b.add_argument("--subject-id", required=True)
     b.add_argument("--provider-url", default="http://127.0.0.1:8799")
+    b.add_argument("--accept-only", action="store_true", help="Accept handoff without dispatching")
     o = commands.add_parser("observe")
     o.add_argument("--case-id", required=True)
     o.add_argument("--subject-id", required=True)
@@ -287,7 +307,8 @@ def main():
     elif args.command == "agent-a":
         agent_a(args.subject_id)
     elif args.command == "agent-b":
-        agent_b(args.handoff_id, args.subject_id, args.provider_url)
+        agent_b(args.handoff_id, args.subject_id, args.provider_url,
+                accept_only=args.accept_only)
     else:
         print(json.dumps(observe(args.case_id, args.subject_id, args.handoff_id, args.db,
                                  args.elapsed_ms, args.context_tokens), ensure_ascii=False))

@@ -39,7 +39,9 @@ def test_policy_requires_unambiguous_complete_claims():
             module.decide(bad)
 
 
-def test_provider_deduplicates_execution_and_journals_retries(tmp_path):
+def test_provider_deduplicates_execution_and_journals_retries(tmp_path, monkeypatch):
+    token = "isolated-provider-executor-test-only"
+    monkeypatch.setenv("PROVIDER_EFFECT_TOKEN", token)
     db = str(tmp_path / "provider.sqlite")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -64,8 +66,16 @@ def test_provider_deduplicates_execution_and_journals_retries(tmp_path):
             }).encode()
             with urlopen(Request(
                 f"http://127.0.0.1:{port}/effects", data=payload,
-                headers={"Content-Type": "application/json"}), timeout=3) as response:
+                headers={"Content-Type": "application/json",
+                         "Authorization": "Bearer " + token}), timeout=3) as response:
                 assert response.status == 200
+        # An Agent without the dedicated executor credential cannot POST.
+        from urllib.error import HTTPError
+        with pytest.raises(HTTPError) as forbidden:
+            urlopen(Request(
+                f"http://127.0.0.1:{port}/effects", data=payload,
+                headers={"Content-Type": "application/json"}), timeout=3)
+        assert forbidden.value.code == 403
         # A cold Agent B can safely reconstruct success from Provider's ledger.
         base_url = f"http://127.0.0.1:{port}"
         assert module.reconcile_provider(
@@ -91,7 +101,8 @@ def test_provider_deduplicates_execution_and_journals_retries(tmp_path):
         with pytest.raises(HTTPError) as error:
             urlopen(Request(
                 f"http://127.0.0.1:{port}/effects", data=different,
-                headers={"Content-Type": "application/json"}), timeout=3)
+                headers={"Content-Type": "application/json",
+                         "Authorization": "Bearer " + token}), timeout=3)
         assert error.value.code == 409
         with sqlite3.connect(db) as conn:
             events = conn.execute(

@@ -136,6 +136,34 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert decisions[0]["value"] == {
             "payment_period": "quarterly", "requires_approval": True,
         }
+        # Reality check: the probe's Provider journal is real, but the public
+        # Agent B adapter has NOT registered its effect with AMC's fenced
+        # checkpoint/outbox authority. This must remain an explicit failing
+        # product gate rather than being scored as end-to-end reconciliation.
+        from agent_memory_core.postgres import PostgresMemory
+        from benchmarks.handoff.effect_reconciliation import (
+            assess_effect, load_tenant_effect,
+        )
+        db = PostgresMemory(env["MEMORY_TEST_DSN"])
+        try:
+            recorded = load_tenant_effect(
+                db.conn, tenant_id=tenant, task_id=manifest["task_id"],
+                effect_key="supplier-approval-request")
+        finally:
+            db.close()
+        assert recorded is None
+        result = assess_effect(
+            recorded=recorded,
+            request_id=hid + ":supplier-approval-request",
+            effect_key="supplier-approval-request",
+            expected_payload={"subject": subject, "period": "quarterly"},
+            receipt={"status": "committed",
+                     "request_id": hid + ":supplier-approval-request",
+                     "effect_key": "supplier-approval-request",
+                     "payload": {"subject": subject, "period": "quarterly"}},
+        )
+        assert result.classification == "AMC_INTENT_MISSING"
+        assert result.safe_for_automatic_completion is False
     finally:
         for proc in (provider, api):
             if proc is not None:

@@ -25,7 +25,7 @@ def test_migration_runner_discovers_ordered_sql_resources():
         "004_predicate_cardinality.sql","005_identity_foundation.sql",
         "006_durable_tasks.sql","007_durable_task_worker_leases.sql",
         "008_durable_task_effect_reconciliation.sql","009_temporal_dispatch.sql",
-        "010_evidence_provenance.sql"
+        "010_evidence_provenance.sql","011_agent_handoff.sql"
     ]
 
 def test_packaged_predicate_policy_migration_matches_repository_sql():
@@ -44,7 +44,7 @@ def test_migration_runner_discovers_predicate_policy_migration():
         "004_predicate_cardinality.sql","005_identity_foundation.sql",
         "006_durable_tasks.sql","007_durable_task_worker_leases.sql",
         "008_durable_task_effect_reconciliation.sql","009_temporal_dispatch.sql",
-        "010_evidence_provenance.sql"
+        "010_evidence_provenance.sql","011_agent_handoff.sql"
     ]
 
 def test_packaged_identity_foundation_migration_matches_repository_sql():
@@ -100,3 +100,13 @@ def test_packaged_evidence_provenance_migration_matches_repository_sql():
     assert "memory_evidence_facts" in packaged
     assert "producer_issuer" in packaged
     assert "allow_authoritative" in packaged
+
+
+def test_agent_handoff_migration_matches_packaged_resource():
+    packaged = resources.files("agent_memory_core").joinpath(
+        "resources/011_agent_handoff.sql").read_text()
+    canonical = (Path(__file__).resolve().parents[1] /
+                 "sql/postgresql/011_agent_handoff.sql").read_text()
+    assert packaged == canonical
+    assert "memory_agent_handoffs" in packaged
+    assert "payload_sha256" in packaged

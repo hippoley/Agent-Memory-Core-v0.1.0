@@ -36,6 +36,29 @@ Agent Memory Core treats memory as a **versioned, evidence-carrying belief**, no
 
 The project does not claim universal truth detection or reliable natural-language understanding across every domain. Extraction quality depends on the caller's model or rules; the canonical memory layer provides deterministic identity, revision, scope and history semantics.
 
+## Agent Work Continuity · experimental US-C01
+
+**Make Agent Work Survive the Agent.** AMC now has a candidate continuity
+contract that separates versioned memory, prepared context and durable task
+state instead of making any one of them a replacement for Mem0, PowerContext
+or Temporal.
+
+Through the authenticated public API and Python SDK, an Agent A can generate
+a bounded, source-linked `prepare_context` pack and freeze a `create_handoff`
+receipt. A new Agent B client uses `accept_handoff` to revalidate the same
+tenant, original claim IDs, task checkpoint and current external-effect state.
+Stale, truncated or ambiguous handoffs return a conflict instead of success.
+These operations **never** auto-run Provider effects.
+
+**Current limitation:** Agent labels are descriptive, not independently
+authenticated Agent principals; acceptance verifies a transferred snapshot,
+not LLM comprehension or completion. A full independently reproducible
+Agent-B task continuation, comparative benchmark and external human release
+gate are still required before a 9.5/10 product claim.
+
+[US-C01 contract and boundaries](docs/AGENT-WORK-CONTINUITY-US-C01.md) ·
+[Two-session SDK example](examples/us_c01_agent_handoff.py)
+
 ## What you can build
 
 | Use case | What the runtime provides |

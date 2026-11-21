@@ -97,6 +97,8 @@ TAG_METADATA = [
      "description": "可选的 Temporal 工作流生命周期；未配置时统一返回 503。"},
     {"name": "Durable Tasks",
      "description": "PostgreSQL 规范任务状态、版本化检查点、幂等副作用意图与事务性 Outbox。"},
+    {"name": "Work Continuity",
+     "description": "Agent 交接：预算内的来源化上下文、不可变交接收据、接手时版本与副作用安全校验。"},
 ]
 
 
@@ -136,6 +138,34 @@ class Story:
 CURL = 'curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"'
 
 STORIES: dict[tuple[str, str], Story] = {
+    ("POST", "/v1/context/prepare"): Story(
+        persona="接力研究的 Agent A",
+        goal="用任务和明确的主体集合生成有版本来源的上下文包",
+        value="Agent B 无需逐字重放历史就能定位已完成事实与未解决任务",
+        steps=("提供真实任务 UUID、1..20 个主体以及 256..8192 估算 Token 预算。",
+               "返回版本化事实、来源、任务检查点和未决副作用，显式列出任何省略的事实 ID。",
+               "超过预算、任务不属于当前租户或必需内容无法容纳时拒绝成功。"),
+        example=CURL + """ -d '{"task_id":"<uuid>","subject_ids":["supplier-a"],"token_budget":4096}' $API/v1/context/prepare""",
+    ),
+    ("POST", "/v1/handoffs"): Story(
+        persona="准备退出会话的 Agent A",
+        goal="把交接上下文冻结为租户限定的不可变收据",
+        value="下一位 Agent 能以固定内容哈希验证接手材料而非相信会话缓存",
+        steps=("使用当前租户的公开任务与事实读路径生成 Context Pack。",
+               "保存不可变 JSON 与 SHA-256；source_agent/target_agent 是描述标签而非独立授权身份。",
+               "任何已知未决副作用都会保留在快照中，不能静默变成成功。"),
+        example=CURL + """ -d '{"task_id":"<uuid>","subject_ids":["supplier-a"],"token_budget":4096,"source_agent":"A","target_agent":"B"}' $API/v1/handoffs""",
+    ),
+    ("POST", "/v1/handoffs/{handoff_id}/accept"): Story(
+        persona="全新会话的 Agent B",
+        goal="验证交接任务与事实是否仍可安全延续",
+        value="陈旧事实、错误目标、裁剪信息和未决外部副作用不会被误当成完成交接",
+        steps=("必须通过当前租户权限验证；其他租户的收据返回 404。",
+               "在同一数据库事务检查快照哈希、Task checkpoint、事实版本和未决副作用。",
+               "冲突返回 409；接受不会触发外部执行，重复接受具有幂等语义。"),
+        example=CURL + """ -d '{"target_agent":"B"}' $API/v1/handoffs/<uuid>/accept""",
+    ),
+
     # --------------------------------------------------------------- Identity
     ("GET", "/v1/auth/oidc/login"): Story(
         persona="首次使用的开发者",

@@ -218,6 +218,31 @@ class MemoryClient:
             params["predicate"]=predicate
         return self._request("GET", "/v1/memories", params=params)
 
+    def prepare_context(self, *, task_id: str, subject_ids: list[str],
+                        token_budget: int = 2048):
+        """Build a bounded context pack; no task state is mutated."""
+        return self._request("POST", "/v1/context/prepare", json={
+            "task_id": task_id, "subject_ids": subject_ids,
+            "token_budget": token_budget,
+        })
+
+    def create_handoff(self, *, task_id: str, source_agent: str,
+                       target_agent: str, subject_ids: list[str],
+                       token_budget: int = 2048):
+        """Freeze one immutable context snapshot; agent labels are descriptive."""
+        return self._request("POST", "/v1/handoffs", json={
+            "task_id": task_id, "source_agent": source_agent,
+            "target_agent": target_agent, "subject_ids": subject_ids,
+            "token_budget": token_budget,
+        })
+
+    def accept_handoff(self, handoff_id: str, *, target_agent: str):
+        """Validate snapshot freshness; never start/retry external work."""
+        return self._request(
+            "POST", "/v1/handoffs/" + self._segment(handoff_id) + "/accept",
+            json={"target_agent": target_agent},
+        )
+
     def create_task(self, *, task_type: str, input: dict,
                     workflow_id: str | None = None,
                     idempotency_key: str | None = None):

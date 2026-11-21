@@ -1,0 +1,105 @@
+"""Real PostgreSQL + real TCP API + separate Agent A/B and provider processes.
+
+No ASGI mock transport, and no shared Python session objects. CI opts in by
+setting MEMORY_TEST_DSN. A real LLM evaluation is a separate release gate.
+"""
+import json
+import os
+from pathlib import Path
+import socket
+import sqlite3
+import subprocess
+import sys
+import time
+from urllib.request import urlopen
+from uuid import uuid4
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "benchmarks" / "handoff" / "isolated_run.py"
+
+
+def free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def ready(port):
+    for _ in range(120):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=.15):
+                return
+        except OSError:
+            time.sleep(.1)
+    pytest.fail(f"service not ready on port {port}")
+
+
+def invoke(*args, env):
+    return subprocess.run([sys.executable, str(SCRIPT), *args],
+                          cwd=ROOT, env=env, capture_output=True, text=True,
+                          timeout=35, check=True)
+
+
+@pytest.mark.integration
+def test_real_api_provider_and_agent_process_restart(tmp_path):
+    if not os.getenv("MEMORY_TEST_DSN"):
+        pytest.skip("requires real PostgreSQL and MEMORY_TEST_DSN")
+    api_port, provider_port = free_port(), free_port()
+    tenant = "handoff-process-" + uuid4().hex
+    subject = "supplier-process-" + uuid4().hex
+    key = "secret-" + uuid4().hex + uuid4().hex
+    env = dict(os.environ, MEMORY_API_KEY=key, MEMORY_TENANT_ID=tenant,
+               MEMORY_API_URL=f"http://127.0.0.1:{api_port}")
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    db_path = str(tmp_path / "provider.sqlite")
+    api = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "benchmarks.handoff.api_fixture:app",
+         "--host", "127.0.0.1", "--port", str(api_port)],
+        cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    provider = None
+    try:
+        ready(api_port)
+        provider = subprocess.Popen(
+            [sys.executable, str(SCRIPT), "provider", "--port", str(provider_port),
+             "--db", db_path],
+            cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        ready(provider_port)
+        a = invoke("agent-a", "--subject-id", subject, env=env)
+        manifest = json.loads(a.stdout.strip())
+        assert manifest["subject_id"] == subject
+        hid = manifest["handoff_id"]
+        b_args = ("agent-b", "--handoff-id", hid, "--subject-id", subject,
+                  "--provider-url", f"http://127.0.0.1:{provider_port}")
+        first = invoke(*b_args, env=env)
+        assert "AGENT_B_FINISHED" in first.stdout
+        # B has exited. A second independent B process must not duplicate the
+        # external provider effect even if accept is idempotently replayed.
+        second = invoke(*b_args, env=env)
+        assert "AGENT_B_FINISHED" in second.stdout
+        with sqlite3.connect(db_path) as conn:
+            events = conn.execute(
+                "SELECT request_id, effect_key, executed FROM effect_events ORDER BY id"
+            ).fetchall()
+        assert len(events) == 2
+        assert [e[2] for e in events] == [1, 0]
+        assert len({e[0] for e in events}) == 1
+        from agent_memory_core.sdk import MemoryClient
+        with MemoryClient(env["MEMORY_API_URL"], key, tenant_id=tenant) as reader:
+            claims = reader.recall(subject)["items"]
+        decisions = [c for c in claims if c["predicate"] == "handoff_decision"]
+        assert len(decisions) == 1
+        assert decisions[0]["value"] == {
+            "payment_period": "quarterly", "requires_approval": True,
+        }
+    finally:
+        for proc in (provider, api):
+            if proc is not None:
+                proc.terminate()
+                try:
+                    proc.communicate(timeout=8)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate(timeout=8)

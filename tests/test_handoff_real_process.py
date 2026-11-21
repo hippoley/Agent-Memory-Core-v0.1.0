@@ -67,7 +67,8 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
     db_path = str(tmp_path / "provider.sqlite")
     gate = str(tmp_path / "provider-committed")
     provider_token = secrets.token_urlsafe(32)
-    provider_env = {**env, "PROVIDER_EFFECT_TOKEN": provider_token}
+    provider_env = {**env, "PROVIDER_EFFECT_TOKEN": provider_token,
+                    "PROVIDER_REQUIRE_AMC_FENCE": "1"}
     api = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "benchmarks.handoff.api_fixture:app",
          "--host", "127.0.0.1", "--port", str(api_port)],
@@ -207,6 +208,27 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert recovered["classification"] == "COMMITTED"
         assert recovered["reexecuted"] is False
         assert recovered["lease_epoch"] > worker_result["lease_epoch"]
+        # Provider-side protection is mandatory even against a former Worker
+        # that still knows the shared executor bearer token. The old epoch
+        # is already fenced, and a request cannot reach SQLite effect commit.
+        stale_headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + provider_token,
+            "X-AMC-Tenant": tenant,
+            "X-AMC-Task": manifest["task_id"],
+            "X-AMC-Worker": worker_result["worker_id"],
+            "X-AMC-Epoch": str(worker_result["lease_epoch"]),
+        }
+        stale_post = Request(
+            f"http://127.0.0.1:{provider_port}/effects",
+            data=json.dumps(worker_result["effect_request"]).encode(),
+            headers=stale_headers, method="POST",
+        )
+        with pytest.raises(HTTPError) as stale_remote:
+            urlopen(stale_post, timeout=3)
+        assert stale_remote.value.code == 403
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 1
         # Agent B independently reads the Provider receipt only AFTER the
         # fenced recovery worker has committed the corresponding AMC effect.
         # Two independent B instances race on the SAME accepted handoff.

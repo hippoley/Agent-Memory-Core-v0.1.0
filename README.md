@@ -59,6 +59,29 @@ gate are still required before a 9.5/10 product claim.
 [US-C01 contract and boundaries](docs/AGENT-WORK-CONTINUITY-US-C01.md) ·
 [Two-session SDK example](examples/us_c01_agent_handoff.py)
 
+## Verified Learning Handoff · experimental US-VL01
+
+Anthropic's [November 2026 agent-memory research](https://www.anthropic.com/research/components-of-agent-memory)
+shows why durable memory needs more than raw logs: a later agent can inherit
+an incorrect note, and continuously growing memory can bury reusable lessons.
+
+AMC's **experimental independent source-use gate** tests a different
+question: when a new Agent accepts a frozen work handoff, is a model-proposed
+learned rule still supported by the **current independent source**, and what
+may it safely be used for? The `verified_learning.py` contract marks
+stale/conflicting/unverifiable claims fail-closed, allows sourced claims for
+answering/planning, and **never grants side-effect execution**. It reuses
+existing claim revision and Handoff APIs; there is no new memory database
+or Dreaming daemon.
+
+This is a **read-only application-side experiment**, not authenticated
+production attestation or an executed real-model benchmark. A trusted host
+must supply the authenticated source snapshot, and execution remains a
+separate Worker authority check.
+
+[Verified Learning contract and PostgreSQL acceptance](docs/VERIFIED-LEARNING-HANDOFF.md) ·
+[`tests/test_verified_learning.py`](tests/test_verified_learning.py)
+
 ## What you can build
 
 | Use case | What the runtime provides |

@@ -250,3 +250,42 @@ connection, an editable trust policy, or execution capabilities.
 python -m pytest -q tests/test_postgres_source_authority.py
 MEMORY_TEST_DSN='postgresql://...' python -m pytest -q -rs tests/test_postgres_source_authority.py
 ```
+
+
+## Operator-installed PostgreSQL privilege separation
+
+An **optional** administrator-only SQL script
+`sql/postgresql/security/003_knowledge_source_roles.sql` defines two
+distinct NOLOGIN roles:
+
+- `memory_source_verifier`: SELECT on source revisions, producer keys,
+  principal and tenant status; **no** authority-table write privileges
+- `memory_source_authority`: operator-managed source revision updates;
+  **no** evidence producer-key write privileges
+
+Neither role is installed during regular `PostgresMemory.migrate()`.
+A database administrator must run the operator script and provision
+separate verifier and authority identities. Never grant the authority
+role to Agent or API credentials. Do not expose a database connection
+with the authority role to an Agent.
+
+`tests/test_source_authority_roles.py` verifies role design, and with
+`MEMORY_TEST_DSN` tests server-enforced SQL privilege denial using
+`SET LOCAL ROLE memory_source_verifier`; it must fail if the DB admin
+cannot create the role (rather than marking the case successful).
+
+This **does not** yet prove the real deployed service uses a dedicated
+least-privilege LOGIN role. It also does not provide row-level isolation
+for the verifier: it reads source authority across tenants, so this
+role must only live in the trusted control plane and be bound to a
+tenant-authorized request principal. A future release must demonstrate
+its actual service credentials, prevention of privilege escalation,
+and per-tenant authorization at the API boundary.
+
+```bash
+# Admin-only setup, never the tenant-facing API or LLM runtime
+psql "$MEMORY_ADMIN_DSN" -v ON_ERROR_STOP=1 -f sql/postgresql/security/003_knowledge_source_roles.sql
+
+# Unprivileged role acceptance; requires a PostgreSQL administrator test DB
+MEMORY_TEST_DSN="postgresql://..." python -m pytest -q -rs tests/test_source_authority_roles.py
+```

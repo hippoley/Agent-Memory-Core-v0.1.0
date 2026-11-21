@@ -67,6 +67,8 @@ def score_case(case: dict, trace: dict) -> dict:
 
 
 def evaluate(cases: list[dict], traces: list[dict]) -> dict:
+    if not cases:
+        raise ValueError("empty benchmark is not an evaluation")
     known = {case["case_id"]: case for case in cases}
     if len(known) != len(cases):
         raise ValueError("duplicate case_id")

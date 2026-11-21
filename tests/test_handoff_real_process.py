@@ -5,6 +5,7 @@ setting MEMORY_TEST_DSN. A real LLM evaluation is a separate release gate.
 """
 import json
 import os
+import signal
 from pathlib import Path
 import socket
 import sqlite3
@@ -49,7 +50,8 @@ def invoke(*args, env):
 
 
 @pytest.mark.integration
-def test_real_api_provider_and_agent_process_restart(tmp_path):
+@pytest.mark.parametrize("kill_after_provider_commit", [False, True], ids=["clean-restart", "sigkill-after-provider-commit"])
+def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provider_commit):
     if not os.getenv("MEMORY_TEST_DSN"):
         pytest.skip("requires real PostgreSQL and MEMORY_TEST_DSN")
     api_port, provider_port = free_port(), free_port()
@@ -60,6 +62,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path):
                MEMORY_API_URL=f"http://127.0.0.1:{api_port}")
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
     db_path = str(tmp_path / "provider.sqlite")
+    gate = str(tmp_path / "provider-committed")
     api = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "benchmarks.handoff.api_fixture:app",
          "--host", "127.0.0.1", "--port", str(api_port)],
@@ -67,9 +70,14 @@ def test_real_api_provider_and_agent_process_restart(tmp_path):
     provider = None
     try:
         ready(api_port)
+        provider_args = [
+            sys.executable, str(SCRIPT), "provider", "--port", str(provider_port),
+            "--db", db_path,
+        ]
+        if kill_after_provider_commit:
+            provider_args.extend(["--after-commit-gate", gate])
         provider = subprocess.Popen(
-            [sys.executable, str(SCRIPT), "provider", "--port", str(provider_port),
-             "--db", db_path],
+            provider_args,
             cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         ready(provider_port)
         a = invoke("agent-a", "--subject-id", subject, env=env)
@@ -78,10 +86,36 @@ def test_real_api_provider_and_agent_process_restart(tmp_path):
         hid = manifest["handoff_id"]
         b_args = ("agent-b", "--handoff-id", hid, "--subject-id", subject,
                   "--provider-url", f"http://127.0.0.1:{provider_port}")
-        first = invoke(*b_args, env=env)
-        assert "AGENT_B_FINISHED" in first.stdout
-        # B has exited. A second independent B process must not duplicate the
-        # external provider effect even if accept is idempotently replayed.
+        if kill_after_provider_commit:
+            # The provider writes the marker only AFTER it has committed the
+            # real SQLite effect and BEFORE it sends the HTTP response.
+            first = subprocess.Popen(
+                [sys.executable, str(SCRIPT), *b_args],
+                cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            deadline = time.monotonic() + 20
+            try:
+                while not Path(gate).exists():
+                    assert first.poll() is None, "Agent B exited before provider commit"
+                    assert time.monotonic() < deadline, "provider never reached commit gate"
+                    time.sleep(0.02)
+                assert Path(gate).read_text().startswith(hid + ":")
+                with sqlite3.connect(db_path) as conn:
+                    committed = conn.execute(
+                        "SELECT COUNT(*) FROM effect_events WHERE executed=1").fetchone()[0]
+                assert committed == 1
+                first.kill()  # actual SIGKILL, not a clean exit
+                first.communicate(timeout=8)
+                assert first.returncode == -signal.SIGKILL
+            finally:
+                if first.poll() is None:
+                    first.kill()
+                    first.communicate(timeout=8)
+                Path(gate + ".release").touch()
+        else:
+            first = invoke(*b_args, env=env)
+            assert "AGENT_B_FINISHED" in first.stdout
+        # A distinct B process resumes after clean exit or SIGKILL, and the
+        # provider still has its committed effect from the first attempt.
         second = invoke(*b_args, env=env)
         assert "AGENT_B_FINISHED" in second.stdout
         with sqlite3.connect(db_path) as conn:

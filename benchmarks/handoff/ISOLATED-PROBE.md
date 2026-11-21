@@ -97,3 +97,24 @@ no general cross-provider registry, and no durable `memory_task_effects`
 resolution written by this example. Non-idempotent Providers cannot reuse
 the 404/POST behavior as a safe generic retry algorithm. The result
 observer remains fail-closed and must not be scored as a verified benchmark.
+
+
+## Seventh-round explicit cross-ledger release gate
+
+The new `effect_reconciliation.py` is **read-only** and compares tenant-scoped
+AMC `memory_task_effects` records, request SHA-256 and external Provider
+receipts. It never mutates task/effect status or infers success from a
+missing Provider response.
+
+The real PostgreSQL process test intentionally checks the present weakness:
+the synthetic Agent B **does not** register its Provider effect through AMC's
+fenced checkpoint/outbox contract. The Provider can prove one execution,
+but AMC returns `AMC_INTENT_MISSING`, and `safe_for_automatic_completion`
+remains `false`. This is an explicit negative control, not a regression to
+ignore or a reason to counterfeit a committed effect. Cross-ledger consistency
+does not itself authenticate third-party receipts.
+
+Product release still requires a properly leased/fenced Worker to create the
+effect intent and outbox **before** dispatch, then an authorized reconciliation
+transition based on independently verified Provider evidence. Until this is
+implemented and tested, the observer must remain fail-closed.

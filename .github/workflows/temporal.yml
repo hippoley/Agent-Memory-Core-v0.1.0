@@ -74,6 +74,7 @@ jobs:
       - name: Real Temporal and PostgreSQL execution
         env:
           MEMORY_TEST_DSN: postgresql://memory:local-dev-only@127.0.0.1:55432/memory
+          MEMORY_WORKER_CRASH_EVIDENCE_DIR: .evidence/worker-sigkill
         run: |
           python -m pytest -q tests/test_temporal_integration.py
           python -m pytest -q tests/test_temporal_durable_task_workflow.py tests/test_temporal_durable_task_execution.py tests/test_temporal_dispatcher_recovery.py tests/test_temporal_reconciliation.py
@@ -81,6 +82,32 @@ jobs:
           # This same PostgreSQL login/RLS adversarial test conditionally
           # exercises Temporal Activities because this job installs [temporal].
           python -m pytest -q tests/test_s10_principal_rls.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path(".evidence/worker-sigkill/worker-sigkill.json")
+          receipt = json.loads(p.read_text(encoding="utf-8"))
+          assert receipt["schema"] == "amc.worker-sigkill.v1"
+          assert receipt["result"] == "PASS"
+          assert receipt["worker_a"]["exit_code"] == -9
+          assert receipt["worker_b"]["activity_attempt"] == 2
+          assert receipt["worker_b"]["recovered"] is True
+          history = receipt["temporal"]
+          ids, types = history["history_event_ids"], history["history_event_type_codes"]
+          assert history["history_event_count"] == len(ids) == len(types)
+          assert ids and ids[0] == 1 and len(ids) == len(set(ids))
+          assert types[0] == 1 and 12 in types and 2 in types
+          assert all(receipt["assertions"].values())
+          print("WORKER_SIGKILL_EVIDENCE_ACCEPTED")
+          PY
+      - name: Upload Worker SIGKILL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-sigkill-receipt
+          path: .evidence/worker-sigkill/worker-sigkill.json
+          if-no-files-found: warn
+          retention-days: 30
       - if: failure()
         run: |
           docker compose logs --tail=120

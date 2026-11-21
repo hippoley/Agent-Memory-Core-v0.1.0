@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+from copy import deepcopy
 from datetime import datetime, timezone
 import os
 from uuid import uuid4
@@ -11,8 +14,19 @@ import pytest
 from agent_memory_core.verified_learning import TrustedSource, review_handoff_claim
 
 
+def seal(packet_value):
+    """Mimic existing AMC context-pack integrity; not an issuer signature."""
+    result = deepcopy(packet_value)
+    pack = result["payload"]
+    raw = json.dumps({k: v for k, v in pack.items() if k != "sha256"},
+                     sort_keys=True, ensure_ascii=False, allow_nan=False,
+                     separators=(",", ":")).encode()
+    pack["sha256"] = hashlib.sha256(raw).hexdigest()
+    return result
+
+
 def packet(source_id="contract:v3", period="quarterly"):
-    return {
+    return seal({
         "status": "accepted",
         "payload": {
             "schema": "amc.context-pack.v1",
@@ -24,7 +38,7 @@ def packet(source_id="contract:v3", period="quarterly"):
             }],
             "omitted_claim_ids": [], "unresolved_effects": [],
         },
-    }
+    })
 
 
 def evaluate(pack=None, source=None, **kwargs):
@@ -73,18 +87,26 @@ def test_self_repeated_error_is_not_independent_verification():
 
 
 @pytest.mark.parametrize("pack,reason", [
-    ({"status": "offered", "payload": packet()["payload"]}, "HANDOFF_NOT_ACCEPTED"),
-    ({**packet(), "payload": {**packet()["payload"], "omitted_claim_ids": ["missing"]}},
+    (seal({"status": "offered", "payload": packet()["payload"]}), "HANDOFF_NOT_ACCEPTED"),
+    (seal({**packet(), "payload": {**packet()["payload"], "omitted_claim_ids": ["missing"]}}),
      "INCOMPLETE_OR_UNRESOLVED_CONTEXT"),
-    ({**packet(), "payload": {**packet()["payload"], "unresolved_effects": [
-        {"effect_key": "remote", "status": "unknown"}]}},
+    (seal({**packet(), "payload": {**packet()["payload"], "unresolved_effects": [
+        {"effect_key": "remote", "status": "unknown"}]}}),
      "INCOMPLETE_OR_UNRESOLVED_CONTEXT"),
-    ({**packet(), "payload": {**packet()["payload"], "claims":
-        packet()["payload"]["claims"] * 2}}, "AMBIGUOUS_OR_MISSING_CLAIM"),
+    (seal({**packet(), "payload": {**packet()["payload"], "claims":
+        packet()["payload"]["claims"] * 2}}), "AMBIGUOUS_OR_MISSING_CLAIM"),
 ])
 def test_dangerous_handoff_state_is_denied(pack, reason):
     result = evaluate(pack=pack)
     assert result.reason == reason
+    assert not result.permitted
+
+
+def test_handoff_payload_mutation_fails_integrity_before_learning():
+    tampered = packet()
+    tampered["payload"]["claims"][0]["value"] = {"period": "monthly"}
+    result = evaluate(pack=tampered)
+    assert result.reason == "HANDOFF_PAYLOAD_INTEGRITY_FAILURE"
     assert not result.permitted
 
 

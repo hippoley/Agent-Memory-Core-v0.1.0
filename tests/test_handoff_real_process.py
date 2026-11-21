@@ -116,14 +116,17 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
             assert "AGENT_B_FINISHED" in first.stdout
         # A distinct B process resumes after clean exit or SIGKILL, and the
         # provider still has its committed effect from the first attempt.
+        # Receipt readback must suppress even the otherwise idempotent POST replay.
         second = invoke(*b_args, env=env)
         assert "AGENT_B_FINISHED" in second.stdout
         with sqlite3.connect(db_path) as conn:
             events = conn.execute(
                 "SELECT request_id, effect_key, executed FROM effect_events ORDER BY id"
             ).fetchall()
-        assert len(events) == 2
-        assert [e[2] for e in events] == [1, 0]
+        # A recovered B reads the provider's committed receipt before POST.
+        # There must be no additional HTTP effect attempt at all.
+        assert len(events) == 1
+        assert [e[2] for e in events] == [1]
         assert len({e[0] for e in events}) == 1
         from agent_memory_core.sdk import MemoryClient
         with MemoryClient(env["MEMORY_API_URL"], key, tenant_id=tenant) as reader:

@@ -33,10 +33,10 @@ python benchmarks/handoff/isolated_run.py agent-b --handoff-id HANDOFF_ID --subj
 After Agent B exits, read the actual provider SQLite event ledger and canonical AMC output from a fresh observer process:
 
 ```bash
-python benchmarks/handoff/isolated_run.py observe --case-id supplier-01 --subject-id SUBJECT_ID --db /tmp/amc-us-c01-provider.sqlite --elapsed-ms MEASURED_MILLISECONDS --context-tokens MEASURED_TOKENS
+python benchmarks/handoff/isolated_run.py observe --case-id supplier-01 --subject-id SUBJECT_ID --handoff-id HANDOFF_ID --db /tmp/amc-us-c01-provider.sqlite --elapsed-ms MEASURED_MILLISECONDS --context-tokens MEASURED_TOKENS
 ```
 
-The observe subcommand emits one JSON trace for the `amc` arm. The timing/token values must be measured externally; do not enter estimates and present them as benchmark measurements. Feed a complete three-arm set to `score.py` only after **real** history replay and pinned Mem0 adapters have produced corresponding independent observations.
+The observe subcommand emits a **provisional, intentionally fail-closed** JSON trace for the `amc` arm: it scopes provider events to the handoff, but marks `observation_complete=false` and `unresolved_unknown=true` until an independent task/effect reconciliation is verified. It must **not** be counted as a passing benchmark case. The timing/token values must be measured externally; do not enter estimates and present them as benchmark measurements. Feed a complete three-arm set to `score.py` only after **real** history replay and pinned Mem0 adapters have produced corresponding independent observations.
 
 ## Demonstrated boundary vs remaining gate
 

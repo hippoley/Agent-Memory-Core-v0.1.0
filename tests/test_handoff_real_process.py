@@ -86,6 +86,29 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         hid = manifest["handoff_id"]
         b_args = ("agent-b", "--handoff-id", hid, "--subject-id", subject,
                   "--provider-url", f"http://127.0.0.1:{provider_port}")
+        # First accept the immutable handoff, without dispatching an effect.
+        accepted = invoke(*b_args, "--accept-only", env=env)
+        assert "AGENT_B_ACCEPTED" in accepted.stdout
+        # Before any fenced intent exists, B must refuse Provider dispatch.
+        denied = subprocess.run(
+            [sys.executable, str(SCRIPT), *b_args], cwd=ROOT, env=env,
+            capture_output=True, text=True, timeout=35,
+        )
+        assert denied.returncode != 0
+        assert "AMC_EFFECT_INTENT_MISSING_OR_CONFLICT" in denied.stderr
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
+        # A separate process with PostgreSQL Worker authority claims a fenced
+        # lease and transactionally registers checkpoint + effect + outbox.
+        worker = subprocess.run(
+            [sys.executable, str(ROOT / "benchmarks" / "handoff" / "fenced_worker.py"),
+             "--task-id", manifest["task_id"],
+             "--handoff-id", hid, "--subject-id", subject, "--period", "quarterly"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=35,
+        )
+        assert worker.returncode == 0, worker.stderr
+        worker_result = json.loads(worker.stdout)
+        assert worker_result["checkpoint_version"] == 1
         if kill_after_provider_commit:
             # The provider writes the marker only AFTER it has committed the
             # real SQLite effect and BEFORE it sends the HTTP response.
@@ -136,10 +159,8 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert decisions[0]["value"] == {
             "payment_period": "quarterly", "requires_approval": True,
         }
-        # Reality check: the probe's Provider journal is real, but the public
-        # Agent B adapter has NOT registered its effect with AMC's fenced
-        # checkpoint/outbox authority. This must remain an explicit failing
-        # product gate rather than being scored as end-to-end reconciliation.
+        # Genuine AMC intent must have been registered by the separately
+        # fenced Worker BEFORE the provider call (not fabricated afterward).
         from agent_memory_core.postgres import PostgresMemory
         from benchmarks.handoff.effect_reconciliation import (
             assess_effect, load_tenant_effect,
@@ -151,7 +172,8 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
                 effect_key="supplier-approval-request")
         finally:
             db.close()
-        assert recorded is None
+        assert recorded is not None
+        assert recorded["status"] == "requested"
         result = assess_effect(
             recorded=recorded,
             request_id=hid + ":supplier-approval-request",
@@ -162,7 +184,10 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
                      "effect_key": "supplier-approval-request",
                      "payload": {"subject": subject, "period": "quarterly"}},
         )
-        assert result.classification == "AMC_INTENT_MISSING"
+        # A matching Provider receipt is NOT enough to mark AMC committed:
+        # authorized status transition remains an explicit next release gate.
+        assert result.classification == "MATCHED_RECEIPT_AMC_UNRESOLVED"
+        assert result.matches_recorded_intent is True
         assert result.safe_for_automatic_completion is False
     finally:
         for proc in (provider, api):

@@ -137,6 +137,25 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
             "--lease-epoch", str(worker_result["lease_epoch"]),
             "--provider-url", f"http://127.0.0.1:{provider_port}",
         ]
+        # A stale/forged Worker epoch must never get an HTTP dispatch.
+        stale = dispatch_args.copy()
+        stale[stale.index("--lease-epoch") + 1] = str(worker_result["lease_epoch"] - 1)
+        rejected_worker = subprocess.run(
+            stale, cwd=ROOT, env=provider_env,
+            capture_output=True, text=True, timeout=35,
+        )
+        assert rejected_worker.returncode != 0
+        assert "LeaseConflict" in rejected_worker.stderr
+        # A valid worker ID from another tenant is equally powerless.
+        other_tenant = {**provider_env, "MEMORY_TENANT_ID": tenant + "-forged"}
+        rejected_tenant = subprocess.run(
+            dispatch_args, cwd=ROOT, env=other_tenant,
+            capture_output=True, text=True, timeout=35,
+        )
+        assert rejected_tenant.returncode != 0
+        assert "LeaseConflict" in rejected_tenant.stderr
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
         if kill_after_provider_commit:
             # The provider writes the marker only AFTER it has committed the
             # real SQLite effect and BEFORE it sends the HTTP response.

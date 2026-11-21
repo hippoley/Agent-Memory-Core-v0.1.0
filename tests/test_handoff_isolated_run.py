@@ -85,3 +85,38 @@ def test_provider_deduplicates_execution_and_journals_retries(tmp_path):
     finally:
         process.terminate()
         process.join(timeout=5)
+
+
+def test_observer_is_handoff_scoped_and_never_claims_reconciled(tmp_path, monkeypatch):
+    db = str(tmp_path / "events.sqlite")
+    with sqlite3.connect(db) as conn:
+        module.initialize(conn)
+        conn.execute(
+            "INSERT INTO effect_events(effect_key,request_id,executed,payload_json) VALUES (?,?,?,?)",
+            ("supplier-approval-request", "handoff-1:approval", 1, "{}"))
+        conn.execute(
+            "INSERT INTO effect_events(effect_key,request_id,executed,payload_json) VALUES (?,?,?,?)",
+            ("supplier-payment", "another-handoff:payment", 1, "{}"))
+        conn.commit()
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def recall(self, _):
+            return {"items": [
+                {"predicate": "handoff_decision", "source_id": "handoff:handoff-1",
+                 "value": {"payment_period": "quarterly", "requires_approval": True}},
+                {"predicate": "handoff_decision", "source_id": "handoff:another-handoff",
+                 "value": {"payment_period": "monthly", "requires_approval": False}},
+            ]}
+
+    monkeypatch.setattr(module, "amc_client", lambda: Client())
+    trace = module.observe("case-1", "supplier-1", "handoff-1", db, 12, 25)
+    assert trace["observed_facts"]["payment_period"] == "quarterly"
+    assert trace["observed_effects"] == [{"effect_key": "supplier-approval-request"}]
+    assert trace["observation_complete"] is False
+    assert trace["unresolved_unknown"] is True

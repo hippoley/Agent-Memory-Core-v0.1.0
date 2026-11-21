@@ -172,10 +172,22 @@ def agent_a(subject_id: str):
             task_type="example.memory.batch.organize",
             input={"goal": "review supplier and request approval, never pay"})
         now = datetime.now(timezone.utc).isoformat()
-        for key, value in (("payment_period", "quarterly"), ("requires_approval", True)):
-            api.remember(
-                subject_id=subject_id, predicate=key, value={key: value},
-                source_id="supplier-contract-v2", valid_from=now)
+        # Real revision rather than a preconstructed current claim:
+        # Agent A first stores outdated v2 monthly policy, then corrects to
+        # the independently verifiable v3 quarterly policy.
+        old = api.remember(
+            subject_id=subject_id, predicate="payment_period",
+            value={"payment_period": "monthly"},
+            source_id="supplier-contract:v2", valid_from=now)
+        api.remember(
+            subject_id=subject_id, predicate="payment_period",
+            value={"payment_period": "quarterly"},
+            source_id="supplier-contract:v3", valid_from=now,
+            replaces_id=old["id"])
+        api.remember(
+            subject_id=subject_id, predicate="requires_approval",
+            value={"requires_approval": True},
+            source_id="supplier-contract:v3", valid_from=now)
         handoff = api.create_handoff(
             task_id=task["task_id"], source_agent="agent-A",
             target_agent="agent-B", subject_ids=[subject_id], token_budget=4096)

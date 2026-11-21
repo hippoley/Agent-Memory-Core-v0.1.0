@@ -148,7 +148,9 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str):
         api.remember(
             subject_id=subject_id, predicate="handoff_decision", value=decision,
             source_id="handoff:" + handoff_id,
-            valid_from=datetime.now(timezone.utc).isoformat(),
+            # Stable payload across process restarts; using wall-clock now()
+            # would change the request body under the same idempotency key.
+            valid_from=min(c["valid_from"] for c in pack["claims"]),
             idempotency_key="decision:" + handoff_id)
     print("AGENT_B_FINISHED")
 

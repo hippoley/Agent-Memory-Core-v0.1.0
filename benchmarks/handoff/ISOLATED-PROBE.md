@@ -165,3 +165,33 @@ synthetic local SQLite+HTTP service, its receipt is not cryptographically
 authenticated, and this is not yet a credential-separated production
 reconciler or three-arm real-model benchmark. Full latest-HEAD CI must pass
 before counting this controlled end-to-end experiment as accepted.
+
+
+## Tenth round: execution authority separation (controlled probe)
+
+**New release-critical distinction:** an accepted Handoff and a visible
+checkpoint do not authorize external execution. The Agent B process has
+no Provider executor token and **never issues a Provider POST**. Agent B
+may only inspect the current AMC intent and independently query a
+committed receipt, then idempotently publish its derived decision.
+
+The controlled Provider requires an explicit `PROVIDER_EFFECT_TOKEN` on
+every POST. The test gives that secret **only** to the Provider and
+`dispatch_worker.py`, not Agent A/B or the recovery observer. It verifies
+that an attempted unauthenticated POST returns 403, and that Agent B
+refuses to report success when a receipt does not exist.
+
+`dispatch_worker.py` checks that its Worker ID and fencing epoch
+currently own the same AMC task and `EXECUTING` effect, and that the
+effect request matches AMC's persisted SHA-256 before transmitting POST.
+The after-commit/before-response SIGKILL injection now kills the actual
+Provider **executor** process, rather than Agent B. A new fenced
+reconciliation process subsequently reads the Provider receipt, marks
+the old effect UNKNOWN and then COMMITTED under a newer epoch, and
+finishes the task. The independent Agent B finally reads the committed
+receipt without issuing another POST.
+
+This still uses a simulated Provider secret, a test-scoped PostgreSQL
+Worker identity and forced lease expiry; it is not a production
+authentication deployment, not proof that arbitrary providers honor
+fencing, and not an attested external receipt.

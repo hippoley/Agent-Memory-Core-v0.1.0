@@ -102,6 +102,28 @@ def amc_client():
         tenant_id=os.environ["MEMORY_TENANT_ID"])
 
 
+def agent_a(subject_id: str):
+    """Seed one task and source-linked policy facts, then issue a durable handoff."""
+    with amc_client() as api:
+        task = api.create_task(
+            task_type="example.memory.batch.organize",
+            input={"goal": "review supplier and request approval, never pay"})
+        now = datetime.now(timezone.utc).isoformat()
+        for key, value in (("payment_period", "quarterly"), ("requires_approval", True)):
+            api.remember(
+                subject_id=subject_id, predicate=key, value={key: value},
+                source_id="supplier-contract-v2", valid_from=now)
+        handoff = api.create_handoff(
+            task_id=task["task_id"], source_agent="agent-A",
+            target_agent="agent-B", subject_ids=[subject_id], token_budget=4096)
+    # The manifest is the ONLY input Agent B needs apart from credentials.
+    print(json.dumps({
+        "task_id": task["task_id"], "subject_id": subject_id,
+        "handoff_id": handoff["handoff_id"],
+        "context_tokens_estimate": handoff["payload"]["estimated_tokens"],
+    }))
+
+
 def agent_b(handoff_id: str, subject_id: str, provider_url: str):
     """No direct DB or Agent-A session access: only public HTTP clients."""
     with amc_client() as api:
@@ -155,6 +177,8 @@ def main():
     p.add_argument("--db", required=True)
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8799)
+    a = commands.add_parser("agent-a")
+    a.add_argument("--subject-id", required=True)
     b = commands.add_parser("agent-b")
     b.add_argument("--handoff-id", required=True)
     b.add_argument("--subject-id", required=True)
@@ -168,6 +192,8 @@ def main():
     args = parser.parse_args()
     if args.command == "provider":
         serve_provider(args.db, args.host, args.port)
+    elif args.command == "agent-a":
+        agent_a(args.subject_id)
     elif args.command == "agent-b":
         agent_b(args.handoff_id, args.subject_id, args.provider_url)
     else:

@@ -38,9 +38,14 @@ def ready(port):
 
 
 def invoke(*args, env):
-    return subprocess.run([sys.executable, str(SCRIPT), *args],
-                          cwd=ROOT, env=env, capture_output=True, text=True,
-                          timeout=35, check=True)
+    result = subprocess.run([sys.executable, str(SCRIPT), *args],
+                            cwd=ROOT, env=env, capture_output=True, text=True,
+                            timeout=35, check=False)
+    assert result.returncode == 0, (
+        f"Agent subprocess failed at {args[0]} (exit={result.returncode})\\n"
+        f"stdout={result.stdout[-4000:]}\\nstderr={result.stderr[-8000:]}"
+    )
+    return result
 
 
 @pytest.mark.integration

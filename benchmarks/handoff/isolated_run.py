@@ -14,6 +14,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import quote, unquote, urlsplit
 
 
 def decide(pack: dict) -> dict:
@@ -49,6 +51,33 @@ def initialize(conn):
 
 def serve_provider(db_path: str, host: str, port: int, after_commit_gate: str | None = None):
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = urlsplit(self.path).path
+            if not path.startswith("/effects/"):
+                self.send_error(404)
+                return
+            request_id = unquote(path[len("/effects/"):])
+            if not request_id or "/" in request_id or len(request_id) > 512:
+                self.send_error(400)
+                return
+            with sqlite3.connect(db_path, timeout=5) as conn:
+                row = conn.execute(
+                    "SELECT effect_key,payload_json FROM effect_events "
+                    "WHERE request_id=? AND executed=1", (request_id,)
+                ).fetchone()
+            if row is None:
+                self.send_error(404, "No committed receipt")
+                return
+            body = json.dumps({
+                "status": "committed", "request_id": request_id,
+                "effect_key": row[0], "payload": json.loads(row[1]),
+            }, sort_keys=True).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self):
             if self.path != "/effects":
                 self.send_error(404)
@@ -137,6 +166,37 @@ def agent_a(subject_id: str):
     }))
 
 
+def reconcile_provider(provider_url: str, request_id: str, effect_key: str,
+                       expected_payload: dict) -> str:
+    """Only a matching externally committed receipt authorizes continuation.
+
+    404 is not proof an earlier in-flight request cannot commit later; it is
+    merely permission to attempt the same idempotency-keyed request against
+    THIS provider. Network errors, malformed receipts and conflicts fail closed.
+    """
+    receipt_url = (provider_url.rstrip("/") + "/effects/" +
+                   quote(request_id, safe=""))
+    try:
+        with urlopen(receipt_url, timeout=8) as response:
+            if response.status != 200:
+                raise RuntimeError("UNKNOWN provider receipt status")
+            receipt = json.load(response)
+    except HTTPError as exc:
+        if exc.code == 404:
+            return "absent"
+        raise RuntimeError("UNKNOWN provider reconciliation") from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise RuntimeError("UNKNOWN provider reconciliation") from exc
+    if not isinstance(receipt, dict) or (
+        receipt.get("status") != "committed" or
+        receipt.get("request_id") != request_id or
+        receipt.get("effect_key") != effect_key or
+        receipt.get("payload") != expected_payload
+    ):
+        raise RuntimeError("CONFLICT provider receipt mismatch; no action permitted")
+    return "committed"
+
+
 def agent_b(handoff_id: str, subject_id: str, provider_url: str):
     """No direct DB or Agent-A session access: only public HTTP clients."""
     with amc_client() as api:
@@ -149,15 +209,26 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str):
         decision = decide(pack)
         effect_key = "supplier-approval-request"
         request_id = handoff_id + ":" + effect_key
-        payload = json.dumps({
-            "effect_key": effect_key, "request_id": request_id,
-            "payload": {"subject": subject_id, "period": decision["payment_period"]}
-        }).encode("utf-8")
-        req = Request(provider_url.rstrip("/") + "/effects", data=payload,
-                      headers={"Content-Type": "application/json"}, method="POST")
-        with urlopen(req, timeout=8) as response:
-            if response.status != 200:
-                raise RuntimeError("provider rejected action")
+        business_payload = {"subject": subject_id, "period": decision["payment_period"]}
+        state = reconcile_provider(provider_url, request_id, effect_key, business_payload)
+        if state == "absent":
+            payload = json.dumps({
+                "effect_key": effect_key, "request_id": request_id,
+                "payload": business_payload,
+            }).encode("utf-8")
+            req = Request(provider_url.rstrip("/") + "/effects", data=payload,
+                          headers={"Content-Type": "application/json"}, method="POST")
+            # On ambiguous HTTP failure, do not record a canonical AMC decision.
+            # A subsequent process must fetch the independent provider receipt.
+            try:
+                with urlopen(req, timeout=8) as response:
+                    if response.status != 200:
+                        raise RuntimeError("UNKNOWN provider action")
+            except (OSError, HTTPError) as exc:
+                raise RuntimeError("UNKNOWN provider action; reconcile before retry") from exc
+            if reconcile_provider(provider_url, request_id, effect_key,
+                                  business_payload) != "committed":
+                raise RuntimeError("UNKNOWN provider action; no committed receipt")
         api.remember(
             subject_id=subject_id, predicate="handoff_decision", value=decision,
             source_id="handoff:" + handoff_id,

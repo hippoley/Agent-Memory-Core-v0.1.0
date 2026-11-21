@@ -52,6 +52,11 @@ reconciles the committed effect. Tests require:
 - Even a Worker **holding the correct Provider token** is refused at the
   Provider after its epoch has been superseded; no extra SQLite event is
   recorded.
+- A stolen bearer alone is rejected without the expected task/epoch
+  identity; changing the business payload with otherwise valid identity is
+  rejected by the Provider's own request-hash check.
+- A matching Provider receipt without completed AMC reconciliation does
+  not permit Agent B to write a canonical successful decision.
 - The recovered task and AMC effect become COMMITTED only from the current
   fenced Worker; **two concurrent Agent B receiver processes** converge on
   one canonical `handoff_decision` through AMC's idempotent memory API.

@@ -4,6 +4,10 @@ No ASGI mock transport, and no shared Python session objects. CI opts in by
 setting MEMORY_TEST_DSN. A real LLM evaluation is a separate release gate.
 """
 import json
+import base64
+from datetime import datetime, timedelta, timezone
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import os
 import signal
 import secrets
@@ -74,6 +78,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
          "--host", "127.0.0.1", "--port", str(api_port)],
         cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     provider = None
+    issuer_process = None
     try:
         ready(api_port)
         provider_args = [
@@ -104,12 +109,78 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert "AMC_EFFECT_INTENT_MISSING_OR_CONFLICT" in denied.stderr
         with sqlite3.connect(db_path) as conn:
             assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
-        # A separate process with PostgreSQL Worker authority claims a fenced
-        # lease and transactionally registers checkpoint + effect + outbox.
+        # P0 composition: source v3 must first be signed by a separate
+        # process and checked against the existing PG evidence producer
+        # registry, NOT keys submitted by Agent A/B.
+        issuer_key = Ed25519PrivateKey.generate()
+        issuer_raw = issuer_key.private_bytes(
+            serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+            serialization.NoEncryption())
+        issuer_pub = issuer_key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        issuer_port = free_port()
+        issuer_env = {**env, "AMC_TEST_ISSUER_PRIVATE_KEY":
+                      base64.urlsafe_b64encode(issuer_raw).decode(),
+                      "AMC_TEST_ISSUER_TENANT": tenant,
+                      "AMC_TEST_ISSUER_SUBJECT": subject,
+                      "AMC_TEST_ISSUER_VALUE_FIELD": "payment_period"}
+        issuer_process = subprocess.Popen(
+            [sys.executable, str(ROOT / "benchmarks" / "handoff" /
+                                  "independent_contract_issuer.py"),
+             "--port", str(issuer_port)],
+            cwd=ROOT, env=issuer_env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        ready(issuer_port)
+        with urlopen(f"http://127.0.0.1:{issuer_port}/current", timeout=3) as resp:
+            signed_document = json.load(resp)
+        from agent_memory_core.postgres import PostgresMemory
+        trust_db = PostgresMemory(env["MEMORY_TEST_DSN"])
+        try:
+            with trust_db.conn.transaction():
+                trust_db.conn.execute(
+                    """INSERT INTO memory_tenants(tenant_id,display_name)
+                       VALUES(%s,%s) ON CONFLICT (tenant_id) DO NOTHING""",
+                    (tenant, tenant))
+                principal = str(uuid4())
+                trust_db.conn.execute(
+                    """INSERT INTO memory_principals(principal_id,principal_type,status)
+                       VALUES(%s::uuid,'service','active')""", (principal,))
+                trust_db.conn.execute(
+                    """INSERT INTO memory_evidence_producer_keys
+                       (issuer,key_id,principal_id,public_key,audience,not_before)
+                       VALUES(%s,'issuer-key-01',%s::uuid,%s,'amc-knowledge-source',
+                              clock_timestamp()-interval '1 hour')""",
+                    ("independent-contract-source", principal, issuer_pub))
+                trust_db.conn.execute(
+                    """INSERT INTO memory_knowledge_source_revisions
+                       (tenant_id,subject_id,predicate,source_id,issuer,key_id)
+                       VALUES(%s,%s,'payment_period','supplier-contract:v3',
+                              'independent-contract-source','issuer-key-01')""",
+                    (tenant, subject))
+        finally:
+            trust_db.close()
+        receipt_path = tmp_path / "signed-contract-v3.json"
+        receipt_path.write_text(json.dumps(signed_document), encoding="utf-8")
+        verified_worker_args = [
+            sys.executable, "-m", "benchmarks.handoff.verified_fenced_worker",
+            "--task-id", manifest["task_id"],
+            "--handoff-id", hid, "--subject-id", subject,
+            "--source-envelope", str(receipt_path),
+        ]
+        forged_source = json.loads(json.dumps(signed_document))
+        forged_source["body"]["value"] = {"payment_period": "monthly"}
+        forged_path = tmp_path / "forged-contract-v3.json"
+        forged_path.write_text(json.dumps(forged_source), encoding="utf-8")
+        rejected_source = subprocess.run(
+            verified_worker_args[:-1] + [str(forged_path)],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=35)
+        assert rejected_source.returncode != 0
+        assert "SOURCE_SIGNATURE_INVALID" in rejected_source.stderr
+        # Signed source verification is advisory, not a Provider capability.
+        # A dedicated Worker must still claim a fenced lease and
+        # atomically register the real checkpoint + effect intent.
         worker = subprocess.run(
-            [sys.executable, str(ROOT / "benchmarks" / "handoff" / "fenced_worker.py"),
-             "--task-id", manifest["task_id"],
-             "--handoff-id", hid, "--subject-id", subject, "--period", "quarterly"],
+            verified_worker_args,
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=35,
         )
         assert worker.returncode == 0, worker.stderr
@@ -342,7 +413,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert result.matches_recorded_intent is True
         assert result.safe_for_automatic_completion is False
     finally:
-        for proc in (provider, api):
+        for proc in (issuer_process, provider, api):
             if proc is not None:
                 proc.terminate()
                 try:

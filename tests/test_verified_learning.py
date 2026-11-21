@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from datetime import timedelta
 from copy import deepcopy
 from datetime import datetime, timezone
 import os
@@ -220,5 +221,54 @@ def test_real_postgres_revision_refuses_stale_handoff_then_verifies_new_one():
             assert refused.reason == "EXECUTION_REQUIRES_SEPARATE_AUTHORITY"
             # Even if the model asks for execution, no action was performed.
             assert not refused.permitted
+
+            # Real PostgreSQL handoff + independently signed current source:
+            # the untrusted Agent does not supply the issuer key registry.
+            import base64
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+            from agent_memory_core.source_attestation import (
+                SourceTrustPolicy, review_signed_handoff_claim)
+            signer = Ed25519PrivateKey.generate()
+            pub = signer.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw)
+            body = {
+                "schema": "amc.source-attestation.v1",
+                "issuer": "fixture-contract-registry",
+                "tenant_id": tenant,
+                "subject_id": subject,
+                "predicate": "payment_period",
+                "source_id": source_v3.source_id,
+                "value": {"period": "quarterly"},
+                "issued_at": datetime.now(timezone.utc).isoformat(),
+                "expires_at": (datetime.now(timezone.utc) +
+                               timedelta(hours=1)).isoformat(),
+            }
+            raw = json.dumps(body, sort_keys=True, ensure_ascii=False,
+                             allow_nan=False, separators=(",", ":")).encode()
+            signed = {
+                "body": body,
+                "signature": base64.urlsafe_b64encode(signer.sign(raw)).decode().rstrip("="),
+            }
+            host_policy = SourceTrustPolicy(
+                issuer_public_keys={"fixture-contract-registry": pub},
+                active_revisions={(tenant, subject, "payment_period"): source_v3.source_id})
+            proved = review_signed_handoff_claim(
+                accepted_handoff=accepted.json(),
+                subject_id=subject, predicate="payment_period",
+                proposed_value={"period": "quarterly"},
+                signed_source_envelope=signed, policy=host_policy,
+                tenant_id=tenant, requested_use="plan")
+            assert proved.allowed_uses == ("plan",)
+            malicious = {**signed, "body": {**body, "value": {"period": "monthly"}}}
+            refused_forgery = review_signed_handoff_claim(
+                accepted_handoff=accepted.json(),
+                subject_id=subject, predicate="payment_period",
+                proposed_value={"period": "quarterly"},
+                signed_source_envelope=malicious, policy=host_policy,
+                tenant_id=tenant, requested_use="plan")
+            assert refused_forgery.reason == "SOURCE_SIGNATURE_INVALID"
+            assert not refused_forgery.permitted
 
     asyncio.run(run())

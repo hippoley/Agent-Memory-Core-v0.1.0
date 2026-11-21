@@ -6,6 +6,7 @@ setting MEMORY_TEST_DSN. A real LLM evaluation is a separate release gate.
 import json
 import os
 import signal
+import secrets
 from pathlib import Path
 import socket
 import sqlite3
@@ -63,6 +64,8 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
     db_path = str(tmp_path / "provider.sqlite")
     gate = str(tmp_path / "provider-committed")
+    provider_token = secrets.token_urlsafe(32)
+    provider_env = {**env, "PROVIDER_EFFECT_TOKEN": provider_token}
     api = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "benchmarks.handoff.api_fixture:app",
          "--host", "127.0.0.1", "--port", str(api_port)],
@@ -78,7 +81,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
             provider_args.extend(["--after-commit-gate", gate])
         provider = subprocess.Popen(
             provider_args,
-            cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            cwd=ROOT, env=provider_env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         ready(provider_port)
         a = invoke("agent-a", "--subject-id", subject, env=env)
         manifest = json.loads(a.stdout.strip())
@@ -110,16 +113,40 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         worker_result = json.loads(worker.stdout)
         assert worker_result["checkpoint_version"] == 1
         assert worker_result["effect_attempt_count"] == 1
+        # Agent B has NO provider credential and cannot issue a POST even
+        # when it has seen the signed-off AMC checkpoint.
+        from urllib.error import HTTPError
+        from urllib.request import Request
+        forged = Request(f"http://127.0.0.1:{provider_port}/effects",
+                         data=json.dumps(worker_result["effect_request"]).encode(),
+                         headers={"Content-Type": "application/json"}, method="POST")
+        with pytest.raises(HTTPError) as forbidden:
+            urlopen(forged, timeout=3)
+        assert forbidden.value.code == 403
+        no_receipt = subprocess.run(
+            [sys.executable, str(SCRIPT), *b_args],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=35,
+        )
+        assert no_receipt.returncode != 0
+        assert "AMC_EFFECT_NOT_COMMITTED" in no_receipt.stderr
+        dispatch_args = [
+            sys.executable, str(ROOT / "benchmarks" / "handoff" / "dispatch_worker.py"),
+            "--task-id", manifest["task_id"],
+            "--effect-key", "supplier-approval-request",
+            "--worker-id", worker_result["worker_id"],
+            "--lease-epoch", str(worker_result["lease_epoch"]),
+            "--provider-url", f"http://127.0.0.1:{provider_port}",
+        ]
         if kill_after_provider_commit:
             # The provider writes the marker only AFTER it has committed the
             # real SQLite effect and BEFORE it sends the HTTP response.
             first = subprocess.Popen(
-                [sys.executable, str(SCRIPT), *b_args],
-                cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                dispatch_args, cwd=ROOT, env=provider_env,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             deadline = time.monotonic() + 20
             try:
                 while not Path(gate).exists():
-                    assert first.poll() is None, "Agent B exited before provider commit"
+                    assert first.poll() is None, "Fenced Worker exited before provider commit"
                     assert time.monotonic() < deadline, "provider never reached commit gate"
                     time.sleep(0.02)
                 assert Path(gate).read_text().startswith(hid + ":")
@@ -127,7 +154,7 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
                     committed = conn.execute(
                         "SELECT COUNT(*) FROM effect_events WHERE executed=1").fetchone()[0]
                 assert committed == 1
-                first.kill()  # actual SIGKILL, not a clean exit
+                first.kill()  # actual SIGKILL of the Provider executor
                 first.communicate(timeout=8)
                 assert first.returncode == -signal.SIGKILL
             finally:
@@ -136,8 +163,12 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
                     first.communicate(timeout=8)
                 Path(gate + ".release").touch()
         else:
-            first = invoke(*b_args, env=env)
-            assert "AGENT_B_FINISHED" in first.stdout
+            first = subprocess.run(
+                dispatch_args, cwd=ROOT, env=provider_env,
+                capture_output=True, text=True, timeout=35,
+            )
+            assert first.returncode == 0, first.stderr
+            assert "FENCED_PROVIDER_DISPATCH_FINISHED" in first.stdout
         # Recovery runs in a new fenced process against the real AMC effect
         # state machine: EXECUTING -> UNKNOWN -> RECONCILING -> COMMITTED.
         # The old worker has exited; this test injects its lease expiry.
@@ -155,17 +186,15 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert recovered["classification"] == "COMMITTED"
         assert recovered["reexecuted"] is False
         assert recovered["lease_epoch"] > worker_result["lease_epoch"]
-        # A distinct B process resumes after clean exit or SIGKILL, and the
-        # provider still has its committed effect from the first attempt.
-        # Receipt readback must suppress even the otherwise idempotent POST replay.
+        # Agent B independently reads the Provider receipt only AFTER the
+        # fenced recovery worker has committed the corresponding AMC effect.
         second = invoke(*b_args, env=env)
         assert "AGENT_B_FINISHED" in second.stdout
         with sqlite3.connect(db_path) as conn:
             events = conn.execute(
                 "SELECT request_id, effect_key, executed FROM effect_events ORDER BY id"
             ).fetchall()
-        # A recovered B reads the provider's committed receipt before POST.
-        # There must be no additional HTTP effect attempt at all.
+        # Agent B cannot send POST: there was only one authorized execution.
         assert len(events) == 1
         assert [e[2] for e in events] == [1]
         assert len({e[0] for e in events}) == 1

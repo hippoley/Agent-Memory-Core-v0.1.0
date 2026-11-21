@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import hmac
 import sqlite3
 import time
 from pathlib import Path
@@ -50,6 +51,7 @@ def initialize(conn):
 
 
 def serve_provider(db_path: str, host: str, port: int, after_commit_gate: str | None = None):
+    effect_token = os.environ.get("PROVIDER_EFFECT_TOKEN")
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             path = urlsplit(self.path).path
@@ -81,6 +83,14 @@ def serve_provider(db_path: str, host: str, port: int, after_commit_gate: str | 
         def do_POST(self):
             if self.path != "/effects":
                 self.send_error(404)
+                return
+            # Test Provider: the Agent B runtime has no dispatch credential.
+            # A checkpoint or handoff ID is not itself execution authority.
+            supplied = self.headers.get("Authorization", "")
+            if (not effect_token or not hmac.compare_digest(
+                supplied, "Bearer " + effect_token
+            )):
+                self.send_error(403, "Dedicated Provider executor credential required")
                 return
             try:
                 n = int(self.headers.get("Content-Length", "0"))
@@ -229,25 +239,11 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str, *,
                 or intent.get("handoff_id") != handoff_id
                 or intent.get("effect_request") != expected_request):
             raise RuntimeError("AMC_EFFECT_INTENT_MISSING_OR_CONFLICT; dispatch denied")
+        # Provider execution is exclusively owned by a fenced Worker.
+        # B can only verify the resulting receipt; B never sends POST.
         state = reconcile_provider(provider_url, request_id, effect_key, business_payload)
-        if state == "absent":
-            payload = json.dumps({
-                "effect_key": effect_key, "request_id": request_id,
-                "payload": business_payload,
-            }).encode("utf-8")
-            req = Request(provider_url.rstrip("/") + "/effects", data=payload,
-                          headers={"Content-Type": "application/json"}, method="POST")
-            # On ambiguous HTTP failure, do not record a canonical AMC decision.
-            # A subsequent process must fetch the independent provider receipt.
-            try:
-                with urlopen(req, timeout=8) as response:
-                    if response.status != 200:
-                        raise RuntimeError("UNKNOWN provider action")
-            except (OSError, HTTPError) as exc:
-                raise RuntimeError("UNKNOWN provider action; reconcile before retry") from exc
-            if reconcile_provider(provider_url, request_id, effect_key,
-                                  business_payload) != "committed":
-                raise RuntimeError("UNKNOWN provider action; no committed receipt")
+        if state != "committed":
+            raise RuntimeError("AMC_EFFECT_NOT_COMMITTED; Agent B cannot dispatch")
         api.remember(
             subject_id=subject_id, predicate="handoff_decision", value=decision,
             source_id="handoff:" + handoff_id,

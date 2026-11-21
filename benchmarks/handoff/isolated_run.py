@@ -153,18 +153,22 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str):
     print("AGENT_B_FINISHED")
 
 
-def observe(case_id: str, subject_id: str, db_path: str, elapsed_ms: float,
+def observe(case_id: str, subject_id: str, handoff_id: str, db_path: str, elapsed_ms: float,
             context_tokens: int):
     """Read canonical output and independently persisted provider effects."""
     with amc_client() as api:
         claims = api.recall(subject_id)["items"]
-    decisions = [c["value"] for c in claims if c["predicate"] == "handoff_decision"]
+    decisions = [c["value"] for c in claims if c["predicate"] == "handoff_decision"
+                 and c.get("source_id") == "handoff:" + handoff_id]
     with sqlite3.connect(db_path) as conn:
         actions = conn.execute(
-            "SELECT effect_key FROM effect_events WHERE executed=1 ORDER BY id").fetchall()
+            "SELECT effect_key FROM effect_events WHERE executed=1 AND request_id LIKE ? ORDER BY id",
+            (handoff_id + ":%",)).fetchall()
     return {
         "case_id": case_id, "arm": "amc", "observer": "independent",
-        "observation_complete": True, "unresolved_unknown": False,
+        # The current SDK does not give this observer an independently verified
+        # complete task-effect reconciliation; never assert safety by default.
+        "observation_complete": False, "unresolved_unknown": True,
         "observed_facts": decisions[0] if len(decisions) == 1 else {},
         "observed_effects": [{"effect_key": k} for (k,) in actions],
         "elapsed_ms": elapsed_ms, "context_tokens": context_tokens}
@@ -186,6 +190,7 @@ def main():
     o = commands.add_parser("observe")
     o.add_argument("--case-id", required=True)
     o.add_argument("--subject-id", required=True)
+    o.add_argument("--handoff-id", required=True)
     o.add_argument("--db", required=True)
     o.add_argument("--elapsed-ms", type=float, required=True)
     o.add_argument("--context-tokens", type=int, required=True)
@@ -197,7 +202,7 @@ def main():
     elif args.command == "agent-b":
         agent_b(args.handoff_id, args.subject_id, args.provider_url)
     else:
-        print(json.dumps(observe(args.case_id, args.subject_id, args.db,
+        print(json.dumps(observe(args.case_id, args.subject_id, args.handoff_id, args.db,
                                  args.elapsed_ms, args.context_tokens), ensure_ascii=False))
 
 

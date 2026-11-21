@@ -33,7 +33,7 @@ def run(port):
             now = datetime.now(timezone.utc)
             body = {
                 "schema": "amc.source-attestation.v1",
-                "issuer": "independent-contract-source",
+                "issuer": os.environ.get("AMC_TEST_ISSUER_ID", "independent-contract-source"),
                 "tenant_id": tenant,
                 "subject_id": subject,
                 "predicate": "payment_period",

@@ -62,7 +62,7 @@ against a disposable tenant:
   transaction to its own SQLite ledger and then **holds its HTTP response**.
   The test verifies that the effect was committed, sends a real SIGKILL to B,
   unblocks the provider, starts a fresh B process, and independently checks
-  two provider attempts / one committed action / one canonical AMC decision.
+  one provider POST attempt / one committed action / one canonical AMC decision.
 
 Invoke the exact integration test from a running PostgreSQL development
 stack with `MEMORY_TEST_DSN` configured:
@@ -77,3 +77,23 @@ capability. Importantly, AMC still does not record an independently
 reconciled cross-provider effect receipt or guarantee exactly-once semantics
 for non-idempotent tools. The standalone observer continues to fail closed
 until that distinct product requirement is actually implemented and verified.
+
+
+## Sixth-round provider reconciliation contract (controlled only)
+
+On fresh startup, Agent B asks the independent HTTP Provider for
+`GET /effects/{request_id}` **before** attempting any further action. It
+compares the returned `request_id`, effect key and business payload with
+its independently reconstructed accepted handoff. A matching committed
+receipt allows canonical AMC continuation *without another POST*. A
+mismatching receipt is a hard CONFLICT; a broken Provider connection is
+UNKNOWN and aborts the decision. Only a reliable 404 from this specific
+idempotent Provider permits a same-key POST, and the caller reads the
+receipt again before publishing a completed decision.
+
+This is deliberately *not* AMC-wide reconciliation: the synthetic Provider
+owns the receipt, there is no authenticated external receipt signature,
+no general cross-provider registry, and no durable `memory_task_effects`
+resolution written by this example. Non-idempotent Providers cannot reuse
+the 404/POST behavior as a safe generic retry algorithm. The result
+observer remains fail-closed and must not be scored as a verified benchmark.

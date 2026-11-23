@@ -365,3 +365,86 @@ def test_answer_identity_rejects_fingerprint_presence_change():
             assert answer.identity_snapshot()["calls"] == 1
         finally:
             answer.close()
+
+
+def test_inactive_history_evidence_distinguishes_withdrawn_from_never_known():
+    former = {"subject_id": "次卧", "predicate": "noise_preference",
+              "value": {"level": "quiet"}, "superseded_at": "2026-11-23T08:00:00Z"}
+    assert module.inactive_history_evidence(
+        "次卧的静音偏好还生效吗？", [], [former], []) == [
+            {"subject": "次卧", "predicate": "noise_preference",
+             "status": "previously_recorded_but_not_current"}]
+    assert module.inactive_history_evidence(
+        "次卧的静音偏好还生效吗？", [], [], []) == []
+    assert module.inactive_history_evidence(
+        "书房静音偏好还生效吗？", [], [former], []) == []
+    assert module.inactive_history_evidence(
+        "次卧的静音偏好还生效吗？", [], [former],
+        [{"subject_id": "次卧", "predicate": "noise_preference",
+          "value": {"level": "quiet"}}]) == []
+    # A current replacement makes even an old superseded claim irrelevant as
+    # withdrawal evidence, rather than resurrecting an obsolete preference.
+    current = [{"subject_id": "次卧", "predicate": "noise_preference",
+                "value": {"level": "background_music"}}]
+    assert module.inactive_history_evidence(
+        "次卧的静音偏好还生效吗？", current, [former], []) == []
+    assert module.inactive_history_evidence(
+        "次卧的静音偏好还生效吗？", [],
+        [{**former, "superseded_at": None}], []) == []
+
+
+def test_answer_receives_inactive_status_only_with_history_evidence():
+    class Response:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"model": "answer-qwen",
+                    "choices": [{"message": {"content": "已取消"}}]}
+    class Client:
+        def __init__(self): self.payloads = []
+        def post(self, url, json):
+            self.payloads.append(json)
+            return Response()
+        def close(self): pass
+    answer = module.LocalAnswer(
+        "http://127.0.0.1:1234/v1/chat/completions", "answer-qwen")
+    answer.client.close()
+    answer.client = Client()
+    try:
+        evidence = [{"subject": "次卧", "predicate": "noise_preference",
+                     "status": "previously_recorded_but_not_current"}]
+        assert answer.answer("次卧偏好取消了吗？", [], evidence) == "已取消"
+        payload = answer.client.payloads[0]["messages"][1]["content"]
+        assert "previously_recorded_but_not_current" in payload
+        assert '"level": "quiet"' not in payload
+        answer.answer("卧室喜欢几度？", [])
+        payload_without = answer.client.payloads[1]["messages"][1]["content"]
+        assert "previously_recorded_but_not_current" not in payload_without
+    finally:
+        answer.close()
+
+
+def test_collect_passes_canonical_inactive_status_to_answerer():
+    class Memory:
+        def current(self): return []
+        def history(self):
+            return [{"subject_id": "次卧", "predicate": "noise_preference",
+                     "value": {"level": "quiet"}, "superseded_at": "2026-11-23T08:00:00Z"}]
+        def reset_active(self): pass
+        def call(self, method, path, **kw):
+            if path == "/v1/memories/process": return {"created": []}
+            if path == "/v1/search": return {"items": []}
+            raise AssertionError(path)
+    class Extractor:
+        def __call__(self, text): return []
+    class Answer:
+        def __init__(self): self.evidence = None
+        def answer(self, question, hits, inactive_evidence=None):
+            self.evidence = inactive_evidence
+            return "已取消"
+    answer = Answer()
+    cases = [{"id": "withdrawal", "turns": ["次卧不用静音了"],
+              "query": "次卧静音偏好现在还在吗？"}]
+    captured = module.collect(cases, Memory(), answer, Extractor(),
+                              context=False, prefix="test")
+    assert captured[0]["inactive_history_evidence"] == answer.evidence
+    assert answer.evidence[0]["status"] == "previously_recorded_but_not_current"

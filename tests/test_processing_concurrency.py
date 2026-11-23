@@ -90,3 +90,63 @@ def test_real_postgres_zh_correction_stale_withdrawal_and_duplicate_replay():
         assert len(all_rows)==2
     finally:
         db.close()
+
+
+@pytest.mark.integration
+def test_conflicting_concurrent_revisions_serialize_without_two_active_claims():
+    """Concurrent conflicting candidates must retain a linear version chain.
+
+    The order of two racing updates is intentionally unspecified; consistency,
+    losslessness and one active fact must hold in either order.
+    """
+    dsn=os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("real PostgreSQL required")
+    from threading import Barrier
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.processing import MemoryProcessor
+    tenant="memory-conflict-race-"+uuid4().hex
+    subject="主卧"
+    predicate="temperature_preference"
+
+    def write(value,source,barrier=None):
+        db=PostgresMemory(dsn)
+        try:
+            if barrier is not None:
+                barrier.wait(timeout=10)
+            return MemoryProcessor(db).process(
+                tenant_id=tenant, text="主卧温度偏好修订",
+                source_id=source,
+                extractor=lambda _: [{
+                    "subject_id":subject,"predicate":predicate,
+                    "value":{"celsius":value},"confidence":0.99,
+                }])
+        finally:
+            db.close()
+
+    baseline=write(24,"original-v1")
+    barrier=Barrier(2)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures=[pool.submit(write, temp, f"revision-{temp}", barrier)
+                 for temp in (25,26)]
+        reports=[f.result(timeout=30) for f in futures]
+    db=PostgresMemory(dsn)
+    try:
+        active=db.recall(tenant_id=tenant,subject_id=subject,
+                         predicate=predicate)
+        history=db.list_claims(tenant_id=tenant,subject_id=subject,
+                               predicate=predicate,include_superseded=True)
+        assert len(baseline.created)==1
+        assert all(len(r.created)==1 and len(r.replaced)==1 for r in reports)
+        assert len(active)==1
+        assert active[0]["value"]["celsius"] in (25,26)
+        assert len(history)==3
+        assert {row["value"]["celsius"] for row in history}=={24,25,26}
+        assert len({row["id"] for row in history})==3
+        assert sum(row["superseded_at"] is None for row in history)==1
+        assert {x for r in reports for x in r.replaced} == (
+            {baseline.created[0]} | {x for r in reports for x in r.created}
+            - {active[0]["id"]}
+        )
+    finally:
+        db.close()

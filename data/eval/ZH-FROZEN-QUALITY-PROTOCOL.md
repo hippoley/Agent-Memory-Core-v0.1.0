@@ -117,7 +117,7 @@ the immediately preceding turn even when `--context` was enabled; those
 runs should be interpreted as **one-turn-context** experiments, not
 general multi-turn memory benchmarks.
 
-Use `--context --context-window 4` (default window 4, allowed 1–16).
+Use `--context --context-window 3` (default window 3, allowed 1–3, matching the production fact contract and API).
 For `--context` off, no previous utterance is supplied and metadata
 records `context_window: 0`. The configured window is included in the
 prediction artifact to prevent unfair comparisons. This is bounded by

@@ -327,11 +327,19 @@ def run(args):
             if keys[0] != args.key:
                 raise ValueError("First case key must match --key for the initial search attestation")
             captured = []
+            seen_tenants = set()
+            config_fields = ("aliases_enabled", "alias_count", "alias_sha256")
             for case, key in zip(gold, keys):
                 case_memory = MemoryHTTP(args.base_url, key)
                 try:
                     case_attestation = case_memory.call("GET", "/v1/evaluation/search-config")
-                    if case_attestation != attestation:
+                    tenant_id = case_attestation.get("tenant_id")
+                    if (not isinstance(tenant_id, str) or not tenant_id
+                            or tenant_id in seen_tenants):
+                        raise RuntimeError("Each story must use a distinct authenticated tenant_id")
+                    seen_tenants.add(tenant_id)
+                    if any(case_attestation.get(field) != attestation.get(field)
+                           for field in config_fields):
                         raise RuntimeError("Evaluation tenants have inconsistent search configurations")
                     captured.extend(collect(
                         [case], case_memory, answerer, extractor,
@@ -358,13 +366,14 @@ def run(args):
                    "context_enabled":bool(args.context),
                    "context_window":args.context_window if args.context else 0,
                    "aliases_enabled":bool(args.aliases),
-                   "answer_model":args.answer_model}
+                   "answer_model":args.answer_model,
+                   "case_isolation":"fresh_tenant_per_story" if args.case_keys_file is not None else "shared_tenant_soft_reset"}
     artifact={"dataset_sha256":digest,"configuration":configuration,
               "search_attestation":attestation,
               "run_id":run_id,"capture_type":"real_http_and_local_model",
               "extractor_runtime_call_count":identity.get("calls", 0),
               "answer_runtime_call_count":answer_identity["calls"],
-              "case_isolation": "fresh_tenant_per_story" if args.case_keys_file is not None else "shared_tenant_soft_reset",
+              "isolated_tenant_count":len(gold) if args.case_keys_file is not None else 1,
               "cases":captured}
     scorer.validate_predictions(artifact,gold,digest)
     report=scorer.score(gold,{x["id"]:x for x in captured},configuration,digest)

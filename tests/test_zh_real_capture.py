@@ -317,3 +317,51 @@ def test_strict_case_isolation_checks_actual_tenants_not_just_distinct_keys():
     with pytest.raises(RuntimeError,match="inconsistent search"):
         module.validate_isolated_tenant(invalid,base,seen)
     assert "tenant-c" not in seen
+
+
+def test_extractor_identity_rejects_disappearing_optional_evidence():
+    class Extractor:
+        def __init__(self, calls): self.calls = calls
+        def attestation_snapshot(self):
+            return {"calls": self.calls, "cryptographic_weight_identity": False}
+
+    baseline = {"response_model": "qwen-local", "identity_status": "matched",
+                "model_digest": "sha256-pinned", "system_fingerprint": "host-a",
+                "runtime_version": "1.0"}
+    for field in ("model_digest", "system_fingerprint", "runtime_version"):
+        partial = dict(baseline)
+        partial.pop(field)
+        with pytest.raises(RuntimeError, match="identity changed"):
+            module.extractor_runtime_identity(Extractor([baseline, partial]))
+        with pytest.raises(RuntimeError, match="identity changed"):
+            module.extractor_runtime_identity(Extractor([partial, baseline]))
+
+
+def test_answer_identity_rejects_fingerprint_presence_change():
+    class Response:
+        def __init__(self, fingerprint):
+            self.fingerprint = fingerprint
+        def raise_for_status(self): pass
+        def json(self):
+            result = {"model": "qwen-answer",
+                      "choices": [{"message": {"content": "无法确定"}}]}
+            if self.fingerprint is not None:
+                result["system_fingerprint"] = self.fingerprint
+            return result
+    class Client:
+        def __init__(self, fingerprints):
+            self.items = iter(Response(fp) for fp in fingerprints)
+        def post(self, *args, **kwargs): return next(self.items)
+        def close(self): pass
+    for pair in (("host-a", None), (None, "host-a")):
+        answer = module.LocalAnswer("http://127.0.0.1:1234/v1/chat/completions",
+                                    "qwen-answer")
+        answer.client.close()
+        answer.client = Client(pair)
+        try:
+            answer.answer("问题", [])
+            with pytest.raises(RuntimeError, match="fingerprint disappeared or appeared"):
+                answer.answer("问题", [])
+            assert answer.identity_snapshot()["calls"] == 1
+        finally:
+            answer.close()

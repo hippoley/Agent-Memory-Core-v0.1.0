@@ -71,13 +71,13 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
             result.append(candidate)
             continue
         memory_id = candidate.get("expected_memory_id")
+        if not isinstance(memory_id, str) or memory_id not in by_id:
+            raise ValueError("Unverified memory withdrawal: missing canonical memory reference")
         # A single model extraction response must not withdraw the same
         # canonical claim twice. Reject the entire proposed batch BEFORE
         # MemoryProcessor can apply any of its items.
         if memory_id in withdrawn_ids:
             raise ValueError("Duplicate withdrawal target in one candidate batch")
-        if not isinstance(memory_id, str) or memory_id not in by_id:
-            raise ValueError("Unverified memory withdrawal: missing canonical memory reference")
         known = by_id[memory_id]
         # Caller text is untrusted. Canonical subject/predicate/value must all
         # match exact evidence; no entity alias expansion or fuzzy match here.

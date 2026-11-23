@@ -124,6 +124,7 @@ class LocalAnswer:
         self.url, self.model = loopback_url(url), model
         self.client = httpx.Client(timeout=120,trust_env=False)
         self.response_fingerprints = set()
+        self.fingerprint_presence = set()
         self.calls = 0
 
     def answer(self, question: str, hits: list[dict]) -> str:
@@ -145,9 +146,12 @@ class LocalAnswer:
         if response_model != self.model:
             raise RuntimeError("Answer model identity mismatch or absent")
         fingerprint = result.get("system_fingerprint")
+        if fingerprint is not None and (not isinstance(fingerprint, str) or not fingerprint):
+            raise RuntimeError("Answer model returned invalid fingerprint")
+        self.fingerprint_presence.add(fingerprint is not None)
+        if len(self.fingerprint_presence) > 1:
+            raise RuntimeError("Answer model fingerprint disappeared or appeared mid-run")
         if fingerprint is not None:
-            if not isinstance(fingerprint, str) or not fingerprint:
-                raise RuntimeError("Answer model returned invalid fingerprint")
             self.response_fingerprints.add(fingerprint)
             if len(self.response_fingerprints) > 1:
                 raise RuntimeError("Answer model fingerprint changed mid-run")
@@ -203,20 +207,22 @@ def extractor_runtime_identity(extractor) -> dict:
         raise RuntimeError("Extractor model produced no attested runtime calls")
     models = {x.get("response_model") for x in calls}
     statuses = {x.get("identity_status") for x in calls}
-    digests = {x.get("model_digest") for x in calls if x.get("model_digest")}
-    fingerprints = {x.get("system_fingerprint") for x in calls
-                    if x.get("system_fingerprint")}
-    versions = {x.get("runtime_version") for x in calls
-                if x.get("runtime_version")}
-    if (len(models) != 1 or len(statuses) != 1 or statuses != {"matched"}
-            or len(digests) > 1 or len(fingerprints) > 1 or len(versions) > 1):
+    # Compare *all* observed values, including None. A model digest or
+    # fingerprint that vanishes halfway through must not be hidden by a
+    # set comprehension that silently discards missing evidence.
+    digests = {x.get("model_digest") for x in calls}
+    fingerprints = {x.get("system_fingerprint") for x in calls}
+    versions = {x.get("runtime_version") for x in calls}
+    if (len(models) != 1 or None in models or len(statuses) != 1
+            or statuses != {"matched"} or len(digests) != 1
+            or len(fingerprints) != 1 or len(versions) != 1):
         raise RuntimeError("Extractor identity changed or did not match across capture")
     return {
         "verified": True,
         "response_model": next(iter(models)),
-        "model_digest": next(iter(digests), None),
-        "system_fingerprint": next(iter(fingerprints), None),
-        "runtime_version": next(iter(versions), None),
+        "model_digest": next(iter(digests)),
+        "system_fingerprint": next(iter(fingerprints)),
+        "runtime_version": next(iter(versions)),
         "calls": len(calls),
         "cryptographic_weight_identity": bool(evidence.get("cryptographic_weight_identity", False)),
     }

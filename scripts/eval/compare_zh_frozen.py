@@ -5,6 +5,27 @@ import json
 from pathlib import Path
 
 
+def require_context_window_pair(a: dict, b: dict) -> None:
+    """Refuse a 1-vs-3 experiment if a second uncontrolled variable changed."""
+    config_a = a.get("configuration")
+    config_b = b.get("configuration")
+    if not isinstance(config_a, dict) or not isinstance(config_b, dict):
+        raise ValueError("Both reports need complete experiment configurations")
+    if config_a.get("context_enabled") is not True or config_b.get("context_enabled") is not True:
+        raise ValueError("Context-window comparison requires enabled context on both sides")
+    windows = (config_a.get("context_window"), config_b.get("context_window"))
+    if windows != (1, 3):
+        raise ValueError("Context-window comparison requires window 1 then window 3")
+    for key in ("extractor", "aliases_enabled", "answer_model"):
+        if config_a.get(key) != config_b.get(key):
+            raise ValueError("Context-window experiment differs in " + key)
+    # Additional pinned runtime metadata is allowed, but only identical values.
+    ignore = {"name", "context_window"}
+    if ({k:v for k,v in config_a.items() if k not in ignore} !=
+            {k:v for k,v in config_b.items() if k not in ignore}):
+        raise ValueError("Context-window experiment changed another configuration field")
+
+
 def compare(a: dict, b: dict) -> dict:
     if a.get("dataset_sha256") != b.get("dataset_sha256") or a.get("cases") != b.get("cases"):
         raise ValueError("Cannot compare reports from different frozen datasets")
@@ -39,9 +60,13 @@ def main():
     p.add_argument("--a",required=True,type=Path)
     p.add_argument("--b",required=True,type=Path)
     p.add_argument("--out",required=True,type=Path)
+    p.add_argument("--strict-context-pair",action="store_true",
+                   help="Require same model/settings, with only window 1 vs 3 changed")
     args=p.parse_args()
     a=json.loads(args.a.read_text(encoding="utf-8"))
     b=json.loads(args.b.read_text(encoding="utf-8"))
+    if args.strict_context_pair:
+        require_context_window_pair(a,b)
     result=compare(a,b)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")

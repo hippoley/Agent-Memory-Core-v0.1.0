@@ -41,3 +41,43 @@ The local model IDs, quantization hashes, actual hardware measurements and final
 - PR #65 corrects a prior single-turn context limitation but has to honor the shared fact contract / API max **three prior turns**.
 - Code-level CI success establishes software regression health only.
 - **M1 real-model extraction + HTTP four-stage execution remains BLOCKED** until an actual local model runtime and independently adjudicated evaluation corpus are available.
+
+## Executable Story-1 runbook (requires actual local services)
+
+Preconditions: `pip install -e .`, disposable loopback AMC API with an empty dedicated tenant, a pre-installed loopback local extractor and answer model configured with existing AMC provider environment variables, and a fixed search alias configuration. No production credentials or real user data.
+
+```bash
+python scripts/eval/score_zh_frozen.py --manifest
+# Set your own real local API URL, model and key; do not use cloud endpoints.
+# Use a different freshly provisioned tenant for EACH run.
+python scripts/eval/capture_zh_frozen_http.py \
+  --base-url http://127.0.0.1:8767 --key "$MEMORY_API_KEY" \
+  --extractor model --context --context-window 1 --name model-context-1 \
+  --answer-url http://127.0.0.1:1234/v1/chat/completions \
+  --answer-model "$LOCAL_ANSWER_MODEL" --ack-disposable \
+  --predictions /tmp/m1-ctx1.predictions.json \
+  --report /tmp/m1-ctx1.report.json \
+  --diagnostics /tmp/m1-ctx1.failures.json
+# Re-provision an equally configured, never-before-used evaluation tenant before context-3.
+python scripts/eval/capture_zh_frozen_http.py \
+  --base-url http://127.0.0.1:8767 --key "$MEMORY_API_KEY" \
+  --extractor model --context --context-window 3 --name model-context-3 \
+  --answer-url http://127.0.0.1:1234/v1/chat/completions \
+  --answer-model "$LOCAL_ANSWER_MODEL" --ack-disposable \
+  --predictions /tmp/m1-ctx3.predictions.json \
+  --report /tmp/m1-ctx3.report.json \
+  --diagnostics /tmp/m1-ctx3.failures.json
+python scripts/eval/compare_zh_frozen.py \
+  --a /tmp/m1-ctx1.report.json --b /tmp/m1-ctx3.report.json \
+  --strict-context-pair --out /tmp/m1-paired-delta.json
+```
+
+The `--answer-url` is only an example local loopback API and must be replaced with the actual working endpoint. Real model identity, digest, quantization and hardware remain operator-supplied and must be independently recorded; the optional diagnostic output is explanatory, **not** a real-model provenance attestation. The runner refuses nonempty / previously-used tenant histories. If the model or the 200 human-adjudicated multi-turn examples are unavailable, Story 1 must remain **BLOCKED**, even when unit and database CI pass.
+
+A saved prediction file can be re-diagnosed without another costly model run:
+
+```bash
+python scripts/eval/diagnose_zh_frozen.py \
+  --predictions /tmp/m1-ctx1.predictions.json \
+  --require-real-capture --out /tmp/m1-ctx1.rediagnosed.json
+```

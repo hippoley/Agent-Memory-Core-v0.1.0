@@ -106,3 +106,27 @@ Keep **dataset, PostgreSQL schema/image, search limit, model parameters and scor
 ## Release gate
 
 The milestone is **not** '12 cases passed in CI'. It is a new signed-off evaluation report with real captures from a fresh tenant and a fixed local model, a frozen gold hash, per-case errors, reproducible commands, and at least one independent rerun on a clean instance.
+
+
+## M1 context-window capture correction (2026-11-23)
+
+The full `capture_zh_frozen_http.py` runner now sends a bounded, **ordered
+history of prior turns** to model extractors that implement
+`extract_with_context(text, context_turns)`. Earlier captures used only
+the immediately preceding turn even when `--context` was enabled; those
+runs should be interpreted as **one-turn-context** experiments, not
+general multi-turn memory benchmarks.
+
+Use `--context --context-window 4` (default window 4, allowed 1–16).
+For `--context` off, no previous utterance is supplied and metadata
+records `context_window: 0`. The configured window is included in the
+prediction artifact to prevent unfair comparisons. This is bounded by
+number of turns, not guaranteed token count, so do not use untrusted
+oversized conversations without the model's separate payload limits.
+
+The frozen 12-story labels are unchanged. This corrects evaluation
+fidelity, **not memory quality**. Real model scores remain unmeasured
+until a fixed local extractor and answer model have been run against a
+clean disposable HTTP tenant. The 200-example one-utterance rule corpus
+remains a separate extraction-only diagnostic, not a full end-to-end
+quality result.

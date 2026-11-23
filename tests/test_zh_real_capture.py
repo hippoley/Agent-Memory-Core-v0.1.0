@@ -173,3 +173,19 @@ def test_context_disabled_cannot_see_prior_utterances():
     ext=Extractor()
     assert module.extract(ext,"第二句",["第一句"],context=False)==[]
     assert ext.calls==["第二句"]
+
+
+@pytest.mark.parametrize("prior",[
+    ["正常上下文"]*4,
+    ["有效", ""],
+    ["有效", " "*10],
+    ["有效", "a"*2001],
+    ["有效", 123],
+])
+def test_capture_rejects_invalid_history_before_model_invocation(prior):
+    class NeverCall:
+        def __call__(self, text): raise AssertionError("Extractor must not run")
+        def extract_with_context(self, text, turns):
+            raise AssertionError("Extractor must not run")
+    with pytest.raises(ValueError,match="context_turns"):
+        module.extract(NeverCall(),"当前对话",prior,context=True)

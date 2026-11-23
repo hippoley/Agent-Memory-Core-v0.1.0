@@ -157,12 +157,19 @@ def make_extractor(kind: str):
     return extractor, str(settings["model"])
 
 
-def extract(extractor, text: str, prior: str | None, *, context: bool) -> list[dict]:
-    if context and prior:
+def extract(extractor, text: str, prior: str | list[str] | None, *, context: bool) -> list[dict]:
+    # Retain backward compatibility for a single prior utterance while
+    # allowing truly multi-turn corrections and references in the capture.
+    context_turns = [prior] if isinstance(prior, str) else (prior or [])
+    if not isinstance(context_turns, list) or any(
+        not isinstance(turn, str) for turn in context_turns
+    ):
+        raise ValueError("context_turns must be an ordered list of strings")
+    if context and context_turns:
         method=getattr(extractor,"extract_with_context",None)
         if not callable(method):
             raise ValueError("This model extractor does not support context_turns; no silent fallback")
-        candidates=method(text,[prior])
+        candidates=method(text,context_turns)
     else:
         candidates=extractor(text)
     if not isinstance(candidates,list) or any(not isinstance(x,dict) for x in candidates):
@@ -171,7 +178,10 @@ def extract(extractor, text: str, prior: str | None, *, context: bool) -> list[d
 
 
 def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
-            extractor, *, context: bool, prefix: str) -> list[dict]:
+            extractor, *, context: bool, prefix: str,
+            context_window: int = 4) -> list[dict]:
+    if isinstance(context_window, bool) or not isinstance(context_window, int) or not 1 <= context_window <= 16:
+        raise ValueError("context_window must be an integer between 1 and 16")
     if memory.current():
         raise RuntimeError("Tenant is not empty. Use a fresh disposable tenant; refusing destructive run.")
     # A previously-used tenant can have zero ACTIVE claims yet retain a full
@@ -187,7 +197,9 @@ def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
         try:
             raw_events=[]
             for i,utterance in enumerate(case["turns"]):
-                prior=case["turns"][i-1] if i else None
+                # Chronological, bounded multi-turn context; never include the
+                # current turn twice or any future/evaluation gold labels.
+                prior=case["turns"][max(0,i-context_window):i] if context else []
                 candidates=extract(extractor,utterance,prior,context=context)
                 raw_events.extend(_candidate_event(x,i) for x in candidates)
                 memory.call("POST", "/v1/memories/process", json={
@@ -240,7 +252,8 @@ def run(args):
             )
         answerer=LocalAnswer(args.answer_url,args.answer_model)
         captured=collect(gold,memory,answerer,extractor,
-                         context=args.context,prefix=run_id)
+                         context=args.context,prefix=run_id,
+                         context_window=args.context_window)
     finally:
         memory.close()
         if answerer is not None:
@@ -249,6 +262,7 @@ def run(args):
     # real outputs exist, and cannot be supplied or silently filled in.
     configuration={"name":args.name,"extractor":extractor_id,
                    "context_enabled":bool(args.context),
+                   "context_window":args.context_window if args.context else 0,
                    "aliases_enabled":bool(args.aliases),
                    "answer_model":args.answer_model}
     artifact={"dataset_sha256":digest,"configuration":configuration,
@@ -270,6 +284,8 @@ def main():
     p.add_argument("--key",default=os.getenv("MEMORY_API_KEY"),required=False)
     p.add_argument("--extractor",choices=("rule","model"),required=True)
     p.add_argument("--context",action="store_true")
+    p.add_argument("--context-window",type=int,default=4,
+                   help="Number of previous turns passed to model extractor (1-16)")
     p.add_argument("--aliases",action="store_true",help="declaration; configure aliases separately on service")
     p.add_argument("--name",required=True)
     p.add_argument("--answer-url",required=True,help="local OpenAI-compatible /chat/completions URL")
@@ -279,6 +295,7 @@ def main():
     p.add_argument("--report",required=True,type=Path)
     a=p.parse_args()
     if not a.key: p.error("--key or MEMORY_API_KEY required")
+    if not 1 <= a.context_window <= 16: p.error("--context-window must be 1-16")
     result=run(a)
     print(json.dumps({k:v for k,v in result.items() if k!="details"},ensure_ascii=False,indent=2))
 

@@ -123,6 +123,8 @@ class LocalAnswer:
             raise ValueError("A real answer model ID is required")
         self.url, self.model = loopback_url(url), model
         self.client = httpx.Client(timeout=120,trust_env=False)
+        self.response_fingerprints = set()
+        self.calls = 0
 
     def answer(self, question: str, hits: list[dict]) -> str:
         facts = [{"subject":h["subject_id"],"predicate":h["predicate"],
@@ -139,10 +141,32 @@ class LocalAnswer:
         })
         resp.raise_for_status()
         result=resp.json()
+        response_model = result.get("model")
+        if response_model != self.model:
+            raise RuntimeError("Answer model identity mismatch or absent")
+        fingerprint = result.get("system_fingerprint")
+        if fingerprint is not None:
+            if not isinstance(fingerprint, str) or not fingerprint:
+                raise RuntimeError("Answer model returned invalid fingerprint")
+            self.response_fingerprints.add(fingerprint)
+            if len(self.response_fingerprints) > 1:
+                raise RuntimeError("Answer model fingerprint changed mid-run")
         content=result["choices"][0]["message"]["content"]
         if not isinstance(content,str):
             raise ValueError("Answer provider returned non-text content")
+        self.calls += 1
         return content.strip()
+
+    def identity_snapshot(self) -> dict:
+        if not self.calls:
+            raise RuntimeError("Answer model was never invoked")
+        return {
+            "verified": True,
+            "response_model": self.model,
+            "system_fingerprint": next(iter(self.response_fingerprints), None),
+            "calls": self.calls,
+            "cryptographic_weight_identity": False,
+        }
 
     def close(self):
         self.client.close()
@@ -304,8 +328,10 @@ def run(args):
     # real outputs exist, and cannot be supplied or silently filled in.
     identity = extractor_runtime_identity(extractor) if args.extractor == "model" else {
         "verified": False, "reason": "rule_extractor_has_no_model_identity"}
+    answer_identity = answerer.identity_snapshot()
     configuration={"name":args.name,"extractor":extractor_id,
                    "extractor_runtime_identity": {k:v for k,v in identity.items() if k != "calls"},
+                   "answer_runtime_identity": {k:v for k,v in answer_identity.items() if k != "calls"},
                    "context_enabled":bool(args.context),
                    "context_window":args.context_window if args.context else 0,
                    "aliases_enabled":bool(args.aliases),
@@ -314,6 +340,7 @@ def run(args):
               "search_attestation":attestation,
               "run_id":run_id,"capture_type":"real_http_and_local_model",
               "extractor_runtime_call_count":identity.get("calls", 0),
+              "answer_runtime_call_count":answer_identity["calls"],
               "cases":captured}
     scorer.validate_predictions(artifact,gold,digest)
     report=scorer.score(gold,{x["id"]:x for x in captured},configuration,digest)

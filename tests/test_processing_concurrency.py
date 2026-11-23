@@ -44,3 +44,49 @@ def test_concurrent_memory_processing_is_atomic_per_tenant_subject_predicate():
                WHERE tenant_id=%s AND claim_id=%s::uuid""",(tenant,claims[0][0])).fetchone()[0]==20
     finally:
         db.close()
+
+
+@pytest.mark.integration
+def test_real_postgres_zh_correction_stale_withdrawal_and_duplicate_replay():
+    """Old-v2 retraction cannot delete newer v3; duplicate replay stays single."""
+    dsn=os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("real PostgreSQL required")
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.processing import MemoryProcessor
+    tenant="memory-write-lifecycle-"+uuid4().hex
+    subject="主卧"
+    predicate="noise_preference"
+    db=PostgresMemory(dsn)
+    try:
+        db.migrate()
+        processor=MemoryProcessor(db)
+        def submit(value,source,operation="UPSERT",expected_value=None):
+            candidate={"subject_id":subject,"predicate":predicate,
+                       "value":value,"operation":operation,"confidence":0.99}
+            if expected_value is not None:
+                candidate["expected_value"]=expected_value
+            return processor.process(tenant_id=tenant,text="主卧记忆改口",
+                                     source_id=source,extractor=lambda _:[candidate])
+        v2=submit({"level":"quiet"},"turn-v2")
+        v3=submit({"level":"normal"},"turn-v3")
+        duplicate=submit({"level":"normal"},"turn-v3")
+        stale=submit({"reason":"old-v2-cancel"},"turn-stale",
+                     operation="RETRACT",expected_value={"level":"quiet"})
+        current=db.recall(tenant_id=tenant,subject_id=subject,predicate=predicate)
+        assert len(v2.created)==1 and len(v3.created)==1
+        assert v3.replaced==v2.created
+        assert duplicate.created==[] and duplicate.duplicates==1
+        assert stale.replaced==[]
+        assert len(current)==1 and current[0]["value"]=={"level":"normal"}
+        assert len(db.list_claims(tenant_id=tenant,subject_id=subject,
+                                  predicate=predicate,include_superseded=True))==2
+        valid=submit({"reason":"explicit-withdrawal"},"turn-v4",
+                     operation="RETRACT",expected_value={"level":"normal"})
+        assert valid.replaced==v3.created
+        assert db.recall(tenant_id=tenant,subject_id=subject,predicate=predicate)==[]
+        all_rows=db.list_claims(tenant_id=tenant,subject_id=subject,
+                                predicate=predicate,include_superseded=True)
+        assert len(all_rows)==2
+    finally:
+        db.close()

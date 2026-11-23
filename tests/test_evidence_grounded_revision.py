@@ -141,3 +141,30 @@ def test_history_replay_does_not_ground_against_current_database():
               "ground_with_memory":True,
               "observed_at":"2026-01-01T00:00:00+00:00"})
     assert response.status_code==422
+
+
+def test_identical_duplicate_evidence_is_deduplicated_without_changing_authority():
+    duplicated = evidence_from_hits([HIT, dict(HIT)])
+    assert duplicated == [HIT]
+    assert guard_retractions([CANDIDATE], duplicated) == [CANDIDATE]
+
+
+def test_conflicting_duplicate_memory_ids_fail_closed_before_any_withdrawal():
+    altered = {**HIT, "value": {"months": 3}}
+    with pytest.raises(ValueError, match="Conflicting canonical evidence"):
+        evidence_from_hits([HIT, altered])
+    # Defense in depth: reject even if a caller bypasses evidence_from_hits.
+    with pytest.raises(ValueError, match="Conflicting canonical evidence"):
+        guard_retractions([CANDIDATE], [HIT, altered])
+    with pytest.raises(ValueError, match="Conflicting canonical evidence"):
+        guard_retractions([CANDIDATE], [altered, HIT])
+
+
+def test_api_rejects_contradictory_retrieval_for_same_memory_id():
+    altered = {**HIT, "value": {"months": 3}}
+    response, memory, search, extractor = run_request([CANDIDATE], [HIT, altered])
+    assert response.status_code == 422
+    assert memory.forgotten == []
+    assert search.closed
+    # The extractor never receives a fabricated or last-write-wins evidence view.
+    assert extractor.seen is None

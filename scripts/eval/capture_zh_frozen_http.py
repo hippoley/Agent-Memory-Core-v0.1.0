@@ -284,6 +284,25 @@ def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
     return output
 
 
+def validate_case_keys(keys: list[str], case_count: int, first_key: str) -> None:
+    if (len(keys) != case_count or not all(keys)
+            or len(keys) != len(set(keys))):
+        raise ValueError("case-keys-file must supply one unique nonempty tenant key per gold story")
+    if keys[0] != first_key:
+        raise ValueError("First case key must match --key for initial search attestation")
+
+
+def validate_isolated_tenant(attestation: dict, reference: dict, seen: set[str]) -> str:
+    tenant_id = attestation.get("tenant_id")
+    if not isinstance(tenant_id, str) or not tenant_id or tenant_id in seen:
+        raise RuntimeError("Each story must use a distinct authenticated tenant_id")
+    for field in ("aliases_enabled", "alias_count", "alias_sha256"):
+        if attestation.get(field) != reference.get(field):
+            raise RuntimeError("Evaluation tenants have inconsistent search configurations")
+    seen.add(tenant_id)
+    return tenant_id
+
+
 def run(args):
     if not args.ack_disposable:
         raise ValueError("Must explicitly pass --ack-disposable")
@@ -321,26 +340,14 @@ def run(args):
             # One dedicated credential/tenant per story. Shared tenancy with
             # soft-forgotten history is NOT independent experimental isolation.
             keys = [line.strip() for line in args.case_keys_file.read_text(encoding="utf-8").splitlines()]
-            if (len(keys) != len(gold) or not all(keys)
-                    or len(keys) != len(set(keys))):
-                raise ValueError("case-keys-file must supply one unique nonempty tenant key per gold story")
-            if keys[0] != args.key:
-                raise ValueError("First case key must match --key for the initial search attestation")
+            validate_case_keys(keys, len(gold), args.key)
             captured = []
             seen_tenants = set()
-            config_fields = ("aliases_enabled", "alias_count", "alias_sha256")
             for case, key in zip(gold, keys):
                 case_memory = MemoryHTTP(args.base_url, key)
                 try:
                     case_attestation = case_memory.call("GET", "/v1/evaluation/search-config")
-                    tenant_id = case_attestation.get("tenant_id")
-                    if (not isinstance(tenant_id, str) or not tenant_id
-                            or tenant_id in seen_tenants):
-                        raise RuntimeError("Each story must use a distinct authenticated tenant_id")
-                    seen_tenants.add(tenant_id)
-                    if any(case_attestation.get(field) != attestation.get(field)
-                           for field in config_fields):
-                        raise RuntimeError("Evaluation tenants have inconsistent search configurations")
+                    validate_isolated_tenant(case_attestation, attestation, seen_tenants)
                     captured.extend(collect(
                         [case], case_memory, answerer, extractor,
                         context=args.context, prefix=run_id,

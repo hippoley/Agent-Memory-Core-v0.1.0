@@ -46,6 +46,13 @@ def _candidate_event(candidate: dict, turn: int) -> dict:
     operation = candidate.get("operation", "UPSERT")
     if operation not in {"UPSERT", "RETRACT"}:
         raise ValueError("Unknown candidate operation")
+    # The frozen RETRACT gold records the OLD canonical value being withdrawn.
+    # The new candidate's value may only describe a reason. Score a retraction
+    # against its explicit expected_value, never a reason or a guessed value.
+    # If no valid expected_value was supplied, preserve the raw candidate
+    # value; this must not be mistaken for a grounded withdrawal.
+    if operation == "RETRACT" and isinstance(candidate.get("expected_value"), dict):
+        value = candidate["expected_value"]
     return {"turn": turn, "subject_id": subject, "predicate": pred,
             "value": value, "operation": operation}
 

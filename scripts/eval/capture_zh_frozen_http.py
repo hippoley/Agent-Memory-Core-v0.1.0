@@ -276,6 +276,18 @@ def run(args):
     args.predictions.write_text(json.dumps(artifact,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     args.report.parent.mkdir(parents=True,exist_ok=True)
     args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    if args.diagnostics is not None:
+        diag_spec=spec_from_file_location("zh_eval_diagnostics",ROOT/"scripts/eval/diagnose_zh_frozen.py")
+        diag_mod=module_from_spec(diag_spec)
+        diag_spec.loader.exec_module(diag_mod)
+        diagnosed=diag_mod.diagnose(gold,{x["id"]:x for x in captured})
+        diagnosed.update({"dataset_sha256":digest,
+                          "configuration":configuration,
+                          "capture_type":"real_http_and_local_model"})
+        args.diagnostics.parent.mkdir(parents=True,exist_ok=True)
+        args.diagnostics.write_text(
+            json.dumps(diagnosed,ensure_ascii=False,indent=2)+"\n",
+            encoding="utf-8")
     return report
 
 
@@ -294,6 +306,7 @@ def main():
     p.add_argument("--ack-disposable",action="store_true")
     p.add_argument("--predictions",required=True,type=Path)
     p.add_argument("--report",required=True,type=Path)
+    p.add_argument("--diagnostics",type=Path,help="Write per-case four-stage errors after real HTTP capture")
     a=p.parse_args()
     if not a.key: p.error("--key or MEMORY_API_KEY required")
     if not 1 <= a.context_window <= 3: p.error("--context-window must be 1-3")

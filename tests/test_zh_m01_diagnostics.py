@@ -86,7 +86,14 @@ def test_context_pair_same_models_and_only_window_changed():
     a = {"configuration": {"name": "w1", "extractor": "qwen-local",
                            "context_enabled": True, "context_window": 1,
                            "aliases_enabled": False, "answer_model": "qwen-answer",
-                           "model_digest": "sha256-pinned"}}
+                           "model_digest": "sha256-pinned",
+                           "extractor_runtime_identity": {
+                               "verified": True,
+                               "response_model":"qwen-local",
+                               "model_digest":"sha256-pinned",
+                               "system_fingerprint":None,
+                               "runtime_version":"local-version",
+                               "cryptographic_weight_identity":False}}}
     b = deepcopy(a)
     b["configuration"].update({"name": "w3", "context_window": 3})
     comparator.require_context_window_pair(a, b)
@@ -104,7 +111,9 @@ def test_context_pair_same_models_and_only_window_changed():
 def test_context_pair_rejects_incorrect_or_incomparable_windows(context_a, context_b):
     a = {"configuration": {"name": "a", "extractor": "model", "answer_model": "answer",
                            "aliases_enabled": False, "context_enabled": True,
-                           "context_window": context_a}}
+                           "context_window": context_a,
+                           "extractor_runtime_identity": {
+                               "verified":True,"response_model":"model"}}}
     b = deepcopy(a)
     b["configuration"].update({"name": "b", "context_window": context_b})
     with pytest.raises(ValueError, match="window"):
@@ -119,3 +128,15 @@ def test_fixture_cannot_pass_real_capture_gate(tmp_path):
     with pytest.raises(ValueError, match="Real capture"):
         # Call the very same strict attestation predicate as the CLI gate.
         diagnostics.require_real_capture(payload)
+
+
+def test_strict_context_pair_rejects_unverified_adapter_even_if_names_match():
+    a = {"configuration":{
+        "name":"w1","extractor":"model","answer_model":"answer",
+        "aliases_enabled":False,"context_enabled":True,"context_window":1,
+        "extractor_runtime_identity":{"verified":False,"reason":"unattested"},
+    }}
+    b = deepcopy(a)
+    b["configuration"].update({"name":"w3","context_window":3})
+    with pytest.raises(ValueError,match="runtime identity"):
+        comparator.require_context_window_pair(a,b)

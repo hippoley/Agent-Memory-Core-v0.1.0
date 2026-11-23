@@ -152,3 +152,105 @@ def test_subject_names_are_registered_once_and_reused():
     again = resolve("t1", "my car")
     assert again["entity_id"] == first["entity_id"]
     assert len(core.upserts) == 1
+
+
+def test_no_memory_empty_candidates_never_create_canonical_facts():
+    """A correct NO_MEMORY response is an empty candidate list, not a fake fact."""
+    store=FakeStore()
+    report=MemoryProcessor(store).process(
+        tenant_id="home", text="你好，今天天气怎么样？",
+        source_id="turn-no-memory",
+        extractor=lambda _: [])
+    assert report.created==[] and report.replaced==[]
+    assert report.duplicates==0 and report.rejected==0
+    assert report.relations==[] and store.rows==[]
+
+
+def test_ambiguous_subject_cannot_be_resolved_by_guessing():
+    store=FakeStore()
+    processor=MemoryProcessor(store,entity_resolver=lambda tenant,name: None)
+    report=processor.process(
+        tenant_id="home", text="那里温度调整到25度",
+        source_id="turn-ambiguous",
+        extractor=lambda _: [{"subject_name":"那里",
+                              "predicate":"temperature_preference",
+                              "value":{"celsius":25},"confidence":0.9}])
+    assert report.ambiguous==1 and report.rejected==1
+    assert report.created==[] and store.rows==[]
+
+
+def test_upsert_is_idempotent_in_canonical_state_and_versions_conflicting_value():
+    store=FakeStore()
+    processor=MemoryProcessor(store)
+    def write(value,source):
+        return processor.process(
+            tenant_id="home", text="主卧晚上保持安静",
+            source_id=source,
+            extractor=lambda _: [{"subject_id":"主卧",
+                                  "predicate":"noise_preference",
+                                  "value":{"level":value},
+                                  "operation":"UPSERT",
+                                  "confidence":0.95}])
+    first=write("quiet","conversation:1")
+    duplicated=write("quiet","conversation:1")
+    corrected=write("normal","conversation:2")
+    assert len(first.created)==1
+    assert duplicated.duplicates==1 and duplicated.created==[]
+    assert len(corrected.created)==1 and corrected.replaced==first.created
+    active=store.recall(
+        tenant_id="home", subject_id="主卧", predicate="noise_preference",
+        valid_at=datetime.now(timezone.utc),known_at=datetime.now(timezone.utc))
+    assert len(active)==1 and active[0]["value"]=={"level":"normal"}
+
+
+def test_retract_requires_supported_canonical_compare_and_never_broad_deletes():
+    """A store without reliable withdrawal capability must reject RETRACT."""
+    store=FakeStore()
+    processor=MemoryProcessor(store)
+    first=processor.process(
+        tenant_id="home", text="主卧要保持安静", source_id="old",
+        extractor=lambda _: [{"subject_id":"主卧",
+                              "predicate":"noise_preference",
+                              "value":{"level":"quiet"}}])
+    withdrawal=processor.process(
+        tenant_id="home", text="之前的偏好作废", source_id="new",
+        extractor=lambda _: [{"subject_id":"主卧",
+                              "predicate":"noise_preference",
+                              "value":{"reason":"corrected"},
+                              "operation":"RETRACT",
+                              "expected_value":{"level":"quiet"}}])
+    assert withdrawal.rejected==1 and withdrawal.replaced==[]
+    active=store.recall(
+        tenant_id="home", subject_id="主卧", predicate="noise_preference",
+        valid_at=datetime.now(timezone.utc),known_at=datetime.now(timezone.utc))
+    assert len(first.created)==1 and len(active)==1
+
+
+def test_retract_rejects_missing_or_unverifiable_expected_value():
+    class GuardStore(FakeStore):
+        def __init__(self):
+            super().__init__()
+            self.withdraw_calls=[]
+        def forget_many(self, *, tenant_id, subject_id, predicate, expected_value=None):
+            self.withdraw_calls.append(expected_value)
+            if expected_value != {"level":"quiet"}:
+                raise ValueError("canonical compare failed")
+            return ["old-id"]
+    store=GuardStore()
+    processor=MemoryProcessor(store)
+    def retract(expected):
+        return processor.process(
+            tenant_id="home", text="这项偏好需要撤回",
+            source_id="withdrawal",
+            extractor=lambda _: [{"subject_id":"主卧",
+                                  "predicate":"noise_preference",
+                                  "value":{"reason":"outdated"},
+                                  "operation":"RETRACT",
+                                  "expected_value":expected}])
+    stale=retract({"level":"loud"})
+    malformed=retract("not-a-dict")
+    good=retract({"level":"quiet"})
+    assert stale.rejected==1 and stale.replaced==[]
+    assert malformed.rejected==1 and malformed.replaced==[]
+    assert good.replaced==["old-id"]
+    assert store.withdraw_calls==[{"level":"loud"},{"level":"quiet"}]

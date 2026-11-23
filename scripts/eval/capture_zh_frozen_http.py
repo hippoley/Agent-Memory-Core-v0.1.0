@@ -164,6 +164,40 @@ def make_extractor(kind: str):
     return extractor, str(settings["model"])
 
 
+def extractor_runtime_identity(extractor) -> dict:
+    """Record real adapter response evidence, not operator-declared model names.
+
+    This is NOT a cryptographic attestation for OpenAI-compatible backends.
+    Reject any run where the runtime changes identity halfway through.
+    """
+    snapshot = getattr(extractor, "attestation_snapshot", None)
+    if not callable(snapshot):
+        return {"verified": False, "reason": "adapter_has_no_runtime_attestation"}
+    evidence = snapshot()
+    calls = evidence.get("calls", [])
+    if not calls:
+        raise RuntimeError("Extractor model produced no attested runtime calls")
+    models = {x.get("response_model") for x in calls}
+    statuses = {x.get("identity_status") for x in calls}
+    digests = {x.get("model_digest") for x in calls if x.get("model_digest")}
+    fingerprints = {x.get("system_fingerprint") for x in calls
+                    if x.get("system_fingerprint")}
+    versions = {x.get("runtime_version") for x in calls
+                if x.get("runtime_version")}
+    if (len(models) != 1 or len(statuses) != 1 or statuses != {"matched"}
+            or len(digests) > 1 or len(fingerprints) > 1 or len(versions) > 1):
+        raise RuntimeError("Extractor identity changed or did not match across capture")
+    return {
+        "verified": True,
+        "response_model": next(iter(models)),
+        "model_digest": next(iter(digests), None),
+        "system_fingerprint": next(iter(fingerprints), None),
+        "runtime_version": next(iter(versions), None),
+        "calls": len(calls),
+        "cryptographic_weight_identity": bool(evidence.get("cryptographic_weight_identity", False)),
+    }
+
+
 def extract(extractor, text: str, prior: str | list[str] | None, *, context: bool) -> list[dict]:
     # Retain backward compatibility for a single prior utterance while
     # allowing truly multi-turn corrections and references in the capture.
@@ -268,7 +302,10 @@ def run(args):
             answerer.close()
     # No gold values are used for capture. Exact score is computed *after* all
     # real outputs exist, and cannot be supplied or silently filled in.
+    identity = extractor_runtime_identity(extractor) if args.extractor == "model" else {
+        "verified": False, "reason": "rule_extractor_has_no_model_identity"}
     configuration={"name":args.name,"extractor":extractor_id,
+                   "extractor_runtime_identity": {k:v for k,v in identity.items() if k != "calls"},
                    "context_enabled":bool(args.context),
                    "context_window":args.context_window if args.context else 0,
                    "aliases_enabled":bool(args.aliases),
@@ -276,6 +313,7 @@ def run(args):
     artifact={"dataset_sha256":digest,"configuration":configuration,
               "search_attestation":attestation,
               "run_id":run_id,"capture_type":"real_http_and_local_model",
+              "extractor_runtime_call_count":identity.get("calls", 0),
               "cases":captured}
     scorer.validate_predictions(artifact,gold,digest)
     report=scorer.score(gold,{x["id"]:x for x in captured},configuration,digest)

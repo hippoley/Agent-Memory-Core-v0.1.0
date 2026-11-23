@@ -161,10 +161,11 @@ def extract(extractor, text: str, prior: str | list[str] | None, *, context: boo
     # Retain backward compatibility for a single prior utterance while
     # allowing truly multi-turn corrections and references in the capture.
     context_turns = [prior] if isinstance(prior, str) else (prior or [])
-    if not isinstance(context_turns, list) or any(
-        not isinstance(turn, str) for turn in context_turns
+    if not isinstance(context_turns, list) or len(context_turns) > 3 or any(
+        not isinstance(turn, str) or not turn.strip() or len(turn) > 2000
+        for turn in context_turns
     ):
-        raise ValueError("context_turns must be an ordered list of strings")
+        raise ValueError("context_turns must have <=3 nonempty utterances of <=2000 chars")
     if context and context_turns:
         method=getattr(extractor,"extract_with_context",None)
         if not callable(method):
@@ -285,7 +286,7 @@ def main():
     p.add_argument("--extractor",choices=("rule","model"),required=True)
     p.add_argument("--context",action="store_true")
     p.add_argument("--context-window",type=int,default=3,
-                   help="Number of previous turns passed to model extractor (1-16)")
+                   help="Previous utterances for model extractor (1-3; shared API contract)")
     p.add_argument("--aliases",action="store_true",help="declaration; configure aliases separately on service")
     p.add_argument("--name",required=True)
     p.add_argument("--answer-url",required=True,help="local OpenAI-compatible /chat/completions URL")

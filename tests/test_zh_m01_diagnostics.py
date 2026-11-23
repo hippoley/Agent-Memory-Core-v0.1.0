@@ -87,6 +87,7 @@ def test_context_pair_same_models_and_only_window_changed():
                            "context_enabled": True, "context_window": 1,
                            "aliases_enabled": False, "answer_model": "qwen-answer",
                            "model_digest": "sha256-pinned",
+                           "case_isolation": "fresh_tenant_per_story",
                            "extractor_runtime_identity": {
                                "verified": True,
                                "response_model":"qwen-local",
@@ -117,6 +118,7 @@ def test_context_pair_rejects_incorrect_or_incomparable_windows(context_a, conte
     a = {"configuration": {"name": "a", "extractor": "model", "answer_model": "answer",
                            "aliases_enabled": False, "context_enabled": True,
                            "context_window": context_a,
+                           "case_isolation": "fresh_tenant_per_story",
                            "extractor_runtime_identity": {
                                "verified":True,"response_model":"model"},
                            "answer_runtime_identity": {
@@ -153,6 +155,7 @@ def test_strict_context_pair_rejects_answer_runtime_swap():
     a = {"configuration":{
         "name":"w1", "extractor":"model", "answer_model":"qwen-answer",
         "aliases_enabled":False, "context_enabled":True, "context_window":1,
+        "case_isolation":"fresh_tenant_per_story",
         "extractor_runtime_identity":{"verified":True,"response_model":"model"},
         "answer_runtime_identity":{"verified":True,"response_model":"qwen-answer",
                                    "system_fingerprint":"host-v1"},
@@ -177,3 +180,17 @@ def test_strict_real_capture_rejects_shared_tenant_soft_reset():
         diagnostics.require_real_capture(payload)
     payload["configuration"]["case_isolation"] = "fresh_tenant_per_story"
     diagnostics.require_real_capture(payload)
+
+
+def test_strict_window_comparison_rejects_shared_case_history():
+    a = {"configuration":{
+        "name":"one","extractor":"local","answer_model":"answer",
+        "context_enabled":True,"context_window":1,"aliases_enabled":False,
+        "case_isolation":"shared_tenant_soft_reset",
+        "extractor_runtime_identity":{"verified":True,"response_model":"local"},
+        "answer_runtime_identity":{"verified":True,"response_model":"answer"},
+    }}
+    b = deepcopy(a)
+    b["configuration"].update({"name":"three","context_window":3})
+    with pytest.raises(ValueError,match="fresh tenant"):
+        comparator.require_context_window_pair(a,b)

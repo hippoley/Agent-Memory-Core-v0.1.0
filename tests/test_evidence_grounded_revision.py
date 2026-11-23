@@ -195,3 +195,26 @@ def test_distinct_grounded_retractions_are_not_blocked():
               "expected_memory_id": "mem-2", "expected_value": {"months": 2}}
     assert guard_retractions([CANDIDATE, second], [HIT, second_hit]) == [
         CANDIDATE, second]
+
+
+@pytest.mark.parametrize("proposals", [
+    [CANDIDATE, {**CANDIDATE, "operation": "DELETE"}],
+    [{**CANDIDATE, "operation": "DELETE"}, CANDIDATE],
+    [CANDIDATE, {"subject_id": "supplier-7", "predicate": "settlement_period",
+                 "value": {"months": 2}, "operation": "UPSERT"}],
+    [{"subject_id": "supplier-7", "predicate": "settlement_period",
+      "value": {"months": 2}, "operation": "UPSERT"}, CANDIDATE],
+])
+def test_grounded_batch_preflight_fails_before_partial_mutation(proposals):
+    with pytest.raises(ValueError, match="Unsupported grounded|Conflicting UPSERT"):
+        guard_retractions(proposals, [HIT])
+    response, memory, search, _ = run_request(proposals, [HIT])
+    assert response.status_code == 422, response.text
+    assert memory.forgotten == []
+    assert search.closed
+
+
+def test_grounded_batch_preserves_valid_unrelated_upserts():
+    novel = {"subject_id": "rail-signal-7", "predicate": "maintenance_window",
+             "value": {"days": 45}, "operation": "UPSERT", "confidence": 0.9}
+    assert guard_retractions([CANDIDATE, novel], [HIT]) == [CANDIDATE, novel]

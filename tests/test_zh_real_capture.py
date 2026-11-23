@@ -113,3 +113,63 @@ def test_interrupted_model_capture_cleans_its_own_active_claims():
                        memory,None,Extractor(),context=False,prefix="test")
     assert memory.current()==[]
     assert memory.cleanups>=2
+
+
+def test_capture_provides_chronological_bounded_multiturn_context():
+    turns = ["主卧晚上开窗", "冬天不要开", "儿童房绝对不要", "那个房间指主卧", "现在主卧呢"]
+    class ContextExtractor:
+        def __init__(self): self.seen = []
+        def __call__(self, text):
+            self.seen.append((text, []))
+            return [{"subject_id":"主卧","predicate":"window_preference",
+                     "value":{"mode":"conditional"}}]
+        def extract_with_context(self, text, previous):
+            self.seen.append((text, list(previous)))
+            return [{"subject_id":"主卧","predicate":"window_preference",
+                     "value":{"mode":"conditional"}}]
+    class Memory:
+        def current(self): return []
+        def history(self): return []
+        def reset_active(self): pass
+        def call(self,method,path,**kw):
+            if path=="/v1/memories/process":
+                assert len(kw["json"]["candidates"])==1
+                return {"created":[]}
+            if path=="/v1/search": return {"items":[]}
+            raise AssertionError(path)
+    class Answer:
+        def answer(self,question,hits): return "无法确定"
+    extractor=ContextExtractor()
+    records=module.collect(
+        [{"id":"context-4","turns":turns,"query":"主卧什么时候开窗"}],
+        Memory(),Answer(),extractor,context=True,prefix="scope",context_window=3)
+    assert len(records)==1
+    assert extractor.seen==[
+        (turns[0],[]),
+        (turns[1],turns[:1]),
+        (turns[2],turns[:2]),
+        (turns[3],turns[:3]),
+        (turns[4],turns[1:4]),
+    ]
+
+
+def test_capture_rejects_invalid_context_window_before_memory_write():
+    class NeverTouch:
+        def current(self): raise AssertionError("Should not touch DB")
+    for invalid in (0,17,True,-1):
+        with pytest.raises(ValueError,match="context_window"):
+            module.collect([],NeverTouch(),None,None,
+                           context=True,prefix="x",context_window=invalid)
+
+
+def test_context_disabled_cannot_see_prior_utterances():
+    class Extractor:
+        def __init__(self): self.calls=[]
+        def __call__(self,text):
+            self.calls.append(text)
+            return []
+        def extract_with_context(self,text,context_turns):
+            raise AssertionError("No context should be supplied")
+    ext=Extractor()
+    assert module.extract(ext,"第二句",["第一句"],context=False)==[]
+    assert ext.calls==["第二句"]

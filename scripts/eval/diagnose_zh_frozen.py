@@ -85,6 +85,8 @@ def require_real_capture(payload: dict) -> None:
         raise ValueError("Real model identities required; rule/fixture is not a real-model run")
     if not isinstance(payload.get("search_attestation"), dict):
         raise ValueError("Authenticated search attestation is required")
+    if config.get("case_isolation") != "fresh_tenant_per_story":
+        raise ValueError("Strict real-model evidence requires a fresh tenant per story")
 
 
 def main() -> int:

@@ -88,3 +88,19 @@ python scripts/eval/diagnose_zh_frozen.py \
 - **Runtime identity evidence:** real model runs now include a stable `extractor_runtime_identity` configuration field from the extractor's actual response-attestation API. Capture fails if a response model changes mid-run or returns an identity mismatch. OpenAI-compatible backends may not report a model-weight digest; this is *observed response identity*, **not** proof of cryptographic model-weight equivalence.
 - **Strict window comparison:** `compare_zh_frozen.py --strict-context-pair` requires matching observed runtime identity, in addition to the declared extractor model, answer model, aliases and all other declared settings. Old reports without runtime identity evidence cannot satisfy this stricter release claim.
 - **Unmet pinning:** answer-model weights and independent server executable hashes must still be pinned by the operator. No live model score is claimed merely because runtime identity metadata exists.
+
+## Story isolation correction (2026-11-23)
+
+A soft-forgotten memory is **not deleted**: historical claims/events may remain. Clearing active facts between stories in a single tenant is useful for quick debugging but is not a scientifically independent evaluation. Genuine release-grade runs should pass `--case-keys-file` and use **one fresh, never-used tenant per story**. Each tenant key is checked against the authenticated `tenant_id` returned by `/v1/evaluation/search-config`; the same tenant behind two keys is rejected, as are differing alias configurations.
+
+Make a secure file (outside the repository) containing exactly one unique API key per frozen story, in the identical order as the gold JSONL. The first line must equal the key supplied as `--key`. The file contains credentials; do not commit it or upload it as an artifact.
+
+```bash
+chmod 600 /secure/path/m1-story-keys.txt
+# Add to BOTH previous capture commands:
+#   --case-keys-file /secure/path/m1-story-keys.txt
+# For the second comparison run, provision a NEW set of tenant keys,
+# retaining the same extractor/answer model and search configuration.
+```
+
+The resulting configuration records `case_isolation=fresh_tenant_per_story`; legacy runs without this flag record `shared_tenant_soft_reset`. The strict `diagnose_zh_frozen.py --require-real-capture` proof gate rejects shared-tenant runs. Model performance statistics remain unmeasured until a real local runtime and actual isolated tenants are provisioned.

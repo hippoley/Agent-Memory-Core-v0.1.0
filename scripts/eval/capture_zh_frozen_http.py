@@ -62,23 +62,42 @@ def _fact(claim: dict) -> dict:
             "predicate": claim["predicate"], "value": claim["value"]}
 
 
+# Frozen home-ZH benchmark's domain vocabulary. This is a conservative
+# evidence selector, NOT the general-purpose AMC semantic retrieval engine.
+# Unknown or multi-predicate questions get no historical status shortcut.
+_QUERY_PREDICATE_HINTS = {
+    "noise_preference": ("静音", "噪音", "声音", "背景音乐"),
+    "temperature_preference": ("温度", "空调", "度数", "几度"),
+    "light_preference": ("灯光", "照明", "亮度"),
+    "network_quality": ("网络", "网速"),
+}
+_LIFECYCLE_QUESTION_HINTS = ("取消", "撤回", "不再", "还在", "还有", "仍然",
+                             "生效", "有效", "是否保留", "是否还")
+
+
 def inactive_history_evidence(question: str, current: list[dict],
                               history: list[dict], hits: list[dict]) -> list[dict]:
-    """Ground negative answers in *actual* inactive canonical versions.
+    """Only expose query-relevant, inactive status from canonical history.
 
-    A miss alone cannot distinguish never-known from explicitly withdrawn.
-    Only include a formerly recorded (now non-current) subject/predicate when
-    its literal subject occurs in the question. Never supply old values as
-    active preferences; do not use benchmark gold labels in this decision.
+    A search miss cannot prove a preference was withdrawn. If the question
+    doesn't clearly ask about lifecycle or identify exactly one supported
+    predicate, abstain from supplying historical status rather than invite
+    the answer LLM to invent a reason or answer about an unrelated attribute.
+    Never use benchmark gold labels or obsolete values for this evidence.
     """
-    if hits:
+    if hits or not any(term in question for term in _LIFECYCLE_QUESTION_HINTS):
         return []
+    matched = [predicate for predicate, terms in _QUERY_PREDICATE_HINTS.items()
+               if any(term in question for term in terms)]
+    if len(matched) != 1:
+        return []
+    wanted = matched[0]
     active = {(x["subject_id"], x["predicate"]) for x in current}
     evidence = {}
     for claim in history:
         subject, predicate = claim.get("subject_id"), claim.get("predicate")
         if (not isinstance(subject, str) or not subject
-                or not isinstance(predicate, str) or not predicate
+                or predicate != wanted
                 or subject not in question
                 or (subject, predicate) in active
                 or not claim.get("superseded_at")):

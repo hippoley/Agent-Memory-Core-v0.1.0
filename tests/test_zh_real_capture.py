@@ -452,3 +452,30 @@ def test_collect_passes_canonical_inactive_status_to_answerer():
                               context=False, prefix="test")
     assert captured[0]["inactive_history_evidence"] == answer.evidence
     assert answer.evidence[0]["status"] == "previously_recorded_but_not_current"
+
+
+def test_inactive_history_never_leaks_unrelated_predicates_or_infers_withdrawal():
+    old_noise = {"subject_id": "次卧", "predicate": "noise_preference",
+                 "value": {"level": "quiet"}, "superseded_at": "2026-11-23T08:00:00Z"}
+    old_temperature = {"subject_id": "次卧", "predicate": "temperature_preference",
+                       "value": {"celsius": 24}, "superseded_at": "2026-11-23T08:00:00Z"}
+    history = [old_noise, old_temperature]
+    select = module.inactive_history_evidence
+    # A generic current-value query must not receive irrelevant obsolete facts.
+    assert select("次卧现在温度多少？", [], history, []) == []
+    # A question about noise gets ONLY noise history; no outdated temperature.
+    assert select("次卧的静音偏好还生效吗？", [], history, []) == [
+        {"subject": "次卧", "predicate": "noise_preference",
+         "status": "previously_recorded_but_not_current"}]
+    assert select("次卧的温度偏好还生效吗？", [], history, []) == [
+        {"subject": "次卧", "predicate": "temperature_preference",
+         "status": "previously_recorded_but_not_current"}]
+    # Unscoped/ambiguous predicates fail closed; a room name alone is not proof.
+    assert select("次卧的偏好取消了吗？", [], history, []) == []
+    assert select("次卧的静音和温度偏好取消了吗？", [], history, []) == []
+    # Historical rows for another room never support this subject.
+    assert select("书房静音偏好还生效吗？", [], history, []) == []
+    # Unsupported open-world predicates remain outside this fixed benchmark gate.
+    old_air = {"subject_id": "次卧", "predicate": "air_quality_preference",
+               "value": {"co2": 900}, "superseded_at": "2026-11-23T08:00:00Z"}
+    assert select("次卧空气质量偏好取消了吗？", [], [old_air], []) == []

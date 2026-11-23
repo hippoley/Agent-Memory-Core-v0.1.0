@@ -214,3 +214,33 @@ def test_capture_ungrounded_retract_never_invents_old_value():
     event = module._candidate_event(candidate,1)
     assert event["value"] == {"reason":"unknown-old-value"}
     assert event["value"] != {"level":"quiet"}
+
+
+def test_runtime_identity_rejects_model_switch_and_unmatched_response():
+    class Extractor:
+        def __init__(self, calls): self.calls=calls
+        def attestation_snapshot(self):
+            return {"calls":self.calls,"cryptographic_weight_identity":False}
+    base={"response_model":"qwen-local","identity_status":"matched",
+          "model_digest":"model-sha","runtime_version":"0.12"}
+    identity=module.extractor_runtime_identity(Extractor([base,dict(base)]))
+    assert identity["verified"] is True
+    assert identity["model_digest"]=="model-sha"
+    assert identity["calls"]==2
+    assert identity["cryptographic_weight_identity"] is False
+    for bad in (
+        [base,{**base,"response_model":"other"}],
+        [base,{**base,"model_digest":"changed"}],
+        [base,{**base,"identity_status":"mismatch"}],
+    ):
+        with pytest.raises(RuntimeError,match="identity"):
+            module.extractor_runtime_identity(Extractor(bad))
+
+
+def test_runtime_identity_distinguishes_unattested_adapter_from_real_identity():
+    assert module.extractor_runtime_identity(lambda text: []) == {
+        "verified":False,"reason":"adapter_has_no_runtime_attestation"}
+    class NoCalls:
+        def attestation_snapshot(self): return {"calls":[]}
+    with pytest.raises(RuntimeError,match="no attested"):
+        module.extractor_runtime_identity(NoCalls())

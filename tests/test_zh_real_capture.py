@@ -189,3 +189,28 @@ def test_capture_rejects_invalid_history_before_model_invocation(prior):
             raise AssertionError("Extractor must not run")
     with pytest.raises(ValueError,match="context_turns"):
         module.extract(NeverCall(),"当前对话",prior,context=True)
+
+
+def test_capture_retract_scores_actual_expected_old_value_not_reason():
+    candidate = {
+        "subject_id":"次卧", "predicate":"noise_preference",
+        "operation":"RETRACT", "value":{"reason":"explicit-withdrawal"},
+        "expected_value":{"level":"quiet"},
+    }
+    event = module._candidate_event(candidate,1)
+    assert event == {"turn":1,"subject_id":"次卧","predicate":"noise_preference",
+                     "operation":"RETRACT","value":{"level":"quiet"}}
+    # Preserve the original model candidate; the API still receives its reason
+    # and its compare-and-withdraw precondition, not an overwritten candidate.
+    assert candidate["value"] == {"reason":"explicit-withdrawal"}
+    assert candidate["expected_value"] == {"level":"quiet"}
+
+
+def test_capture_ungrounded_retract_never_invents_old_value():
+    candidate = {
+        "subject_id":"次卧", "predicate":"noise_preference",
+        "operation":"RETRACT", "value":{"reason":"unknown-old-value"},
+    }
+    event = module._candidate_event(candidate,1)
+    assert event["value"] == {"reason":"unknown-old-value"}
+    assert event["value"] != {"level":"quiet"}

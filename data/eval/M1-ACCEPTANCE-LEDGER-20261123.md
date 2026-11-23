@@ -81,3 +81,10 @@ python scripts/eval/diagnose_zh_frozen.py \
   --predictions /tmp/m1-ctx1.predictions.json \
   --require-real-capture --out /tmp/m1-ctx1.rediagnosed.json
 ```
+
+## M01 extra integrity repairs (2026-11-23)
+
+- **RETRACT scoring semantics:** the capture evaluates `expected_value` (old canonical fact) when present instead of erroneously treating a generic withdrawal reason as the fact being retracted. The original model candidate remains unchanged in the HTTP request; the score still penalizes retractions without a grounded old value.
+- **Runtime identity evidence:** real model runs now include a stable `extractor_runtime_identity` configuration field from the extractor's actual response-attestation API. Capture fails if a response model changes mid-run or returns an identity mismatch. OpenAI-compatible backends may not report a model-weight digest; this is *observed response identity*, **not** proof of cryptographic model-weight equivalence.
+- **Strict window comparison:** `compare_zh_frozen.py --strict-context-pair` requires matching observed runtime identity, in addition to the declared extractor model, answer model, aliases and all other declared settings. Old reports without runtime identity evidence cannot satisfy this stricter release claim.
+- **Unmet pinning:** answer-model weights and independent server executable hashes must still be pinned by the operator. No live model score is claimed merely because runtime identity metadata exists.

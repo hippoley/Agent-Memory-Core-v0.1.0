@@ -289,3 +289,31 @@ def test_answer_model_runtime_rejects_missing_response_model():
         answer.answer("温度多少",[])
     with pytest.raises(RuntimeError,match="never invoked"):
         answer.identity_snapshot()
+
+
+def test_strict_case_keys_require_distinct_keys_per_story():
+    module.validate_case_keys(["key-one", "key-two"], 2, "key-one")
+    for keys,n,first in (
+        (["key-one"],2,"key-one"),
+        (["key-one","key-one"],2,"key-one"),
+        (["key-one",""],2,"key-one"),
+        (["key-one","key-two"],2,"wrong-first"),
+    ):
+        with pytest.raises(ValueError):
+            module.validate_case_keys(keys,n,first)
+
+
+def test_strict_case_isolation_checks_actual_tenants_not_just_distinct_keys():
+    base = {"tenant_id":"tenant-a","aliases_enabled":True,
+            "alias_count":1,"alias_sha256":"a"*64}
+    seen=set()
+    assert module.validate_isolated_tenant(base,base,seen)=="tenant-a"
+    assert seen=={"tenant-a"}
+    with pytest.raises(RuntimeError,match="distinct authenticated tenant"):
+        module.validate_isolated_tenant(base,base,seen)
+    other={**base,"tenant_id":"tenant-b"}
+    assert module.validate_isolated_tenant(other,base,seen)=="tenant-b"
+    invalid={**base,"tenant_id":"tenant-c","alias_sha256":"b"*64}
+    with pytest.raises(RuntimeError,match="inconsistent search"):
+        module.validate_isolated_tenant(invalid,base,seen)
+    assert "tenant-c" not in seen

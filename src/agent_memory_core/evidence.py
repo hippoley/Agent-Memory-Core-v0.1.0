@@ -13,6 +13,7 @@ def evidence_from_hits(hits, *, limit: int = 8) -> list[dict]:
     if not 1 <= limit <= 20:
         raise ValueError("Evidence limit out of range")
     result = []
+    seen = {}
     for hit in hits[:limit]:
         if isinstance(hit, dict):
             memory_id = hit.get("memory_id") or hit.get("id")
@@ -29,10 +30,16 @@ def evidence_from_hits(hits, *, limit: int = 8) -> list[dict]:
                 or not isinstance(predicate, str) or not predicate
                 or not isinstance(value, dict)):
             raise ValueError("Invalid canonical evidence")
-        result.append({
-            "memory_id": memory_id, "subject_id": subject,
-            "predicate": predicate, "value": value
-        })
+        row = {"memory_id": memory_id, "subject_id": subject,
+               "predicate": predicate, "value": value}
+        previous = seen.get(memory_id)
+        if previous is not None:
+            if json.dumps(previous, sort_keys=True, ensure_ascii=False, allow_nan=False) != json.dumps(
+                    row, sort_keys=True, ensure_ascii=False, allow_nan=False):
+                raise ValueError("Conflicting canonical evidence for the same memory_id")
+            continue
+        seen[memory_id] = row
+        result.append(row)
     return result
 
 
@@ -46,7 +53,15 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
     """
     if not isinstance(candidates, list):
         raise ValueError("Extractor must return a candidate list")
-    by_id = {e["memory_id"]: e for e in evidence}
+    by_id = {}
+    for item in evidence:
+        if not isinstance(item, dict) or not isinstance(item.get("memory_id"), str):
+            raise ValueError("Invalid canonical withdrawal evidence")
+        memory_id = item["memory_id"]
+        previous = by_id.get(memory_id)
+        if previous is not None and previous != item:
+            raise ValueError("Conflicting canonical evidence for the same memory_id")
+        by_id[memory_id] = item
     result = []
     for candidate in candidates:
         if not isinstance(candidate, dict):

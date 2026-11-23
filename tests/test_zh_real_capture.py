@@ -244,3 +244,48 @@ def test_runtime_identity_distinguishes_unattested_adapter_from_real_identity():
         def attestation_snapshot(self): return {"calls":[]}
     with pytest.raises(RuntimeError,match="no attested"):
         module.extractor_runtime_identity(NoCalls())
+
+
+def test_answer_model_runtime_refuses_mismatched_or_changed_fingerprint():
+    class Response:
+        def __init__(self,model,fingerprint=None):
+            self.model,self.fingerprint=model,fingerprint
+        def raise_for_status(self): pass
+        def json(self):
+            return {"model":self.model, "system_fingerprint":self.fingerprint,
+                    "choices":[{"message":{"content":"无法确定"}}]}
+    class Client:
+        def __init__(self,items):self.items=iter(items)
+        def post(self,*args,**kwargs):return next(self.items)
+        def close(self):pass
+    answer=module.LocalAnswer("http://127.0.0.1:1234/v1/chat/completions","answer-qwen")
+    answer.client.close()
+    answer.client=Client([Response("answer-qwen","same"),Response("answer-qwen","same")])
+    assert answer.answer("问题",[])=="无法确定"
+    assert answer.answer("问题",[])=="无法确定"
+    assert answer.identity_snapshot()["calls"]==2
+    assert answer.identity_snapshot()["system_fingerprint"]=="same"
+    answer.client=Client([Response("other-model","same")])
+    with pytest.raises(RuntimeError,match="identity mismatch"):
+        answer.answer("问题",[])
+    answer.client=Client([Response("answer-qwen","changed")])
+    with pytest.raises(RuntimeError,match="fingerprint changed"):
+        answer.answer("问题",[])
+    assert answer.identity_snapshot()["calls"]==2
+
+
+def test_answer_model_runtime_rejects_missing_response_model():
+    class Response:
+        def raise_for_status(self):pass
+        def json(self):
+            return {"choices":[{"message":{"content":"25度"}}]}
+    class Client:
+        def post(self,*args,**kwargs):return Response()
+        def close(self):pass
+    answer=module.LocalAnswer("http://127.0.0.1:1234/v1/chat/completions","answer-qwen")
+    answer.client.close()
+    answer.client=Client()
+    with pytest.raises(RuntimeError,match="identity mismatch"):
+        answer.answer("温度多少",[])
+    with pytest.raises(RuntimeError,match="never invoked"):
+        answer.identity_snapshot()

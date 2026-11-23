@@ -63,6 +63,7 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
             raise ValueError("Conflicting canonical evidence for the same memory_id")
         by_id[memory_id] = item
     result = []
+    withdrawn_ids = set()
     for candidate in candidates:
         if not isinstance(candidate, dict):
             raise ValueError("Extractor returned a non-object candidate")
@@ -70,6 +71,11 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
             result.append(candidate)
             continue
         memory_id = candidate.get("expected_memory_id")
+        # A single model extraction response must not withdraw the same
+        # canonical claim twice. Reject the entire proposed batch BEFORE
+        # MemoryProcessor can apply any of its items.
+        if memory_id in withdrawn_ids:
+            raise ValueError("Duplicate withdrawal target in one candidate batch")
         if not isinstance(memory_id, str) or memory_id not in by_id:
             raise ValueError("Unverified memory withdrawal: missing canonical memory reference")
         known = by_id[memory_id]
@@ -83,5 +89,6 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
             raise ValueError("Unverified memory withdrawal: candidate differs from evidence")
         # Preserve the canonical claim ID as an additional database-level
         # precondition; checking only value would allow stale same-value claims.
+        withdrawn_ids.add(memory_id)
         result.append(candidate)
     return result

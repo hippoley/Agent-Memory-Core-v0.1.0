@@ -156,7 +156,7 @@ def test_capture_provides_chronological_bounded_multiturn_context():
 def test_capture_rejects_invalid_context_window_before_memory_write():
     class NeverTouch:
         def current(self): raise AssertionError("Should not touch DB")
-    for invalid in (0,17,True,-1):
+    for invalid in (0,4,17,True,-1):
         with pytest.raises(ValueError,match="context_window"):
             module.collect([],NeverTouch(),None,None,
                            context=True,prefix="x",context_window=invalid)

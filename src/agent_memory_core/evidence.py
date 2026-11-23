@@ -62,11 +62,26 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
         if previous is not None and previous != item:
             raise ValueError("Conflicting canonical evidence for the same memory_id")
         by_id[memory_id] = item
-    result = []
-    withdrawn_ids = set()
+    # Validate the *whole* model response before the default non-atomic
+    # processor can apply any candidate. An invalid later operation, or a
+    # simultaneous UPSERT/RETRACT for one fact, must not retire a claim first.
+    operations_by_fact = {}
     for candidate in candidates:
         if not isinstance(candidate, dict):
             raise ValueError("Extractor returned a non-object candidate")
+        operation = candidate.get("operation", "UPSERT")
+        if operation not in ("UPSERT", "RETRACT"):
+            raise ValueError("Unsupported grounded memory operation")
+        subject, predicate = candidate.get("subject_id"), candidate.get("predicate")
+        if isinstance(subject, str) and subject and isinstance(predicate, str) and predicate:
+            key = (subject, predicate)
+            prior = operations_by_fact.setdefault(key, operation)
+            if prior != operation:
+                raise ValueError("Conflicting UPSERT and RETRACT for the same canonical fact")
+
+    result = []
+    withdrawn_ids = set()
+    for candidate in candidates:
         if candidate.get("operation", "UPSERT") != "RETRACT":
             result.append(candidate)
             continue

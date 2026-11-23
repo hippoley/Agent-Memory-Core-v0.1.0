@@ -317,9 +317,32 @@ def run(args):
                 "Live search aliases do not match --aliases; refusing misleading benchmark"
             )
         answerer=LocalAnswer(args.answer_url,args.answer_model)
-        captured=collect(gold,memory,answerer,extractor,
-                         context=args.context,prefix=run_id,
-                         context_window=args.context_window)
+        if args.case_keys_file is not None:
+            # One dedicated credential/tenant per story. Shared tenancy with
+            # soft-forgotten history is NOT independent experimental isolation.
+            keys = [line.strip() for line in args.case_keys_file.read_text(encoding="utf-8").splitlines()]
+            if (len(keys) != len(gold) or not all(keys)
+                    or len(keys) != len(set(keys))):
+                raise ValueError("case-keys-file must supply one unique nonempty tenant key per gold story")
+            if keys[0] != args.key:
+                raise ValueError("First case key must match --key for the initial search attestation")
+            captured = []
+            for case, key in zip(gold, keys):
+                case_memory = MemoryHTTP(args.base_url, key)
+                try:
+                    case_attestation = case_memory.call("GET", "/v1/evaluation/search-config")
+                    if case_attestation != attestation:
+                        raise RuntimeError("Evaluation tenants have inconsistent search configurations")
+                    captured.extend(collect(
+                        [case], case_memory, answerer, extractor,
+                        context=args.context, prefix=run_id,
+                        context_window=args.context_window))
+                finally:
+                    case_memory.close()
+        else:
+            captured=collect(gold,memory,answerer,extractor,
+                             context=args.context,prefix=run_id,
+                             context_window=args.context_window)
     finally:
         memory.close()
         if answerer is not None:
@@ -341,6 +364,7 @@ def run(args):
               "run_id":run_id,"capture_type":"real_http_and_local_model",
               "extractor_runtime_call_count":identity.get("calls", 0),
               "answer_runtime_call_count":answer_identity["calls"],
+              "case_isolation": "fresh_tenant_per_story" if args.case_keys_file is not None else "shared_tenant_soft_reset",
               "cases":captured}
     scorer.validate_predictions(artifact,gold,digest)
     report=scorer.score(gold,{x["id"]:x for x in captured},configuration,digest)
@@ -376,6 +400,8 @@ def main():
     p.add_argument("--answer-url",required=True,help="local OpenAI-compatible /chat/completions URL")
     p.add_argument("--answer-model",required=True)
     p.add_argument("--ack-disposable",action="store_true")
+    p.add_argument("--case-keys-file",type=Path,
+                   help="One unique disposable tenant API key per story; strict isolation")
     p.add_argument("--predictions",required=True,type=Path)
     p.add_argument("--report",required=True,type=Path)
     p.add_argument("--diagnostics",type=Path,help="Write per-case four-stage errors after real HTTP capture")

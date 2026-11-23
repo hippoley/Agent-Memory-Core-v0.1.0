@@ -24,6 +24,14 @@ def require_context_window_pair(a: dict, b: dict) -> None:
             raise ValueError("Strict context pair requires a response model identity")
     if config_a["extractor_runtime_identity"] != config_b["extractor_runtime_identity"]:
         raise ValueError("Strict context pair changed extractor runtime identity")
+    for cfg in (config_a, config_b):
+        answer_identity = cfg.get("answer_runtime_identity")
+        if (not isinstance(answer_identity, dict)
+                or answer_identity.get("verified") is not True
+                or not answer_identity.get("response_model")):
+            raise ValueError("Strict context pair requires observed answer runtime identity")
+    if config_a["answer_runtime_identity"] != config_b["answer_runtime_identity"]:
+        raise ValueError("Strict context pair changed answer runtime identity")
     for key in ("extractor", "aliases_enabled", "answer_model"):
         if config_a.get(key) != config_b.get(key):
             raise ValueError("Context-window experiment differs in " + key)

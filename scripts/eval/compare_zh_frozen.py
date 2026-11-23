@@ -16,6 +16,9 @@ def require_context_window_pair(a: dict, b: dict) -> None:
     windows = (config_a.get("context_window"), config_b.get("context_window"))
     if windows != (1, 3):
         raise ValueError("Context-window comparison requires window 1 then window 3")
+    if (config_a.get("case_isolation") != "fresh_tenant_per_story"
+            or config_b.get("case_isolation") != "fresh_tenant_per_story"):
+        raise ValueError("Strict context comparison requires fresh tenant per story")
     for cfg in (config_a, config_b):
         identity = cfg.get("extractor_runtime_identity")
         if not isinstance(identity, dict) or identity.get("verified") is not True:

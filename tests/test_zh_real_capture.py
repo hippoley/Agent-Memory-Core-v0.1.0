@@ -425,13 +425,17 @@ def test_answer_receives_inactive_status_only_with_history_evidence():
 
 def test_collect_passes_canonical_inactive_status_to_answerer():
     class Memory:
+        def __init__(self): self.wrote = False
         def current(self): return []
         def history(self):
+            if not self.wrote: return []
             return [{"subject_id": "次卧", "predicate": "noise_preference",
                      "value": {"level": "quiet"}, "superseded_at": "2026-11-23T08:00:00Z"}]
         def reset_active(self): pass
         def call(self, method, path, **kw):
-            if path == "/v1/memories/process": return {"created": []}
+            if path == "/v1/memories/process":
+                self.wrote = True
+                return {"created": []}
             if path == "/v1/search": return {"items": []}
             raise AssertionError(path)
     class Extractor:

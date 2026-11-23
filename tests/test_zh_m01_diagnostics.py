@@ -163,3 +163,17 @@ def test_strict_context_pair_rejects_answer_runtime_swap():
     b["configuration"]["answer_runtime_identity"]["system_fingerprint"]="host-v2"
     with pytest.raises(ValueError,match="answer runtime identity"):
         comparator.require_context_window_pair(a,b)
+
+
+def test_strict_real_capture_rejects_shared_tenant_soft_reset():
+    _, payload = fixture()
+    payload["capture_type"] = "real_http_and_local_model"
+    payload["configuration"].update({
+        "extractor": "local-model", "answer_model": "answer-model",
+        "case_isolation": "shared_tenant_soft_reset",
+    })
+    payload["search_attestation"] = {"aliases_enabled":False}
+    with pytest.raises(ValueError,match="fresh tenant"):
+        diagnostics.require_real_capture(payload)
+    payload["configuration"]["case_isolation"] = "fresh_tenant_per_story"
+    diagnostics.require_real_capture(payload)

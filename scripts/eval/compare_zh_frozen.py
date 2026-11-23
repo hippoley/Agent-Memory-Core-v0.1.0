@@ -16,6 +16,14 @@ def require_context_window_pair(a: dict, b: dict) -> None:
     windows = (config_a.get("context_window"), config_b.get("context_window"))
     if windows != (1, 3):
         raise ValueError("Context-window comparison requires window 1 then window 3")
+    for cfg in (config_a, config_b):
+        identity = cfg.get("extractor_runtime_identity")
+        if not isinstance(identity, dict) or identity.get("verified") is not True:
+            raise ValueError("Strict context pair requires actual extractor runtime identity")
+        if not identity.get("response_model"):
+            raise ValueError("Strict context pair requires a response model identity")
+    if config_a["extractor_runtime_identity"] != config_b["extractor_runtime_identity"]:
+        raise ValueError("Strict context pair changed extractor runtime identity")
     for key in ("extractor", "aliases_enabled", "answer_model"):
         if config_a.get(key) != config_b.get(key):
             raise ValueError("Context-window experiment differs in " + key)

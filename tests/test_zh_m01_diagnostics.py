@@ -93,6 +93,11 @@ def test_context_pair_same_models_and_only_window_changed():
                                "model_digest":"sha256-pinned",
                                "system_fingerprint":None,
                                "runtime_version":"local-version",
+                               "cryptographic_weight_identity":False},
+                           "answer_runtime_identity": {
+                               "verified":True,
+                               "response_model":"qwen-answer",
+                               "system_fingerprint":None,
                                "cryptographic_weight_identity":False}}}
     b = deepcopy(a)
     b["configuration"].update({"name": "w3", "context_window": 3})
@@ -113,7 +118,9 @@ def test_context_pair_rejects_incorrect_or_incomparable_windows(context_a, conte
                            "aliases_enabled": False, "context_enabled": True,
                            "context_window": context_a,
                            "extractor_runtime_identity": {
-                               "verified":True,"response_model":"model"}}}
+                               "verified":True,"response_model":"model"},
+                           "answer_runtime_identity": {
+                               "verified":True,"response_model":"answer"}}}
     b = deepcopy(a)
     b["configuration"].update({"name": "b", "context_window": context_b})
     with pytest.raises(ValueError, match="window"):
@@ -139,4 +146,20 @@ def test_strict_context_pair_rejects_unverified_adapter_even_if_names_match():
     b = deepcopy(a)
     b["configuration"].update({"name":"w3","context_window":3})
     with pytest.raises(ValueError,match="runtime identity"):
+        comparator.require_context_window_pair(a,b)
+
+
+def test_strict_context_pair_rejects_answer_runtime_swap():
+    a = {"configuration":{
+        "name":"w1", "extractor":"model", "answer_model":"qwen-answer",
+        "aliases_enabled":False, "context_enabled":True, "context_window":1,
+        "extractor_runtime_identity":{"verified":True,"response_model":"model"},
+        "answer_runtime_identity":{"verified":True,"response_model":"qwen-answer",
+                                   "system_fingerprint":"host-v1"},
+    }}
+    b = deepcopy(a)
+    b["configuration"].update({"name":"w3","context_window":3})
+    comparator.require_context_window_pair(a,b)
+    b["configuration"]["answer_runtime_identity"]["system_fingerprint"]="host-v2"
+    with pytest.raises(ValueError,match="answer runtime identity"):
         comparator.require_context_window_pair(a,b)

@@ -143,6 +143,7 @@ def test_strict_context_pair_rejects_unverified_adapter_even_if_names_match():
     a = {"configuration":{
         "name":"w1","extractor":"model","answer_model":"answer",
         "aliases_enabled":False,"context_enabled":True,"context_window":1,
+        "case_isolation":"fresh_tenant_per_story",
         "extractor_runtime_identity":{"verified":False,"reason":"unattested"},
     }}
     b = deepcopy(a)

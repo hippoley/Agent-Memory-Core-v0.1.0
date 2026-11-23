@@ -179,9 +179,9 @@ def extract(extractor, text: str, prior: str | list[str] | None, *, context: boo
 
 def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
             extractor, *, context: bool, prefix: str,
-            context_window: int = 4) -> list[dict]:
-    if isinstance(context_window, bool) or not isinstance(context_window, int) or not 1 <= context_window <= 16:
-        raise ValueError("context_window must be an integer between 1 and 16")
+            context_window: int = 3) -> list[dict]:
+    if isinstance(context_window, bool) or not isinstance(context_window, int) or not 1 <= context_window <= 3:
+        raise ValueError("context_window must be an integer between 1 and 3")
     if memory.current():
         raise RuntimeError("Tenant is not empty. Use a fresh disposable tenant; refusing destructive run.")
     # A previously-used tenant can have zero ACTIVE claims yet retain a full
@@ -284,7 +284,7 @@ def main():
     p.add_argument("--key",default=os.getenv("MEMORY_API_KEY"),required=False)
     p.add_argument("--extractor",choices=("rule","model"),required=True)
     p.add_argument("--context",action="store_true")
-    p.add_argument("--context-window",type=int,default=4,
+    p.add_argument("--context-window",type=int,default=3,
                    help="Number of previous turns passed to model extractor (1-16)")
     p.add_argument("--aliases",action="store_true",help="declaration; configure aliases separately on service")
     p.add_argument("--name",required=True)
@@ -295,7 +295,7 @@ def main():
     p.add_argument("--report",required=True,type=Path)
     a=p.parse_args()
     if not a.key: p.error("--key or MEMORY_API_KEY required")
-    if not 1 <= a.context_window <= 16: p.error("--context-window must be 1-16")
+    if not 1 <= a.context_window <= 3: p.error("--context-window must be 1-3")
     result=run(a)
     print(json.dumps({k:v for k,v in result.items() if k!="details"},ensure_ascii=False,indent=2))
 

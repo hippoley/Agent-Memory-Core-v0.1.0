@@ -168,3 +168,30 @@ def test_api_rejects_contradictory_retrieval_for_same_memory_id():
     assert search.closed
     # The extractor never receives a fabricated or last-write-wins evidence view.
     assert extractor.seen is None
+
+
+def test_duplicate_retraction_target_rejected_before_any_mutation():
+    # Both identical and contradictory duplicate withdrawal proposals are
+    # unsafe; in non-atomic processing the first would otherwise be applied.
+    with pytest.raises(ValueError, match="Duplicate withdrawal target"):
+        guard_retractions([CANDIDATE, dict(CANDIDATE)], [HIT])
+    conflicting = {**CANDIDATE, "value": {"reason": "different"}}
+    with pytest.raises(ValueError, match="Duplicate withdrawal target"):
+        guard_retractions([CANDIDATE, conflicting], [HIT])
+
+
+def test_api_rejects_duplicate_retractions_without_partial_forget():
+    response, memory, search, extractor = run_request(
+        [CANDIDATE, dict(CANDIDATE)], [HIT])
+    assert response.status_code == 422, response.text
+    assert memory.forgotten == []
+    assert search.closed
+
+
+def test_distinct_grounded_retractions_are_not_blocked():
+    second_hit = {"memory_id": "mem-2", "subject_id": "supplier-8",
+                  "predicate": "settlement_period", "value": {"months": 2}}
+    second = {**CANDIDATE, "subject_id": "supplier-8",
+              "expected_memory_id": "mem-2", "expected_value": {"months": 2}}
+    assert guard_retractions([CANDIDATE, second], [HIT, second_hit]) == [
+        CANDIDATE, second]

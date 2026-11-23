@@ -75,6 +75,18 @@ def diagnose(gold: list[dict], predictions: dict[str, dict]) -> dict:
     }
 
 
+def require_real_capture(payload: dict) -> None:
+    if payload.get("capture_type") != "real_http_and_local_model":
+        raise ValueError("Real capture attestation missing; fixture and oracle predictions cannot pass")
+    config = payload["configuration"]
+    if (not isinstance(config.get("extractor"), str)
+            or config["extractor"].startswith(("fixture", "rule"))
+            or config.get("answer_model") in ("fixture", "none", None)):
+        raise ValueError("Real model identities required; rule/fixture is not a real-model run")
+    if not isinstance(payload.get("search_attestation"), dict):
+        raise ValueError("Authenticated search attestation is required")
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
@@ -86,15 +98,7 @@ def main() -> int:
     payload = json.loads(args.predictions.read_text(encoding="utf-8"))
     predictions = validate_predictions(payload, gold, digest)
     if args.require_real_capture:
-        if payload.get("capture_type") != "real_http_and_local_model":
-            raise ValueError("Real capture attestation missing; fixture and oracle predictions cannot pass")
-        config = payload["configuration"]
-        if (not isinstance(config.get("extractor"), str)
-                or config["extractor"].startswith(("fixture", "rule"))
-                or config.get("answer_model") in ("fixture", "none", None)):
-            raise ValueError("Real model identities required; rule/fixture is not a real-model run")
-        if not isinstance(payload.get("search_attestation"), dict):
-            raise ValueError("Authenticated search attestation is required")
+        require_real_capture(payload)
     report = diagnose(gold, predictions)
     report.update({"dataset_sha256": digest, "configuration": payload["configuration"],
                    "capture_type": payload.get("capture_type", "unverified")})

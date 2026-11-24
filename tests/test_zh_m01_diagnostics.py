@@ -190,13 +190,7 @@ def test_strict_real_capture_rejects_shared_tenant_soft_reset():
         "extractor": "local-model", "answer_model": "answer-model",
         "case_isolation": "shared_tenant_soft_reset",
     })
-    payload["search_attestation"] = {"aliases_enabled":False}
-    with pytest.raises(ValueError,match="fresh tenant"):
-        diagnostics.require_real_capture(payload)
-    payload["configuration"]["case_isolation"] = "fresh_tenant_per_story"
-    # Merely declaring model names or fresh tenancy no longer suffices.
-    with pytest.raises(ValueError, match="observed runtime identity"):
-        diagnostics.require_real_capture(payload)
+    # Establish all non-tenancy prerequisites before testing tenant isolation.
     payload["configuration"].update({
         "extractor_runtime_identity":{"verified":True,"response_model":"local-model"},
         "answer_runtime_identity":{"verified":True,"response_model":"answer-model"},
@@ -206,7 +200,14 @@ def test_strict_real_capture_rejects_shared_tenant_soft_reset():
     payload["isolated_tenant_count"]=len(payload["cases"])
     payload["extractor_runtime_call_count"]=len(payload["cases"])
     payload["answer_runtime_call_count"]=len(payload["cases"])
+    with pytest.raises(ValueError,match="fresh tenant"):
+        diagnostics.require_real_capture(payload)
+    payload["configuration"]["case_isolation"] = "fresh_tenant_per_story"
     diagnostics.require_real_capture(payload)
+    # Missing model identity must still fail independently.
+    payload["configuration"].pop("extractor_runtime_identity")
+    with pytest.raises(ValueError, match="observed runtime identity"):
+        diagnostics.require_real_capture(payload)
 
 
 def test_strict_window_comparison_rejects_shared_case_history():

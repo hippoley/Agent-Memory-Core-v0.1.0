@@ -479,3 +479,83 @@ def test_inactive_history_never_leaks_unrelated_predicates_or_infers_withdrawal(
     old_air = {"subject_id": "次卧", "predicate": "air_quality_preference",
                "value": {"co2": 900}, "superseded_at": "2026-11-23T08:00:00Z"}
     assert select("次卧空气质量偏好取消了吗？", [], [old_air], []) == []
+
+
+def test_grounded_capture_uses_current_canonical_evidence_per_turn():
+    class Memory:
+        def __init__(self):
+            self.rows = []
+            self.history_rows = []
+            self.search_queries = []
+            self.writes = []
+        def current(self): return list(self.rows)
+        def history(self): return list(self.history_rows)
+        def reset_active(self): self.rows = []
+        def call(self, method, path, **kw):
+            if path == "/v1/search":
+                self.search_queries.append(kw["json"]["query"])
+                return {"items": [{**row, "memory_id": row["id"]}
+                                  for row in self.rows]}
+            if path == "/v1/memories/process":
+                candidates = kw["json"]["candidates"]
+                self.writes.append(candidates)
+                for candidate in candidates:
+                    if candidate.get("operation") == "RETRACT":
+                        previous = next((row for row in self.rows
+                            if row["id"] == candidate["expected_memory_id"]), None)
+                        assert previous is not None
+                        assert previous["value"] == candidate["expected_value"]
+                        self.rows.remove(previous)
+                        self.history_rows.append({**previous, "superseded_at": "now"})
+                    else:
+                        self.rows.append({**candidate, "id": "claim-"+str(len(self.writes)),
+                                          "superseded_at": None})
+                return {"created": []}
+            raise AssertionError(path)
+    class Extractor:
+        def __init__(self): self.seen = []
+        def __call__(self, text):
+            raise AssertionError("Grounded extraction cannot silently call context-only")
+        def extract_with_evidence(self, text, previous, evidence):
+            self.seen.append((text, list(previous), list(evidence)))
+            if not evidence:
+                return [{"subject_id": "主卧", "predicate": "temperature_preference",
+                         "value": {"celsius": 24}}]
+            old = evidence[0]
+            return [
+                {"subject_id": old["subject_id"], "predicate": old["predicate"],
+                 "value": {"reason": "changed"}, "operation": "RETRACT",
+                 "expected_memory_id": old["memory_id"],
+                 "expected_value": old["value"]},
+                {"subject_id": "主卧", "predicate": "temperature_preference",
+                 "value": {"celsius": 26}},
+            ]
+    class Answer:
+        def answer(self, question, hits): return "26度"
+    memory, extractor = Memory(), Extractor()
+    result = module.collect(
+        [{"id": "correction", "turns": ["主卧温度24度", "改成26度"],
+          "query": "主卧现在多少度"}],
+        memory, Answer(), extractor, context=True, prefix="grounded",
+        ground_with_memory=True, context_window=3)
+    assert extractor.seen[0][2] == []
+    assert extractor.seen[1][1] == ["主卧温度24度"]
+    assert extractor.seen[1][2] == [{
+        "memory_id": "claim-1", "subject_id": "主卧",
+        "predicate": "temperature_preference", "value": {"celsius": 24}}]
+    assert result[0]["current"] == [
+        {"subject_id": "主卧", "predicate": "temperature_preference",
+         "value": {"celsius": 26}}]
+    assert result[0]["grounding_trace"] == [
+        {"turn": 0, "evidence_memory_ids": []},
+        {"turn": 1, "evidence_memory_ids": ["claim-1"]}]
+    assert memory.search_queries[:2] == ["主卧温度24度", "改成26度"]
+    assert memory.current() == []
+
+
+def test_grounded_capture_rejects_missing_model_evidence_method_before_db_touch():
+    class Memory:
+        def current(self): raise AssertionError("Should fail before database access")
+    with pytest.raises(ValueError, match="extract_with_evidence"):
+        module.collect([], Memory(), None, lambda text: [],
+                       context=True, prefix="safety", ground_with_memory=True)

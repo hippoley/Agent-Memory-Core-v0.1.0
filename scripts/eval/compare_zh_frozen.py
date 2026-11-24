@@ -45,6 +45,40 @@ def require_context_window_pair(a: dict, b: dict) -> None:
         raise ValueError("Context-window experiment changed another configuration field")
 
 
+
+def require_grounding_pair(a: dict, b: dict) -> None:
+    """Strictly compare context-only versus context+canonical-memory evidence.
+
+    Both sides must use the same local model, frozen corpus, context window,
+    search configuration and one fresh tenant per story per arm. The capture
+    reports contain no raw credentials or identifiable tenant IDs.
+    """
+    ca, cb = a.get("configuration"), b.get("configuration")
+    if not isinstance(ca, dict) or not isinstance(cb, dict):
+        raise ValueError("Grounding pair requires both configurations")
+    if (ca.get("ground_with_memory"), cb.get("ground_with_memory")) != (False, True):
+        raise ValueError("Grounding pair must be context-only then context+memory")
+    for cfg in (ca, cb):
+        if cfg.get("context_enabled") is not True or cfg.get("context_window") != 3:
+            raise ValueError("Grounding pair requires the same three-turn context")
+        if cfg.get("case_isolation") != "fresh_tenant_per_story":
+            raise ValueError("Grounding pair requires isolated fresh tenants")
+        for key in ("extractor_runtime_identity", "answer_runtime_identity"):
+            identity = cfg.get(key)
+            if (not isinstance(identity, dict) or identity.get("verified") is not True
+                    or not identity.get("response_model")):
+                raise ValueError("Grounding pair requires observed runtime model identity")
+    if ca["extractor_runtime_identity"] != cb["extractor_runtime_identity"]:
+        raise ValueError("Grounding pair extractor identity changed")
+    if ca["answer_runtime_identity"] != cb["answer_runtime_identity"]:
+        raise ValueError("Grounding pair answer identity changed")
+    ignored = {"name", "ground_with_memory"}
+    if {k:v for k,v in ca.items() if k not in ignored} != {
+            k:v for k,v in cb.items() if k not in ignored}:
+        raise ValueError("Grounding pair differs in another experimental variable")
+    if not a.get("dataset_sha256") or a.get("dataset_sha256") != b.get("dataset_sha256"):
+        raise ValueError("Grounding pair dataset mismatch")
+
 def compare(a: dict, b: dict) -> dict:
     if a.get("dataset_sha256") != b.get("dataset_sha256") or a.get("cases") != b.get("cases"):
         raise ValueError("Cannot compare reports from different frozen datasets")
@@ -81,11 +115,17 @@ def main():
     p.add_argument("--out",required=True,type=Path)
     p.add_argument("--strict-context-pair",action="store_true",
                    help="Require same model/settings, with only window 1 vs 3 changed")
+    p.add_argument("--strict-grounding-pair",action="store_true",
+                   help="Require same pinned context/model/settings with only grounding changed")
     args=p.parse_args()
     a=json.loads(args.a.read_text(encoding="utf-8"))
     b=json.loads(args.b.read_text(encoding="utf-8"))
+    if args.strict_context_pair and args.strict_grounding_pair:
+        p.error('Choose only one strict paired experiment')
     if args.strict_context_pair:
         require_context_window_pair(a,b)
+    if args.strict_grounding_pair:
+        require_grounding_pair(a,b)
     result=compare(a,b)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")

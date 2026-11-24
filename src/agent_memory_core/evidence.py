@@ -81,6 +81,16 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
                     tuple(c.get("operation", "UPSERT") for c in prior)
                     not in (("UPSERT", "UPSERT"), ("RETRACT", "RETRACT"), ("RETRACT", "UPSERT"))):
                 raise ValueError("Conflicting memory operations for the same canonical fact")
+            # Within one model response, two different UPSERT values for the
+            # same canonical fact have no reliable ordering. Refuse them
+            # before non-atomic processing can silently use last-write-wins.
+            if (len(prior) == 2
+                    and all(c.get("operation", "UPSERT") == "UPSERT" for c in prior)):
+                values = [c.get("value") for c in prior]
+                if (not all(isinstance(v, dict) for v in values)
+                        or json.dumps(values[0], sort_keys=True, ensure_ascii=False, allow_nan=False)
+                        != json.dumps(values[1], sort_keys=True, ensure_ascii=False, allow_nan=False)):
+                    raise ValueError("Conflicting UPSERT values for the same canonical fact")
             # A legitimate correction can withdraw the *grounded* old claim
             # and create a genuinely different new value, in this order.
             # Do not permit UPSERT then RETRACT or re-creating the old value.

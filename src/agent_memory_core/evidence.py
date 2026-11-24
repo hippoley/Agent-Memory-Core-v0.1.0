@@ -43,13 +43,17 @@ def evidence_from_hits(hits, *, limit: int = 8) -> list[dict]:
     return result
 
 
-def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict]:
+def guard_retractions(candidates: list[dict], evidence: list[dict],
+                      *, predicate_cardinality=None) -> list[dict]:
     """Validate model withdrawal proposals against supplied canonical evidence.
 
     A RETRACT must reference the exact canonical memory ID, subject, predicate
     and expected old JSON value, and cannot target two claims. This is a
     precondition, not authorization; PostgreSQL still checks the latest value.
     UPSERT is allowed to create novel domain facts and is not vocabulary bound.
+    Optional authoritative predicate_cardinality(predicate) prevents conflicting
+    single-valued writes without rejecting valid multi-valued predicates.
+    An absent policy does not imply that all predicates are single-valued.
     """
     if not isinstance(candidates, list):
         raise ValueError("Extractor must return a candidate list")
@@ -85,7 +89,9 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
             # same canonical fact have no reliable ordering. Refuse them
             # before non-atomic processing can silently use last-write-wins.
             if (len(prior) == 2
-                    and all(c.get("operation", "UPSERT") == "UPSERT" for c in prior)):
+                    and all(c.get("operation", "UPSERT") == "UPSERT" for c in prior)
+                    and callable(predicate_cardinality)
+                    and predicate_cardinality(predicate) == "one"):
                 values = [c.get("value") for c in prior]
                 if (not all(isinstance(v, dict) for v in values)
                         or json.dumps(values[0], sort_keys=True, ensure_ascii=False, allow_nan=False)

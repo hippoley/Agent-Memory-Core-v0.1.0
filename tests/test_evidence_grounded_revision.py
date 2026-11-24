@@ -228,3 +228,27 @@ def test_grounded_correction_withdraws_old_then_creates_distinct_new_value():
         CANDIDATE, replacement]
     # The real PostgreSQL E2E test proves the subsequent UPSERT commit.
     # This lightweight dummy only implements the withdrawal adapter.
+
+
+def test_grounded_batch_rejects_contradictory_same_fact_upserts_before_commit():
+    first = {"subject_id": "supplier-7", "predicate": "settlement_period",
+             "value": {"months": 1}, "operation": "UPSERT", "confidence": 0.99}
+    second = {**first, "value": {"months": 3}}
+    with pytest.raises(ValueError, match="Conflicting UPSERT values"):
+        guard_retractions([first, second], [])
+    with pytest.raises(ValueError, match="Conflicting UPSERT values"):
+        guard_retractions([second, first], [])
+    response, memory, search, extractor = run_request([first, second], [])
+    assert response.status_code == 422, response.text
+    assert memory.forgotten == []
+    assert search.closed
+
+
+def test_grounded_batch_allows_identical_upserts_and_independent_facts():
+    first = {"subject_id": "supplier-7", "predicate": "settlement_period",
+             "value": {"months": 1}, "operation": "UPSERT"}
+    duplicate = {**first, "value": dict(first["value"])}
+    distinct = {"subject_id": "supplier-7", "predicate": "preferred_currency",
+                "value": {"currency": "EUR"}, "operation": "UPSERT"}
+    assert guard_retractions([first, duplicate], []) == [first, duplicate]
+    assert guard_retractions([first, distinct], []) == [first, distinct]

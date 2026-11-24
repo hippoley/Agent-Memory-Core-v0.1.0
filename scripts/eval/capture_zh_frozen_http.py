@@ -22,6 +22,7 @@ import httpx
 
 from agent_memory_core.providers import build_extractor, provider_settings
 from agent_memory_core.rule_extractor import RuleFactExtractor
+from agent_memory_core.evidence import evidence_from_hits, guard_retractions
 
 ROOT = Path(__file__).resolve().parents[2]
 GOLD = ROOT / "data/eval/zh_multiturn_frozen_v1.jsonl"
@@ -305,9 +306,11 @@ def extract(extractor, text: str, prior: str | list[str] | None, *, context: boo
 
 def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
             extractor, *, context: bool, prefix: str,
-            context_window: int = 3) -> list[dict]:
+            context_window: int = 3, ground_with_memory: bool = False) -> list[dict]:
     if isinstance(context_window, bool) or not isinstance(context_window, int) or not 1 <= context_window <= 3:
         raise ValueError("context_window must be an integer between 1 and 3")
+    if ground_with_memory and not callable(getattr(extractor, "extract_with_evidence", None)):
+        raise ValueError("Grounded extraction requires extract_with_evidence; no silent fallback")
     if memory.current():
         raise RuntimeError("Tenant is not empty. Use a fresh disposable tenant; refusing destructive run.")
     # A previously-used tenant can have zero ACTIVE claims yet retain a full
@@ -322,11 +325,24 @@ def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
         memory.reset_active()
         try:
             raw_events=[]
+            grounding_trace=[]
             for i,utterance in enumerate(case["turns"]):
                 # Chronological, bounded multi-turn context; never include the
                 # current turn twice or any future/evaluation gold labels.
                 prior=case["turns"][max(0,i-context_window):i] if context else []
-                candidates=extract(extractor,utterance,prior,context=context)
+                if ground_with_memory:
+                    # Query the authenticated *current* tenant state BEFORE
+                    # processing this turn. Gold labels are never consulted.
+                    search_result=memory.call("POST", "/v1/search",
+                        json={"query":utterance,"limit":8})
+                    evidence=evidence_from_hits(search_result["items"])
+                    candidates=extractor.extract_with_evidence(
+                        utterance, prior, evidence)
+                    candidates=guard_retractions(candidates,evidence)
+                    grounding_trace.append({"turn":i,
+                        "evidence_memory_ids":[x["memory_id"] for x in evidence]})
+                else:
+                    candidates=extract(extractor,utterance,prior,context=context)
                 raw_events.extend(_candidate_event(x,i) for x in candidates)
                 memory.call("POST", "/v1/memories/process", json={
                     "text":utterance,
@@ -346,7 +362,8 @@ def collect(gold: list[dict], memory: MemoryHTTP, answerer: LocalAnswer,
                 answer = answerer.answer(case["query"], hits)
             output.append({"id":case["id"],"extracted":raw_events,
                            "current":active,"retrieved":ranked,"answer":answer,
-                           "inactive_history_evidence":inactive})
+                           "inactive_history_evidence":inactive,
+                           "grounding_trace":grounding_trace})
         finally:
             memory.reset_active()
     return output
@@ -382,8 +399,10 @@ def run(args):
     scorer=module_from_spec(spec); spec.loader.exec_module(scorer)
     gold,digest=scorer.read_gold(GOLD)
     extractor,extractor_id=make_extractor(args.extractor)
-    if args.context and not hasattr(extractor,"extract_with_context"):
+    if args.context and not callable(getattr(extractor,"extract_with_context",None)):
         raise ValueError("Selected extractor cannot consume prior context")
+    if args.ground_with_memory and not callable(getattr(extractor,"extract_with_evidence",None)):
+        raise ValueError("Selected extractor cannot consume canonical memory evidence")
 
     memory=MemoryHTTP(args.base_url,args.key)
     answerer=None
@@ -419,13 +438,15 @@ def run(args):
                     captured.extend(collect(
                         [case], case_memory, answerer, extractor,
                         context=args.context, prefix=run_id,
-                        context_window=args.context_window))
+                        context_window=args.context_window,
+                        ground_with_memory=args.ground_with_memory))
                 finally:
                     case_memory.close()
         else:
             captured=collect(gold,memory,answerer,extractor,
                              context=args.context,prefix=run_id,
-                             context_window=args.context_window)
+                             context_window=args.context_window,
+                             ground_with_memory=args.ground_with_memory)
     finally:
         memory.close()
         if answerer is not None:
@@ -439,6 +460,7 @@ def run(args):
                    "extractor_runtime_identity": {k:v for k,v in identity.items() if k != "calls"},
                    "answer_runtime_identity": {k:v for k,v in answer_identity.items() if k != "calls"},
                    "context_enabled":bool(args.context),
+                   "ground_with_memory":bool(args.ground_with_memory),
                    "context_window":args.context_window if args.context else 0,
                    "aliases_enabled":bool(args.aliases),
                    "answer_model":args.answer_model,
@@ -477,6 +499,8 @@ def main():
     p.add_argument("--key",default=os.getenv("MEMORY_API_KEY"),required=False)
     p.add_argument("--extractor",choices=("rule","model"),required=True)
     p.add_argument("--context",action="store_true")
+    p.add_argument("--ground-with-memory",action="store_true",
+                   help="Ground each model extraction in authenticated current canonical search hits")
     p.add_argument("--context-window",type=int,default=3,
                    help="Previous utterances for model extractor (1-3; shared API contract)")
     p.add_argument("--aliases",action="store_true",help="declaration; configure aliases separately on service")

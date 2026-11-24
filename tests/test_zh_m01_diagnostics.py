@@ -22,6 +22,16 @@ diagnostics = load("diagnostics_m01", "scripts/eval/diagnose_zh_frozen.py")
 comparator = load("comparator_m01", "scripts/eval/compare_zh_frozen.py")
 
 
+def attest_pair(a, b):
+    """Give legacy strict-comparison fixtures observed search/run evidence."""
+    observed = {"aliases_enabled": False, "alias_count": 0,
+                "alias_sha256": "a" * 64}
+    for report, run_id in ((a, "run-a"), (b, "run-b")):
+        report["search_attestation"] = dict(observed)
+        report["run_id"] = run_id
+
+
+
 def fixture():
     gold, digest = scorer.read_gold(scorer.DEFAULT_GOLD)
     cases = [{
@@ -102,6 +112,7 @@ def test_context_pair_same_models_and_only_window_changed():
                                "cryptographic_weight_identity":False}}}
     b = deepcopy(a)
     b["configuration"].update({"name": "w3", "context_window": 3})
+    attest_pair(a, b)
     comparator.require_context_window_pair(a, b)
     for field, value in (("extractor", "another-model"),
                          ("answer_model", "another-answer"),
@@ -125,6 +136,7 @@ def test_context_pair_rejects_incorrect_or_incomparable_windows(context_a, conte
                                "verified":True,"response_model":"answer"}}}
     b = deepcopy(a)
     b["configuration"].update({"name": "b", "context_window": context_b})
+    attest_pair(a, b)
     with pytest.raises(ValueError, match="window"):
         comparator.require_context_window_pair(a, b)
 
@@ -148,6 +160,7 @@ def test_strict_context_pair_rejects_unverified_adapter_even_if_names_match():
     }}
     b = deepcopy(a)
     b["configuration"].update({"name":"w3","context_window":3})
+    attest_pair(a, b)
     with pytest.raises(ValueError,match="runtime identity"):
         comparator.require_context_window_pair(a,b)
 
@@ -163,6 +176,7 @@ def test_strict_context_pair_rejects_answer_runtime_swap():
     }}
     b = deepcopy(a)
     b["configuration"].update({"name":"w3","context_window":3})
+    attest_pair(a, b)
     comparator.require_context_window_pair(a,b)
     b["configuration"]["answer_runtime_identity"]["system_fingerprint"]="host-v2"
     with pytest.raises(ValueError,match="answer runtime identity"):
@@ -193,5 +207,6 @@ def test_strict_window_comparison_rejects_shared_case_history():
     }}
     b = deepcopy(a)
     b["configuration"].update({"name":"three","context_window":3})
+    attest_pair(a, b)
     with pytest.raises(ValueError,match="fresh tenant"):
         comparator.require_context_window_pair(a,b)

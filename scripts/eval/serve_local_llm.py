@@ -26,6 +26,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from agent_memory_core.local_tool_calls import NativeToolCallError, decode_qwen_tool_call
 
 app = FastAPI()
 _lock = threading.Lock()
@@ -51,11 +52,28 @@ async def chat(request: Request):
     temperature = float(body.get("temperature") or 0.0)
     if not messages:
         return JSONResponse({"error": {"message": "messages required"}}, status_code=400)
+    if body.get("model") not in (None, _state.get("model_id")):
+        return JSONResponse({"error": {"message": "Requested model is not loaded"}}, status_code=400)
+
+    tools = body.get("tools")
+    if tools is not None and (
+            not isinstance(tools, list) or not tools
+            or body.get("tool_choice") not in ("required", "auto")):
+        return JSONResponse({"error": {"message": "Unsupported tool request"}}, status_code=422)
 
     tokenizer = _state["tokenizer"]
     model = _state["model"]
-    prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True)
+    # Qwen's native chat template must receive the tool schemas; omitting
+    # them generates only message.content, never real tool_calls.
+    try:
+        prompt = tokenizer.apply_chat_template(
+            messages, tools=tools, tokenize=False, add_generation_prompt=True
+        ) if tools is not None else tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True)
+    except (TypeError, ValueError, KeyError) as exc:
+        if tools is not None:
+            return JSONResponse({"error": {"message": "Model tokenizer has no native tool template"}}, status_code=422)
+        raise
 
     started = time.time()
     with _lock:
@@ -70,6 +88,18 @@ async def chat(request: Request):
         generated = output[0][inputs["input_ids"].shape[1]:]
         text = tokenizer.decode(generated, skip_special_tokens=True)
 
+    message = {"role": "assistant", "content": text}
+    finish_reason = "stop"
+    if tools is not None:
+        try:
+            tool_call = decode_qwen_tool_call(text, tools)
+        except NativeToolCallError:
+            # Never turn plain model text into a synthetic successful tool
+            # call. The client must fail closed, without touching any device.
+            return JSONResponse({"error": {"message": "Model did not produce one valid native tool call"}}, status_code=422)
+        message = {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+        finish_reason = "tool_calls"
+
     return {
         "id": "chatcmpl-" + uuid.uuid4().hex[:16],
         "object": "chat.completion",
@@ -77,8 +107,8 @@ async def chat(request: Request):
         "model": _state["model_id"],
         "choices": [{
             "index": 0,
-            "message": {"role": "assistant", "content": text},
-            "finish_reason": "stop",
+            "message": message,
+            "finish_reason": finish_reason,
         }],
         "usage": {
             "prompt_tokens": int(inputs["input_ids"].shape[1]),

@@ -101,6 +101,8 @@ def require_real_capture(payload: dict) -> None:
                 or not isinstance(identity.get("response_model"), str)
                 or not identity["response_model"].strip()):
             raise ValueError("Real capture requires verified observed runtime identity for " + key)
+    if config["extractor_runtime_identity"]["response_model"] != extractor:
+        raise ValueError("Observed extractor runtime identity differs from declared model")
     if config["answer_runtime_identity"]["response_model"] != answer:
         raise ValueError("Observed answer runtime identity differs from declared model")
     attestation = payload.get("search_attestation")

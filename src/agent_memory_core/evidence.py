@@ -75,9 +75,22 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
         subject, predicate = candidate.get("subject_id"), candidate.get("predicate")
         if isinstance(subject, str) and subject and isinstance(predicate, str) and predicate:
             key = (subject, predicate)
-            prior = operations_by_fact.setdefault(key, operation)
-            if prior != operation:
-                raise ValueError("Conflicting UPSERT and RETRACT for the same canonical fact")
+            prior = operations_by_fact.setdefault(key, [])
+            prior.append(candidate)
+            if len(prior) > 2 or (len(prior) == 2 and
+                    tuple(c.get("operation", "UPSERT") for c in prior)
+                    not in (("UPSERT", "UPSERT"), ("RETRACT", "RETRACT"), ("RETRACT", "UPSERT"))):
+                raise ValueError("Conflicting memory operations for the same canonical fact")
+            # A legitimate correction can withdraw the *grounded* old claim
+            # and create a genuinely different new value, in this order.
+            # Do not permit UPSERT then RETRACT or re-creating the old value.
+            if len(prior) == 2 and prior[0].get("operation", "UPSERT") == "RETRACT" and operation == "UPSERT":
+                old_id = prior[0].get("expected_memory_id")
+                old = by_id.get(old_id) if isinstance(old_id, str) else None
+                new_value = candidate.get("value")
+                if (old is None or not isinstance(new_value, dict)
+                        or new_value == old["value"]):
+                    raise ValueError("Grounded replacement requires a distinct new canonical value")
 
     result = []
     withdrawn_ids = set()

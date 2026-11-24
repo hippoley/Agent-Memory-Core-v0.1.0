@@ -474,6 +474,15 @@ def run(args):
               "cases":captured}
     scorer.validate_predictions(artifact,gold,digest)
     report=scorer.score(gold,{x["id"]:x for x in captured},configuration,digest)
+    # Include the *observed* effective search configuration in the scored
+    # report, without exposing the tenant identifier or bearer credential.
+    # A configured --aliases boolean alone cannot prove paired equivalence.
+    report["search_attestation"] = {
+        "aliases_enabled": attestation["aliases_enabled"],
+        "alias_count": attestation["alias_count"],
+        "alias_sha256": attestation["alias_sha256"],
+    }
+    report["run_id"] = run_id
     args.predictions.parent.mkdir(parents=True,exist_ok=True)
     args.predictions.write_text(json.dumps(artifact,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     args.report.parent.mkdir(parents=True,exist_ok=True)

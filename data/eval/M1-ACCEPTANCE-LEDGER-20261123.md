@@ -104,3 +104,21 @@ chmod 600 /secure/path/m1-story-keys.txt
 ```
 
 The resulting configuration records `case_isolation=fresh_tenant_per_story`; legacy runs without this flag record `shared_tenant_soft_reset`. The strict `diagnose_zh_frozen.py --require-real-capture` proof gate rejects shared-tenant runs. Model performance statistics remain unmeasured until a real local runtime and actual isolated tenants are provisioned.
+
+
+## Grounded revision paired experiment (new capture capability; not yet executed)
+
+Two **independent fresh-tenant sets** are required: one for context-only and one for context + current canonical memory. Both use the same three prior utterances, local extractor, local answer model, alias configuration, frozen corpus, quantization/runtime identity and sampling. A new tenant key is required for each story in *each* arm. Do not use the same tenant keys twice. Never commit keys.
+
+- **Arm A:** `--extractor model --context --context-window 3` with no grounding flag.
+- **Arm B:** identical arguments plus `--ground-with-memory`. Before *each* turn, the client retrieves tenant-scoped current facts using authenticated `POST /v1/search`; the model sees only returned canonical evidence; `guard_retractions()` validates proposals before `POST /v1/memories/process`. Every captured prediction records the searched canonical memory IDs without exposing tenant credentials.
+- **Comparison:** after generating both independent reports, run:
+
+```bash
+python scripts/eval/compare_zh_frozen.py \
+  --a /tmp/m1-context-only.report.json \
+  --b /tmp/m1-grounded.report.json \
+  --strict-grounding-pair --out /tmp/m1-grounding-delta.json
+```
+
+**Scientific interpretation:** This isolates the benefit of adding *retrieved canonical evidence to extraction*, not the benefit of memory versus having no persistent memory at all. Both arms still use AMC to store, search, and answer. It is **not** the future-task/no-memory/summary/AMC experiment US-M02. Search misses may prevent a justified retraction; that is a measured retrieval/grounding failure and must not be silently patched using gold labels. The output reports are actual only after a local model and freshly provisioned isolated tenants have executed. CI proves only the capture/comparison implementation, not real-model gains.

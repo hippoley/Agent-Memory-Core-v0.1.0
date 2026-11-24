@@ -235,9 +235,11 @@ def test_grounded_batch_rejects_contradictory_same_fact_upserts_before_commit():
              "value": {"months": 1}, "operation": "UPSERT", "confidence": 0.99}
     second = {**first, "value": {"months": 3}}
     with pytest.raises(ValueError, match="Conflicting UPSERT values"):
-        guard_retractions([first, second], [])
+        guard_retractions([first, second], [],
+                          predicate_cardinality=lambda pred: "one")
     with pytest.raises(ValueError, match="Conflicting UPSERT values"):
-        guard_retractions([second, first], [])
+        guard_retractions([second, first], [],
+                          predicate_cardinality=lambda pred: "one")
     response, memory, search, extractor = run_request([first, second], [])
     assert response.status_code == 422, response.text
     assert memory.forgotten == []
@@ -252,3 +254,14 @@ def test_grounded_batch_allows_identical_upserts_and_independent_facts():
                 "value": {"currency": "EUR"}, "operation": "UPSERT"}
     assert guard_retractions([first, duplicate], []) == [first, duplicate]
     assert guard_retractions([first, distinct], []) == [first, distinct]
+
+
+def test_grounded_batch_keeps_distinct_multi_valued_facts():
+    a = {"subject_id": "researcher-7", "predicate": "interests",
+         "value": {"topic": "energy"}, "operation": "UPSERT"}
+    b = {**a, "value": {"topic": "robotics"}}
+    assert guard_retractions(
+        [a, b], [], predicate_cardinality=lambda p: "many") == [a, b]
+    # A missing authoritative cardinality policy must not invent singleton
+    # restrictions for arbitrary new-domain facts.
+    assert guard_retractions([a, b], []) == [a, b]

@@ -194,6 +194,18 @@ def test_strict_real_capture_rejects_shared_tenant_soft_reset():
     with pytest.raises(ValueError,match="fresh tenant"):
         diagnostics.require_real_capture(payload)
     payload["configuration"]["case_isolation"] = "fresh_tenant_per_story"
+    # Merely declaring model names or fresh tenancy no longer suffices.
+    with pytest.raises(ValueError, match="observed runtime identity"):
+        diagnostics.require_real_capture(payload)
+    payload["configuration"].update({
+        "extractor_runtime_identity":{"verified":True,"response_model":"local-model"},
+        "answer_runtime_identity":{"verified":True,"response_model":"answer-model"},
+    })
+    payload["search_attestation"]={
+        "aliases_enabled":False,"alias_count":0,"alias_sha256":"a"*64}
+    payload["isolated_tenant_count"]=len(payload["cases"])
+    payload["extractor_runtime_call_count"]=len(payload["cases"])
+    payload["answer_runtime_call_count"]=len(payload["cases"])
     diagnostics.require_real_capture(payload)
 
 
@@ -210,3 +222,39 @@ def test_strict_window_comparison_rejects_shared_case_history():
     attest_pair(a, b)
     with pytest.raises(ValueError,match="fresh tenant"):
         comparator.require_context_window_pair(a,b)
+
+
+def test_strict_real_capture_refuses_missing_or_inconsistent_model_evidence():
+    _, payload = fixture()
+    payload["capture_type"] = "real_http_and_local_model"
+    payload["configuration"].update({
+        "name":"live-capture","extractor":"local-model",
+        "answer_model":"answer-model","case_isolation":"fresh_tenant_per_story",
+        "extractor_runtime_identity":{"verified":True,"response_model":"local-model"},
+        "answer_runtime_identity":{"verified":True,"response_model":"answer-model"},
+    })
+    payload["search_attestation"]={
+        "aliases_enabled":False,"alias_count":0,"alias_sha256":"a"*64}
+    n=len(payload["cases"])
+    payload.update({"isolated_tenant_count":n,
+                    "extractor_runtime_call_count":n,
+                    "answer_runtime_call_count":n})
+    diagnostics.require_real_capture(payload)
+    variants = [
+        ("configuration", {"answer_runtime_identity":{"verified":False,"response_model":"answer-model"}}),
+        ("configuration", {"extractor_runtime_identity":{"verified":True}}),
+        ("configuration", {"answer_runtime_identity":{"verified":True,"response_model":"changed"}}),
+        ("configuration", {"aliases_enabled":True}),
+        ("search_attestation", {"aliases_enabled":False}),
+        ("isolated_tenant_count", n-1),
+        ("extractor_runtime_call_count", 0),
+        ("answer_runtime_call_count", n-1),
+    ]
+    for section, value in variants:
+        wrong=deepcopy(payload)
+        if section == "configuration":
+            wrong[section].update(value)
+        else:
+            wrong[section]=value
+        with pytest.raises(ValueError):
+            diagnostics.require_real_capture(wrong)

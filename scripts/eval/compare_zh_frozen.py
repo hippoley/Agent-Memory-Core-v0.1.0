@@ -5,8 +5,36 @@ import json
 from pathlib import Path
 
 
+
+def require_live_search_pair(a: dict, b: dict) -> None:
+    """Compare observed live search settings, not just declared flags.
+
+    Tenant IDs and credentials are deliberately not included in scored
+    reports. Historical reports without authenticated search evidence are
+    not eligible for strict new experiments.
+    """
+    fields = ("aliases_enabled", "alias_count", "alias_sha256")
+    for report in (a, b):
+        observed = report.get("search_attestation")
+        if (not isinstance(observed, dict)
+                or type(observed.get("aliases_enabled")) is not bool
+                or type(observed.get("alias_count")) is not int
+                or observed["alias_count"] < 0
+                or not isinstance(observed.get("alias_sha256"), str)
+                or len(observed["alias_sha256"]) != 64):
+            raise ValueError("Strict pairing requires authenticated live search attestation")
+        config = report.get("configuration", {})
+        if config.get("aliases_enabled") != observed["aliases_enabled"]:
+            raise ValueError("Declared search aliases differ from observed search configuration")
+    if any(a["search_attestation"][k] != b["search_attestation"][k] for k in fields):
+        raise ValueError("Paired experiment changed observed search alias configuration")
+    if not a.get("run_id") or not b.get("run_id") or a["run_id"] == b["run_id"]:
+        raise ValueError("Strict pairing requires independent capture run IDs")
+
+
 def require_context_window_pair(a: dict, b: dict) -> None:
     """Refuse a 1-vs-3 experiment if a second uncontrolled variable changed."""
+    require_live_search_pair(a, b)
     config_a = a.get("configuration")
     config_b = b.get("configuration")
     if not isinstance(config_a, dict) or not isinstance(config_b, dict):
@@ -53,6 +81,7 @@ def require_grounding_pair(a: dict, b: dict) -> None:
     search configuration and one fresh tenant per story per arm. The capture
     reports contain no raw credentials or identifiable tenant IDs.
     """
+    require_live_search_pair(a, b)
     ca, cb = a.get("configuration"), b.get("configuration")
     if not isinstance(ca, dict) or not isinstance(cb, dict):
         raise ValueError("Grounding pair requires both configurations")

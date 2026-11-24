@@ -20,7 +20,7 @@ class Tokens:
 
 class Tokenized(dict):
     def __init__(self):
-        super().__init__(input_ids=Tokens(3))
+        super().__init__(input_ids=SimpleNamespace(shape=(1, 3)))
 
     def to(self, _):
         return self

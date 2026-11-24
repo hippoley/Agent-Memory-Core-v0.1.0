@@ -243,6 +243,7 @@ def test_strict_real_capture_refuses_missing_or_inconsistent_model_evidence():
     variants = [
         ("configuration", {"answer_runtime_identity":{"verified":False,"response_model":"answer-model"}}),
         ("configuration", {"extractor_runtime_identity":{"verified":True}}),
+        ("configuration", {"extractor_runtime_identity":{"verified":True,"response_model":"wrong-extractor"}}),
         ("configuration", {"answer_runtime_identity":{"verified":True,"response_model":"changed"}}),
         ("configuration", {"aliases_enabled":True}),
         ("search_attestation", {"aliases_enabled":False}),

@@ -76,17 +76,54 @@ def diagnose(gold: list[dict], predictions: dict[str, dict]) -> dict:
 
 
 def require_real_capture(payload: dict) -> None:
-    if payload.get("capture_type") != "real_http_and_local_model":
+    """Reject fixture or unverifiable captures at the strict diagnosis gate.
+
+    These fields are observed runtime metadata from the capture, not proof of
+    cryptographic model-weight identity. This validates the capture contract;
+    external replay and hardware pinning remain independent requirements.
+    """
+    if not isinstance(payload, dict) or payload.get("capture_type") != "real_http_and_local_model":
         raise ValueError("Real capture attestation missing; fixture and oracle predictions cannot pass")
-    config = payload["configuration"]
-    if (not isinstance(config.get("extractor"), str)
-            or config["extractor"].startswith(("fixture", "rule"))
-            or config.get("answer_model") in ("fixture", "none", None)):
+    config = payload.get("configuration")
+    if not isinstance(config, dict):
+        raise ValueError("Real capture requires complete configuration")
+    extractor = config.get("extractor")
+    answer = config.get("answer_model")
+    if (not isinstance(extractor, str) or not extractor.strip()
+            or extractor.startswith(("fixture", "rule"))
+            or not isinstance(answer, str) or not answer.strip()
+            or answer in ("fixture", "none")):
         raise ValueError("Real model identities required; rule/fixture is not a real-model run")
-    if not isinstance(payload.get("search_attestation"), dict):
-        raise ValueError("Authenticated search attestation is required")
+    for key in ("extractor_runtime_identity", "answer_runtime_identity"):
+        identity = config.get(key)
+        if (not isinstance(identity, dict)
+                or identity.get("verified") is not True
+                or not isinstance(identity.get("response_model"), str)
+                or not identity["response_model"].strip()):
+            raise ValueError("Real capture requires verified observed runtime identity for " + key)
+    if config["answer_runtime_identity"]["response_model"] != answer:
+        raise ValueError("Observed answer runtime identity differs from declared model")
+    attestation = payload.get("search_attestation")
+    if (not isinstance(attestation, dict)
+            or type(attestation.get("aliases_enabled")) is not bool
+            or type(attestation.get("alias_count")) is not int
+            or attestation["alias_count"] < 0
+            or not isinstance(attestation.get("alias_sha256"), str)
+            or len(attestation["alias_sha256"]) != 64
+            or config.get("aliases_enabled") != attestation["aliases_enabled"]):
+        raise ValueError("Authenticated search attestation is required and must match configuration")
     if config.get("case_isolation") != "fresh_tenant_per_story":
         raise ValueError("Strict real-model evidence requires a fresh tenant per story")
+    cases = payload.get("cases")
+    if (not isinstance(cases, list) or not cases
+            or type(payload.get("isolated_tenant_count")) is not int
+            or payload["isolated_tenant_count"] != len(cases)):
+        raise ValueError("Real capture must attest one isolated tenant per story")
+    extractor_calls = payload.get("extractor_runtime_call_count")
+    answer_calls = payload.get("answer_runtime_call_count")
+    if (type(extractor_calls) is not int or extractor_calls < len(cases)
+            or type(answer_calls) is not int or answer_calls != len(cases)):
+        raise ValueError("Real capture model call counts are incomplete")
 
 
 def main() -> int:

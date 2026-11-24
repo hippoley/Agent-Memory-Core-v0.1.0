@@ -1364,7 +1364,15 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
                             close()
                     def extractor(text):
                         proposed = grounded(text, item.context_turns, evidence)
-                        return guard_retractions(proposed, evidence)
+                        # Authoritative cardinality is required to tell a
+                        # contradictory singleton update from valid multi-value
+                        # facts. Never infer this from the model's own text.
+                        policy = getattr(db, "predicate_cardinality", None)
+                        return guard_retractions(
+                            proposed, evidence,
+                            predicate_cardinality=(
+                                (lambda pred: policy(tenant_id=t, predicate=pred))
+                                if callable(policy) else None))
                 elif item.context_turns:
                     contextual = getattr(provider_extractor, "extract_with_context", None)
                     if not callable(contextual):

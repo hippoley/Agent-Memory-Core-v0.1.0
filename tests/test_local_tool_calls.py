@@ -12,7 +12,7 @@ def test_native_qwen_call_converts_to_openai_tool_call():
 
 
 def test_native_qwen_thinking_prefix():
-    native = '<think>Choose the tool.</think>\\n<tool_call>{"name":"set_device_property","arguments":{}}</tool_call>'
+    native = '<think>Choose the tool.</think>\n<tool_call>{"name":"set_device_property","arguments":{}}</tool_call>'
     assert decode_qwen_tool_call(native, TOOLS)["type"] == "function"
 
 

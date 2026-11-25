@@ -139,6 +139,30 @@ class DurableTaskLeaseStore:
             self.assert_current(tenant_id=tenant_id,task_id=task_id,
                                 worker_id=worker_id,lease_epoch=lease_epoch,lock=True)
             if status == "completed":
+                # Strict continuity tasks must not finish simply because their
+                # handler forgot to register the required external effect.
+                from .durable_tasks import required_effect_keys
+                specification = self.conn.execute(
+                    """SELECT task_type,input FROM memory_durable_tasks
+                       WHERE tenant_id=%s AND task_id=%s::uuid FOR UPDATE""",
+                    (tenant_id, task_id),
+                ).fetchone()
+                if specification is None:
+                    raise LeaseConflict("Task not found under current tenant")
+                required = required_effect_keys(specification[0], specification[1])
+                if required:
+                    recorded = self.conn.execute(
+                        """SELECT effect_key FROM memory_task_effects
+                           WHERE task_id=%s::uuid AND status='committed'
+                             AND effect_key=ANY(%s::text[])""",
+                        (task_id, list(required)),
+                    ).fetchall()
+                    committed = {row[0] for row in recorded}
+                    missing = [key for key in required if key not in committed]
+                    if missing:
+                        raise LeaseConflict(
+                            "Cannot complete task: required external effects not committed: "
+                            + ", ".join(missing))
                 unresolved = self.conn.execute(
                     """SELECT effect_key,status FROM memory_task_effects
                        WHERE task_id=%s::uuid AND status <> 'committed'

@@ -26,6 +26,28 @@ def _canonical(value) -> str:
 def _digest(value) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
+# Task-type-specific completion policy. Other task types retain their existing
+# semantics; this profile opts into strict external-effect declaration.
+CONTINUITY_EFFECT_TASK_TYPE = "continuity.effect.v1"
+
+
+def required_effect_keys(task_type: str, input: dict) -> tuple[str, ...]:
+    """Define a bounded manifest of effects needed for this task type.
+
+    The manifest is frozen in the canonical task input. It proves required
+    ledger intents were accounted for, NOT that physical causality is proven.
+    """
+    if task_type != CONTINUITY_EFFECT_TASK_TYPE:
+        return ()
+    keys = input.get("required_effect_keys")
+    if (not isinstance(keys, list) or not 1 <= len(keys) <= 20
+            or any(not isinstance(key, str) or not key.strip()
+                   or len(key) > 255 for key in keys)
+            or len(keys) != len(set(keys))):
+        raise ValueError(
+            "continuity.effect.v1 requires 1..20 unique, nonblank required_effect_keys")
+    return tuple(keys)
+
 
 class DurableTaskStore:
     def __init__(self, conn):
@@ -38,6 +60,7 @@ class DurableTaskStore:
     ) -> dict:
         if not tenant_id or not task_type or not isinstance(input, dict):
             raise ValueError("tenant_id, task_type and object input are required")
+        required_effect_keys(task_type, input)
         request_hash = _digest({
             "task_type": task_type, "input": input,
             "created_by_principal_id": created_by_principal_id,

@@ -29,7 +29,7 @@ def test_handoff_to_fenced_effect_unknown_reconcile_and_public_terminal_audit():
     key = "c02-demo-" + uuid4().hex + uuid4().hex
     device = "bedroom-" + uuid4().hex
     headers = {"Authorization": "Bearer " + key}
-    task_type = "test.c02.continuity"
+    task_type = "continuity.effect.v1"
     effect_key = "apply-bedroom-target-v1"
 
     def connection():
@@ -45,7 +45,8 @@ def test_handoff_to_fenced_effect_unknown_reconcile_and_public_terminal_audit():
     with TestClient(app) as agent_a:
         created = agent_a.post("/v1/tasks", headers=headers, json={
             "task_type": task_type,
-            "input": {"device_id": device, "property": "temperature", "target": 26},
+            "input": {"device_id": device, "property": "temperature", "target": 26,
+                      "required_effect_keys": [effect_key]},
             "idempotency_key": "create-" + device,
         })
         assert created.status_code == 201, created.text
@@ -178,3 +179,36 @@ def test_handoff_to_fenced_effect_unknown_reconcile_and_public_terminal_audit():
     assert len(provider_calls) == 1, "UNKNOWN recovery must NOT repeat provider execute"
     assert len(reconcile_calls) == 1
     assert provider_calls[0] == reconcile_calls[0], "Provider key must survive Worker handoff"
+
+
+def test_c02_task_with_undeclared_effect_cannot_claim_completion():
+    """A handler returning success without recording its required effect is blocked."""
+    dsn = os.getenv("MEMORY_TEST_DSN")
+    if not dsn:
+        pytest.skip("real PostgreSQL MEMORY_TEST_DSN required")
+    from agent_memory_core.postgres import PostgresMemory
+    from agent_memory_core.durable_tasks import DurableTaskStore
+    from agent_memory_core.worker_leases import DurableTaskLeaseStore, LeaseConflict
+
+    tenant = "continuity-missing-effect-" + uuid4().hex
+    db = PostgresMemory(dsn)
+    try:
+        db.migrate()
+        task = DurableTaskStore(db.conn).create_task(
+            tenant_id=tenant, task_type="continuity.effect.v1",
+            input={"required_effect_keys": ["must-write-device"],
+                   "operation": "synthetic"},
+            idempotency_key="missing-" + uuid4().hex)
+        lease = DurableTaskLeaseStore(db.conn).claim(
+            tenant_id=tenant, task_id=task["task_id"], worker_id="faulty-handler")
+        assert lease["task_id"] == task["task_id"]
+        with pytest.raises(LeaseConflict, match="required external effects"):
+            DurableTaskLeaseStore(db.conn).finish(
+                tenant_id=tenant, task_id=task["task_id"],
+                worker_id="faulty-handler", lease_epoch=lease["lease_epoch"],
+                status="completed", result={"forged": True})
+        loaded = DurableTaskStore(db.conn).get_task(
+            tenant_id=tenant, task_id=task["task_id"])
+        assert loaded["status"] == "running"
+    finally:
+        db.close()

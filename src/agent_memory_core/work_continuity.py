@@ -159,11 +159,13 @@ class ContinuityStore:
             if _hash(pack) != digest or pack.get("sha256") != _hash({
                     k: v for k, v in pack.items() if k != "sha256"}):
                 raise HandoffConflict("Handoff payload integrity mismatch")
-            if status == "accepted":
-                if accepted_by != target_agent:
-                    raise HandoffConflict("Handoff already accepted by another agent")
-                return {"handoff_id": handoff_id, "status": status, "payload": pack,
-                        "verified_at": None, "idempotent": True}
+            if status == "accepted" and accepted_by != target_agent:
+                raise HandoffConflict("Handoff already accepted by another agent")
+            if status not in ("offered", "accepted"):
+                raise HandoffConflict("Handoff no longer accepts continuation")
+            # Re-acceptance is idempotent ONLY while task, canonical claims
+            # and external effects are unchanged. An earlier acceptance is
+            # not permission to re-use a stale context pack.
             task = DurableTaskStore(self.conn).get_task(tenant_id=tenant_id, task_id=task_id)
             if (not task or task["checkpoint_version"] != pack["checkpoint_version"]
                     or task["status"] != pack["task_status"]):
@@ -209,6 +211,10 @@ class ContinuityStore:
                 raise HandoffConflict("Handoff context was truncated; cannot accept as complete")
             if pack["unresolved_effects"]:
                 raise HandoffConflict("External effects need reconciliation before safe continuation")
+            if status == "accepted":
+                return {"handoff_id": handoff_id, "status": "accepted",
+                        "payload": pack, "verified_at": datetime.now(timezone.utc).isoformat(),
+                        "idempotent": True}
             self.conn.execute(
                 """UPDATE memory_agent_handoffs
                    SET status='accepted', accepted_by=%s, accepted_at=clock_timestamp()

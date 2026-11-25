@@ -112,6 +112,11 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             assert accepted.status_code == 200, accepted.text
             assert accepted.json()["status"] == "accepted"
             assert accepted.json()["idempotent"] is False
+            repeat_unchanged = await agent_b.post(
+                f"/v1/handoffs/{handoff_id}/accept",
+                json={"target_agent": "agent-B"})
+            assert repeat_unchanged.status_code == 200, repeat_unchanged.text
+            assert repeat_unchanged.json()["idempotent"] is True
             # Agent B performs new work through the public canonical memory API,
             # not through Agent A's process state or a privileged database handle.
             continuation = await agent_b.post("/v1/memories", json={
@@ -131,8 +136,8 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             assert added_fact_conflict.status_code == 409, added_fact_conflict.text
             again = await agent_b.post(f"/v1/handoffs/{handoff_id}/accept",
                                        json={"target_agent": "agent-B"})
-            assert again.status_code == 200
-            assert again.json()["idempotent"] is True
+            assert again.status_code == 409, again.text
+            assert "claims changed" in again.text
 
             # A second packet becomes stale after a real memory revision.
             stale = await agent_b.post("/v1/handoffs", json={

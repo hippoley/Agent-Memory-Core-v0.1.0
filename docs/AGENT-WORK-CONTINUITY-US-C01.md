@@ -23,7 +23,9 @@ REST endpoints**. It does **not** implement a second workflow engine.
    current claim identities, truncation and unresolved external effects.
    It returns 409 rather than claiming success if anything is stale, truncated
    or ambiguous; wrong tenant returns 404. Repeated accept by the same target
-   is idempotent.
+   is idempotent ONLY IF the original task, checkpoint, canonical claim set and
+   external effect status remain current. Subsequent acceptance after state
+   changes fails closed with 409, even for a previously accepted handoff.
 
 ### What the handoff does **not** do
 

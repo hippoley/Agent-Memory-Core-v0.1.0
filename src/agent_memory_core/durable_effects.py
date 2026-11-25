@@ -237,6 +237,27 @@ class DurableTaskEffectStore:
         return dict(zip(keys,row))
 
 
+def public_effect_snapshot(effect: dict) -> dict:
+    """Conservative read-only status for third-party task auditors.
+
+    Never serialize request, provider_result, last_error, worker identity,
+    provider_reference or arbitrary provider-supplied text. The caller sees
+    status evidence, not a claim of physical observation or causal proof.
+    """
+    return {
+        "effect_key": effect["effect_key"],
+        "request_sha256": effect["request_sha256"],
+        "status": effect["status"],
+        "attempt_count": effect["attempt_count"],
+        "provider_reference_recorded": bool(effect.get("provider_reference")),
+        "created_at": effect["created_at"],
+        "updated_at": effect["updated_at"],
+        "resolved_at": effect.get("resolved_at"),
+        "physical_independence_verified": False,
+        "causal_effect_verified": False,
+    }
+
+
 class DurableTaskEffectRuntime:
     """Execute/reconcile through a provider's idempotency and lookup contract."""
 

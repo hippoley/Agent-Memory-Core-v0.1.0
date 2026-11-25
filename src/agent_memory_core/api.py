@@ -1746,6 +1746,27 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         finally:
             db.close()
 
+    @app.get("/v1/tasks/{task_id}/effects", tags=["Durable Tasks"],
+             summary="Read tenant-scoped, redacted external-effect status")
+    def get_task_effect_audit(task_id: str, t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        from .durable_effects import DurableTaskEffectStore, public_effect_snapshot
+        try:
+            task_id = str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="task_id must be a UUID")
+        db = store_factory()
+        try:
+            task = DurableTaskStore(db.conn).get_task(tenant_id=t, task_id=task_id)
+            if task is None:
+                raise HTTPException(status_code=404, detail="Task not found")
+            effects = DurableTaskEffectStore(db.conn).list_effects(
+                tenant_id=t, task_id=task_id)
+            return {"task_id": task_id, "items": [
+                public_effect_snapshot(effect) for effect in effects]}
+        finally:
+            db.close()
+
     @app.post("/v1/tasks/worker/claim", tags=["Durable Tasks"],
               summary="Atomically claim one task using a dedicated worker credential")
     def claim_durable_task(item: DurableTaskClaimWrite,

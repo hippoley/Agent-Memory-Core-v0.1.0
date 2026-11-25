@@ -259,6 +259,10 @@ class MemoryClient:
     def get_task(self, task_id: str):
         return self._request("GET","/v1/tasks/"+self._segment(task_id))
 
+    def get_task_effects(self, task_id: str):
+        """Read redacted effect status; never returns raw device requests or tokens."""
+        return self._request("GET", "/v1/tasks/" + self._segment(task_id) + "/effects")
+
     def claim_task(self, *, worker_id: str, lease_seconds: int = 30):
         """Claim a queued/expired task with a dedicated tasks:execute credential.
 

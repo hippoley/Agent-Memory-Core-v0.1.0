@@ -35,7 +35,10 @@ _state: dict = {}
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "model": _state.get("model_id")}
+    return {"ok": True, "model": _state.get("model_id"),
+            "execution_backend": _state.get("execution_backend", "unknown"),
+            "device_name": _state.get("device_name", "unknown"),
+            "torch_hip_version": _state.get("torch_hip_version") }
 
 
 @app.get("/v1/models")
@@ -119,23 +122,58 @@ async def chat(request: Request):
     }
 
 
+def select_execution_backend(torch_module, *, requested: str = "auto", require_rocm: bool = False) -> dict:
+    """Fail closed when AMD ROCm was requested but cannot be verified.
+
+    PyTorch HIP intentionally exposes the CUDA API surface; cuda availability
+    alone does not prove that the backend is ROCm.
+    """
+    if requested not in ("auto", "cuda", "cpu"):
+        raise ValueError("device must be auto, cuda or cpu")
+    hip = getattr(getattr(torch_module, "version", None), "hip", None)
+    available = bool(torch_module.cuda.is_available())
+    if require_rocm and (not hip or not available or requested == "cpu"):
+        raise RuntimeError("ROCm required: install HIP-enabled PyTorch and verify GPU access")
+    if requested == "cuda" and not available:
+        raise RuntimeError("CUDA/HIP device explicitly requested but torch.cuda.is_available() is false")
+    device = "cpu" if requested == "cpu" or (requested == "auto" and not available) else "cuda"
+    if device == "cuda":
+        name = torch_module.cuda.get_device_name(0)
+        backend = "rocm" if hip else "cuda"
+    else:
+        name = "CPU"
+        backend = "cpu"
+    return {"device_map": device, "execution_backend": backend,
+            "device_name": name, "torch_hip_version": hip}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--max-model-len", type=int, default=8192)
+    parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto",
+                        help="auto selects available GPU (HIP uses CUDA API) or CPU")
+    parser.add_argument("--require-rocm", action="store_true",
+                        help="fail rather than use CPU or a non-ROCm GPU")
     args = parser.parse_args()
+    runtime = select_execution_backend(
+        torch, requested=args.device, require_rocm=args.require_rocm)
+    print(json.dumps({"event": "amc_model_backend_selected", **runtime}), flush=True)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     try:  # transformers >= 5 renamed torch_dtype to dtype
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, dtype=torch.bfloat16, device_map="cuda")
+            args.model, dtype=torch.bfloat16, device_map=runtime["device_map"])
     except TypeError:
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, torch_dtype=torch.bfloat16, device_map="cuda")
+            args.model, torch_dtype=torch.bfloat16, device_map=runtime["device_map"])
     model.eval()
-    _state.update(model=model, tokenizer=tokenizer, model_id=args.model)
+    _state.update(model=model, tokenizer=tokenizer, model_id=args.model,
+                  execution_backend=runtime["execution_backend"],
+                  device_name=runtime["device_name"],
+                  torch_hip_version=runtime["torch_hip_version"])
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 

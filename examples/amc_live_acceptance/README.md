@@ -168,3 +168,39 @@ python -m pytest -q test_live_handoff_runner.py test_probe_local_qwen.py test_ru
 ```
 
 **26 passed**，包含新增 8 个 UNKNOWN 对账测试。此结果仅证明工具包的模拟边界和只读对账逻辑；不代表实机运行。
+
+## US-M01-LIVE · AMD395 ROCm first-inference startup (non-actuating)
+
+The local Transformers server exposes the same Python `torch.cuda` API on
+ROCm/HIP and NVIDIA CUDA. The presence of a `cuda` device string **does not**
+by itself establish AMD GPU use. Start with a *verified HIP backend*:
+
+```bash
+python - <<'PY'
+import torch
+print({"torch": torch.__version__, "hip": torch.version.hip,
+       "available": torch.cuda.is_available(),
+       "name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None})
+PY
+# Use a model actually installed on the host and supported by the tokenizer.
+python scripts/eval/serve_local_llm.py \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --host 127.0.0.1 --port 8000 --device cuda --require-rocm
+
+# Run from another shell (no AMC or hardware write):
+curl --fail http://127.0.0.1:8000/healthz
+curl --fail http://127.0.0.1:8000/v1/models
+python examples/amc_live_acceptance/probe_local_qwen.py \
+  --device preflight-bedroom --property temperature --target 26 \
+  --output out/amd395-qwen-tool-preflight.json
+```
+
+The server refuses startup when `--require-rocm` is set and PyTorch lacks
+HIP or cannot access the GPU. Its `/healthz` reports `execution_backend`,
+`device_name`, and `torch_hip_version` from the loaded runtime. This is
+a diagnostic, **not hardware provenance attestation**. Keep the model revision
+and weight hashes, runtime launch log, and independently captured GPU utilization
+for a reproducible live result. Even a successful probe is **not** a physical
+device effect or a cross-session AMC win. Never use an authorized device endpoint
+for this first read-only stage.
+

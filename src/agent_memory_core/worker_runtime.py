@@ -46,6 +46,24 @@ class WorkerContext:
             DurableTaskLeaseStore(db.conn).assert_current(
                 tenant_id=self.tenant_id,task_id=self.task["task_id"],
                 worker_id=self.worker_id,lease_epoch=self.lease_epoch)
+            # Strict task type: permission is checked on the CURRENT tenant
+            # membership, not a stale grant or untrusted handler input.
+            from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
+            if self.task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+                permitted = db.conn.execute(
+                    """SELECT 1 FROM memory_durable_tasks t
+                       JOIN memory_principals p ON p.principal_id=t.created_by_principal_id
+                       JOIN memory_tenant_memberships m
+                         ON m.principal_id=p.principal_id AND m.tenant_id=t.tenant_id
+                       JOIN memory_tenants tenant ON tenant.tenant_id=t.tenant_id
+                       WHERE t.tenant_id=%s AND t.task_id=%s::uuid
+                         AND p.status='active' AND tenant.status='active'
+                         AND m.status='active'
+                         AND m.role IN ('owner','admin','editor')""",
+                    (self.tenant_id, self.task["task_id"]),
+                ).fetchone()
+                if permitted is None:
+                    raise LeaseConflict("Task creator is no longer authorized for external effects")
         finally:
             db.close()
 
@@ -176,6 +194,12 @@ class DurableTaskWorker:
                     worker_id=self.worker_id,lease_epoch=task["lease_epoch"])
             finally:
                 db.close()
+            # A strict task must fail before any user handler code runs.
+            # The same check is repeated inside ctx.execute_effect before
+            # the outbound provider call, covering mid-task revocations.
+            from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
+            if task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+                context.assert_lease()
             handler = self.handlers.get(task["task_type"])
             if handler is None:
                 raise LookupError(f"No handler registered for task_type={task['task_type']!r}")
@@ -184,6 +208,8 @@ class DurableTaskWorker:
                 raise LeaseConflict("Worker lost its lease while the handler was running")
             stop.set()
             thread.join(timeout=max(1.0, self.heartbeat_interval * 2))
+            if task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+                context.assert_lease()
             self._finish(task, status="completed", result=result or {})
         except LeaseConflict:
             log.exception("task execution fenced task=%s", task["task_id"])

@@ -29,6 +29,7 @@ def _digest(value) -> str:
 # Task-type-specific completion policy. Other task types retain their existing
 # semantics; this profile opts into strict external-effect declaration.
 CONTINUITY_EFFECT_TASK_TYPE = "continuity.effect.v1"
+AUTHORIZED_CONTINUITY_TASK_TYPE = "continuity.authorized-effect.v1"
 
 
 def required_effect_keys(task_type: str, input: dict) -> tuple[str, ...]:
@@ -37,7 +38,7 @@ def required_effect_keys(task_type: str, input: dict) -> tuple[str, ...]:
     The manifest is frozen in the canonical task input. It proves required
     ledger intents were accounted for, NOT that physical causality is proven.
     """
-    if task_type != CONTINUITY_EFFECT_TASK_TYPE:
+    if task_type not in (CONTINUITY_EFFECT_TASK_TYPE, AUTHORIZED_CONTINUITY_TASK_TYPE):
         return ()
     keys = input.get("required_effect_keys")
     if (not isinstance(keys, list) or not 1 <= len(keys) <= 20
@@ -61,6 +62,8 @@ class DurableTaskStore:
         if not tenant_id or not task_type or not isinstance(input, dict):
             raise ValueError("tenant_id, task_type and object input are required")
         required_effect_keys(task_type, input)
+        if task_type == AUTHORIZED_CONTINUITY_TASK_TYPE and not created_by_principal_id:
+            raise ValueError("continuity.authorized-effect.v1 requires authenticated task creator")
         request_hash = _digest({
             "task_type": task_type, "input": input,
             "created_by_principal_id": created_by_principal_id,

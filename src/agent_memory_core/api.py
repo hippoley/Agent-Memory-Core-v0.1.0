@@ -288,6 +288,7 @@ class ContinuityPrepare(BaseModel):
 class HandoffCreate(ContinuityPrepare):
     source_agent: str = Field(min_length=1, max_length=120)
     target_agent: str = Field(min_length=1, max_length=120)
+    target_principal_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class HandoffAccept(BaseModel):
@@ -1672,18 +1673,33 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
 
     @app.post("/v1/handoffs", status_code=201, tags=["Work Continuity"],
               summary="Freeze a scoped, immutable Agent work handoff")
-    def create_work_handoff(item: HandoffCreate, t: str = Depends(auth)):
-        from .work_continuity import ContinuityStore, HandoffConflict
+    def create_work_handoff(item: HandoffCreate, request: Request,
+                            t: str = Depends(auth)):
+        from .work_continuity import ContinuityStore, HandoffConflict, HandoffForbidden
         try:
             task_id = str(UUID(item.task_id))
         except (ValueError, TypeError):
             raise HTTPException(status_code=422, detail="task_id must be a UUID")
+        identity = getattr(request.state, "identity", None) or {}
+        if item.target_principal_id is not None:
+            try:
+                target_principal_id = str(UUID(item.target_principal_id))
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail="target_principal_id must be a UUID")
+            if identity.get("auth_type") not in ("session", "api_credential") or not identity.get("principal_id"):
+                raise HTTPException(status_code=403, detail="Principal-bound handoff requires authenticated identity")
+        else:
+            target_principal_id = None
         db = store_factory()
         try:
             return ContinuityStore(db).create_handoff(
                 tenant_id=t, task_id=task_id, source_agent=item.source_agent,
                 target_agent=item.target_agent, subject_ids=item.subject_ids,
-                token_budget=item.token_budget)
+                token_budget=item.token_budget,
+                source_principal_id=identity.get("principal_id"),
+                target_principal_id=target_principal_id)
+        except HandoffForbidden as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
         except LookupError:
             raise HTTPException(status_code=404, detail="Task not found")
         except HandoffConflict as exc:
@@ -1696,16 +1712,20 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
     @app.post("/v1/handoffs/{handoff_id}/accept", tags=["Work Continuity"],
               summary="Revalidate and accept a frozen handoff without executing effects")
     def accept_work_handoff(handoff_id: str, item: HandoffAccept,
-                            t: str = Depends(auth)):
-        from .work_continuity import ContinuityStore, HandoffConflict
+                            request: Request, t: str = Depends(auth)):
+        from .work_continuity import ContinuityStore, HandoffConflict, HandoffForbidden
         try:
             handoff_id = str(UUID(handoff_id))
         except (ValueError, TypeError):
             raise HTTPException(status_code=422, detail="handoff_id must be a UUID")
         db = store_factory()
         try:
+            identity = getattr(request.state, "identity", None) or {}
             return ContinuityStore(db).accept_handoff(
-                tenant_id=t, handoff_id=handoff_id, target_agent=item.target_agent)
+                tenant_id=t, handoff_id=handoff_id, target_agent=item.target_agent,
+                authenticated_principal_id=identity.get("principal_id"))
+        except HandoffForbidden as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
         except LookupError:
             raise HTTPException(status_code=404, detail="Handoff not found")
         except HandoffConflict as exc:

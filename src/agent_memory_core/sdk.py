@@ -228,13 +228,14 @@ class MemoryClient:
 
     def create_handoff(self, *, task_id: str, source_agent: str,
                        target_agent: str, subject_ids: list[str],
-                       token_budget: int = 2048):
+                       token_budget: int = 2048, target_principal_id: str | None = None):
         """Freeze one immutable context snapshot; agent labels are descriptive."""
-        return self._request("POST", "/v1/handoffs", json={
-            "task_id": task_id, "source_agent": source_agent,
-            "target_agent": target_agent, "subject_ids": subject_ids,
-            "token_budget": token_budget,
-        })
+        body = {"task_id": task_id, "source_agent": source_agent,
+                "target_agent": target_agent, "subject_ids": subject_ids,
+                "token_budget": token_budget}
+        if target_principal_id is not None:
+            body["target_principal_id"] = target_principal_id
+        return self._request("POST", "/v1/handoffs", json=body)
 
     def accept_handoff(self, handoff_id: str, *, target_agent: str):
         """Validate snapshot freshness; never start/retry external work."""

@@ -62,12 +62,12 @@ class ContinuityStore:
         if task is None:
             raise LookupError("Task not found")
         effects = self.conn.execute(
-            """SELECT e.effect_key,e.status FROM memory_task_effects AS e
+            """SELECT e.effect_key,e.status,e.request_sha256 FROM memory_task_effects AS e
                JOIN memory_durable_tasks AS t ON t.task_id=e.task_id
                WHERE t.tenant_id=%s AND e.task_id=%s::uuid
                ORDER BY e.effect_key""", (tenant_id, task_id)
         ).fetchall()
-        pending_effects = [{"effect_key": k, "status": state} for k, state in effects
+        pending_effects = [{"effect_key": k, "status": state} for k, state, _ in effects
                            if state != "committed"]
         core = {
             "schema": "amc.context-pack.v1",
@@ -77,6 +77,9 @@ class ContinuityStore:
             "checkpoint_version": task["checkpoint_version"],
             "checkpoint": _wire(task["checkpoint"]),
             "unresolved_effects": pending_effects,
+            # Full ledger hash includes committed effects, not just unresolved
+            # rows. A new committed effect after a handoff also stales it.
+            "effect_ledger_sha256": _hash(effects),
             "subjects": subjects,
             "claims": [],
             "omitted_claim_ids": [],
@@ -173,13 +176,17 @@ class ContinuityStore:
             # The frozen effect list is not enough: a new UNKNOWN effect can
             # appear after the handoff was created.
             effects = self.conn.execute(
-                """SELECT e.effect_key,e.status FROM memory_task_effects AS e
+                """SELECT e.effect_key,e.status,e.request_sha256 FROM memory_task_effects AS e
                    JOIN memory_durable_tasks AS t ON t.task_id=e.task_id
                    WHERE t.tenant_id=%s AND e.task_id=%s::uuid
                    ORDER BY e.effect_key""",
                 (tenant_id, task_id),
             ).fetchall()
-            if any(status != "committed" for _, status in effects):
+            if not isinstance(pack.get("effect_ledger_sha256"), str):
+                raise HandoffConflict("Handoff predates full effect ledger binding")
+            if pack["effect_ledger_sha256"] != _hash(effects):
+                raise HandoffConflict("External effect ledger changed since handoff")
+            if any(effect_status != "committed" for _, effect_status, _ in effects):
                 raise HandoffConflict("Current external effects need reconciliation")
             # A new fact can be as dangerous as a forgotten one: prevent an
             # old snapshot from claiming to be the entire current subject view.

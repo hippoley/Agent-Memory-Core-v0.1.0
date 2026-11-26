@@ -74,3 +74,15 @@ Agent B continuation using only public APIs; compare correctness, latency and
 context size against full-history replay and Mem0; verify checkpoint mutation,
 effect UNKNOWN and concurrent acceptance stress; and close the independent
 clean-room gate in issue #57. Neither green CI nor README claims 9.5/10.
+
+
+### External Effect ledger freshness
+
+Handoff snapshots now include `effect_ledger_sha256`, computed over the
+entire ordered list of `(effect_key, status, request_sha256)` tuples.
+Acceptance checks the current ledger against that frozen digest, **including
+previously committed effects**. An added, removed, or changed Effect invalidates
+the packet with HTTP 409 even if no UNKNOWN effect remains. Previously issued
+packets without this binding fail closed; recreate them rather than replay an
+unverifiable snapshot. This is an integrity/freshness check, not authentication
+or physical provenance.

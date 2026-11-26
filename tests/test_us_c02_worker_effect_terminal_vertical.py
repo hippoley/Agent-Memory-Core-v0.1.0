@@ -176,6 +176,18 @@ def test_handoff_to_fenced_effect_unknown_reconcile_and_public_terminal_audit():
         assert item["provider_reference_recorded"] is True
         assert item["physical_independence_verified"] is False
         assert item["causal_effect_verified"] is False
+    # Feed precisely the two public API responses to the standalone,
+    # AMC-package-independent verifier. A ledger PASS is not physical proof.
+    import importlib.util
+    from pathlib import Path
+    probe_path = Path(__file__).resolve().parents[1] / "tools" / "verify_continuity_receipt.py"
+    module_spec = importlib.util.spec_from_file_location("c02_public_probe", probe_path)
+    public_probe = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(public_probe)
+    outcome = public_probe.verify({"task": task, "effects": effects.json()})
+    assert outcome["decision"] == "PASS", outcome
+    assert outcome["reasons"] == ["LEDGER_CONSISTENT_ONLY"]
+    assert outcome["physical_effect_verified"] is False
     assert len(provider_calls) == 1, "UNKNOWN recovery must NOT repeat provider execute"
     assert len(reconcile_calls) == 1
     assert provider_calls[0] == reconcile_calls[0], "Provider key must survive Worker handoff"

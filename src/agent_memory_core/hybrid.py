@@ -86,9 +86,13 @@ _DEFAULT_CHANNEL_WEIGHTS = {"vector": 1.0, "sql": 0.8, "fts": 0.4, "graph": 0.6}
 
 class HybridMemorySearch:
     def __init__(self, store, graph=None, *, channel_weights: dict | None = None,
-                 query_aliases: dict[str, str] | None = None):
+                 query_aliases: dict[str, str] | None = None,
+                 vector_buckets: dict | None = None):
         self.store = store
         self.graph = graph
+        self.vector_buckets = dict(vector_buckets or {})
+        if set(self.vector_buckets) - {"aws", "aliyun"}:
+            raise ValueError("unknown vector bucket provider")
         self.query_aliases = {}
         for alias, predicate in (query_aliases or {}).items():
             if (not isinstance(alias, str) or not 1 <= len(alias) <= 32
@@ -100,7 +104,7 @@ class HybridMemorySearch:
         # high; the simple-dictionary FTS is the weakest signal. Equal-weight
         # RRF let the noisiest channel crowd out correct hits, so every channel
         # contributes weight/(k+rank) instead.
-        self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)
+        self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)\n        self.channel_weights.update({"vector_aws": 1.0, "vector_aliyun": 1.0})
         if channel_weights:
             self.channel_weights.update(
                 {str(k): float(v) for k, v in channel_weights.items()})
@@ -137,6 +141,21 @@ class HybridMemorySearch:
                     ranked.setdefault(mid,[]).append(("vector",rank))
             except Exception as exc:
                 degraded["vector"]=f"{type(exc).__name__}: {str(exc)[:240]}"
+
+        # Cloud vector buckets produce candidate IDs only. Do not trust metadata
+        # as memory claims: the canonical tenant/bitemporal recheck below
+        # remains the sole authority for all returned hits.
+        if embedding is not None:
+            for provider, adapter in self.vector_buckets.items():
+                channel = f"vector_{provider}"
+                try:
+                    candidates = adapter.query(
+                        tenant_id=tenant_id, model_id=model_id,
+                        embedding=embedding, top_k=min(limit * 10, 100))
+                    for rank, candidate in enumerate(candidates, 1):
+                        ranked.setdefault(candidate.memory_id, []).append((channel, rank))
+                except Exception as exc:
+                    degraded[channel] = f"{type(exc).__name__}: {str(exc)[:240]}"
 
         # Search the rebuildable ranked full-text index when the backend
         # supports it. Its results are always revalidated below against

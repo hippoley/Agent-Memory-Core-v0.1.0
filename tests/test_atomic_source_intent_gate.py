@@ -8,7 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from benchmarks.handoff import fenced_worker
+import importlib.util
+from pathlib import Path
+
+MODULE = Path(__file__).resolve().parents[1] / "benchmarks" / "handoff" / "fenced_worker.py"
+SPEC = importlib.util.spec_from_file_location("fenced_worker_source_gate_test", MODULE)
+fenced_worker = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(fenced_worker)
 
 
 class FakeDB:

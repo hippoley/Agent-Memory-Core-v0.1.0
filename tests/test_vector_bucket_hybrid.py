@@ -9,7 +9,7 @@ class CanonicalConn:
     def execute(self, sql, params):
         if "WHERE id=ANY" in sql:
             assert params[1] == "tenant-a"
-            assert len(params) == 7  # canonical tenant + bitemporal bounds
+            assert len(params) == 6  # canonical tenant + bitemporal bounds
             return [("m1", "room", "status", {"value": "open"}, "source-1",
                      datetime.now(timezone.utc), datetime.now(timezone.utc))]
         raise AssertionError("unexpected SQL")

@@ -111,3 +111,17 @@ def test_malformed_provider_id_is_rejected_before_postgres_uuid_cast():
                       embedding=[0.1] * 384, model_id="model-v1")
     assert [hit.memory_id for hit in report.hits] == [VALID_ID]
     assert "malformed candidate IDs" in report.degraded_channels["vector_azure"]
+
+
+def test_provider_failure_diagnostics_redact_sensitive_transport_payload():
+    class SecretLeakingProvider:
+        def query(self, **kwargs):
+            raise ConnectionError("authorization=Bearer REDACT_THIS_SECRET endpoint=private.example")
+    report = HybridMemorySearch(
+        CanonicalStore(), vector_buckets={"aws": SecretLeakingProvider()}
+    ).search_detailed(tenant_id="tenant-a", query="",
+                      embedding=[0.1] * 384, model_id="model-v1")
+    assert report.hits == ()
+    assert "vector_aws" in report.degraded_channels
+    assert "REDACT_THIS_SECRET" not in str(report.degraded_channels)
+    assert "private.example" not in str(report.degraded_channels)

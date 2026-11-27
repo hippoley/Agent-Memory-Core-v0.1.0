@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 
-from agent_memory_core.postgres import PostgresMemory
 from agent_memory_core.postgres_source_authority import review_registry_handoff_claim
 from agent_memory_core.sdk import MemoryClient
 
@@ -32,25 +31,23 @@ def main():
         accepted = api.accept_handoff(a.handoff_id, target_agent="agent-B")
     with open(a.source_envelope, encoding="utf-8") as handle:
         signed = json.load(handle)
-    db = PostgresMemory(os.environ["MEMORY_TEST_DSN"])
-    try:
-        decision = review_registry_handoff_claim(
-            conn=db.conn, accepted_handoff=accepted,
+    def verify_source_in_intent_transaction(conn):
+        # The source registry, current revision and producer key are locked
+        # until the fenced effect intent commits or the transaction rolls back.
+        return review_registry_handoff_claim(
+            conn=conn, accepted_handoff=accepted,
             signed_source_envelope=signed,
             tenant_id=tenant, subject_id=a.subject_id,
             predicate="payment_period",
             proposed_value={"payment_period": "quarterly"},
             requested_use="plan",
         )
-    finally:
-        db.close()
-    if decision.state != "VERIFIED" or decision.allowed_uses != ("plan",):
-        raise RuntimeError("KNOWLEDGE_ADMISSION_REJECTED: " + decision.reason)
-    # The decision only admits the intended policy; the separate Worker
-    # still must claim the real lease and write fenced outbox/effect intent.
+
     result = register_intent(
         tenant_id=tenant, task_id=a.task_id, handoff_id=a.handoff_id,
-        subject_id=a.subject_id, period="quarterly")
+        subject_id=a.subject_id, period="quarterly",
+        source_gate=verify_source_in_intent_transaction,
+    )
     print(json.dumps(result))
 
 

@@ -322,7 +322,9 @@ class DurableTaskEffectRuntime:
     def reconcile(self, *, context, effect_key: str, provider) -> dict:
         from .provider_contract import validate_provider,validate_reconciliation_outcome
         capabilities=validate_provider(provider)
-        context.assert_lease()
+        # Read-only lookup of an already UNKNOWN effect must stay possible after
+        # creator revocation. Fencing remains compulsory; do not grant execute.
+        context.assert_lease(reconciliation_only=True)
         db=self.connection_factory()
         try:
             effect=DurableTaskEffectStore(db.conn).begin_reconciliation(

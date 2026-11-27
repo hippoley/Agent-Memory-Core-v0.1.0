@@ -37,8 +37,12 @@ class WorkerContext:
         self.checkpoint_version = int(task["checkpoint_version"])
         self.checkpoint = task.get("checkpoint")
 
-    def assert_lease(self) -> None:
-        """Fail closed before a handler performs a non-database side effect."""
+    def assert_lease(self, *, reconciliation_only: bool = False) -> None:
+        """Check fencing; restrict writes, while permitting read-only UNKNOWN lookup.
+
+        reconciliation_only MUST only be used for trusted Provider.reconcile()
+        lookups. It never grants execute() or task-completion authority.
+        """
         if self.lease_lost.is_set():
             raise LeaseConflict("Worker heartbeat reports that the lease was lost")
         db = self.connection_factory()
@@ -49,7 +53,8 @@ class WorkerContext:
             # The same canonical policy guards BOTH execution and final
             # durable task completion, including direct HTTP/SDK writes.
             from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
-            if self.task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+            if (self.task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE
+                    and not reconciliation_only):
                 from .worker_identity import assert_current_task_creator_write_authority
                 assert_current_task_creator_write_authority(
                     db.conn, tenant_id=self.tenant_id,

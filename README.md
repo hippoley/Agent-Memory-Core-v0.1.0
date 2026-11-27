@@ -4,16 +4,16 @@
 
 # Agent Memory Core
 
-### Change the belief. Keep the evidence. Remember what was true — and when.
+### Make agent work survive correction, handoff, and interruption — without inventing proof.
 
-**An API-first, local-first memory runtime for AI agents.** Store versioned claims, revise them with provenance, retrieve current state and history, and run durable verification through one public REST API and Python SDK.
+**An API-first, local-first, evidence-aware memory runtime for AI agents.** Preserve versioned claims, provenance, bitemporal history, and durable task state through REST and Python SDK. **Verified Agent Work Continuity is experimental, not a claim of independently verified task completion.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](pyproject.toml)
 [![CI](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml/badge.svg)](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions/workflows/test.yml)
 [![Development status](https://img.shields.io/badge/status-active%20development-orange)](docs/USER-STORY-ACCEPTANCE.md)
 
-[Quickstart](#quickstart) · [Third-party SDK](#connect-an-agent-with-the-python-sdk) · [API & Swagger](#api-and-observability) · [Architecture](#architecture) · [Observatory](#memory-observatory--see-memory-not-just-messages) · [中文导览](docs/START-HERE.zh-CN.md)
+[Quickstart](#quickstart) · [Evidence & status](#evidence-levels-and-product-boundaries) · [External reproduction](#independent-reproduction--external-integration) · [SDK](#connect-an-agent-with-the-python-sdk) · [Observatory](#memory-observatory--see-memory-not-just-messages) · [中文](docs/START-HERE.zh-CN.md)
 
 </div>
 
@@ -35,6 +35,31 @@ Agent Memory Core treats memory as a **versioned, evidence-carrying belief**, no
 > **Models propose. The memory runtime validates, commits and preserves the evidence.**
 
 The project does not claim universal truth detection or reliable natural-language understanding across every domain. Extraction quality depends on the caller's model or rules; the canonical memory layer provides deterministic identity, revision, scope and history semantics.
+
+## Why continuity, not just vector memory?
+
+An agent reads a monthly supplier contract. The contract is revised to quarterly.
+Agent A exits; Agent B continues after a tool call times out. Finding the old
+embedding is easy. Answering **what was valid, which source version authorized
+the action, whether the external effect occurred, and whether the next agent
+can proceed** is not.
+
+| Question | AMC's relevant boundary | What it cannot automatically prove |
+|---|---|---|
+| Which claim was current *then*? | Canonical PostgreSQL, explicit revisions, `valid_at` / `known_at` | The original source was truthful |
+| Can Agent B accept the context? | Experimental source-linked, freshness-checked handoff | A new actor has valid delegated authorization |
+| Did an external effect complete? | Fenced intent, durable effect states including `UNKNOWN` | Exactly-once physical action or independent causality |
+| Can another maintainer reproduce the result? | Public API, SDK and separately scoped conformance work | Independent adoption or security certification |
+
+**Invariant:** PostgreSQL is the canonical fact authority. Vector, FTS, graph,
+AWS S3 Vectors, Alibaba OSS Vectors and Azure AI Search are **candidate indexes,
+not additional factual authorities**. A search hit, model assertion or a saved
+receipt is not automatically proof of an external effect.
+
+AMC complements LangGraph checkpoints, Temporal, Mem0 and vector databases;
+it does not replace them. The value to validate is **source-version-aware,
+fail-closed, independently checkable work continuation**, not a new retrieval
+algorithm or orchestration framework.
 
 ## Agent Work Continuity · experimental US-C01
 
@@ -72,9 +97,30 @@ gate are still required before a 9.5/10 product claim.
 
 This is a memory component for your existing agent stack — not a replacement for LangGraph, AgentScope, an LLM, or your application.
 
+## Evidence levels and product boundaries
+
+| Level | What it would mean | Publicly verified status |
+|---|---|---|
+| **SOURCE** | Source code is inspectable | Core memory API, revisioned PostgreSQL, bitemporal recall and optional projections are present in `main` |
+| **CI** | Specific tests passed on a **specific SHA** | See [GitHub Actions](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/actions); green CI is not third-party acceptance |
+| **LIVE** | External provider, independently observed real outcome | Not yet established for the full handoff / three-cloud stories |
+| **INDEPENDENT** | Non-author completes the documented public-main journey | [Independent cold-install #57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57) remains open |
+| **ADOPTED** | External code pins and depends on an AMC interface or verifier | Not yet demonstrated; [external conformance reproduction #70](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/70) remains open |
+
+| Surface | Availability |
+|---|---|
+| Local REST, SDK, fact revision, history, browser demo | Published **`main`**; use the Quickstart below |
+| Agent handoff | [Experimental US-C01](docs/AGENT-WORK-CONTINUITY-US-C01.md); principal-bound delegation and complete effect evidence are not accepted |
+| Offline continuity conformance (12 failure/control vectors) | [PR #69](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/69) **unmerged**; not available on main |
+| AWS + Alibaba + Azure retrieval adapters | [PR #71](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/71) **Draft/unmerged**, opt-in candidate reads; no complete durable remote Outbox or live-cloud acceptance |
+| Verified Agent-B terminal task outcome | [Issue #68](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/68) open; [source-revocation gap #67](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/67) open |
+
+Do not combine successful jobs from different SHAs into a release verdict.
+For unproven observations, **UNKNOWN is a valid and necessary outcome**.
+
 ## Quickstart
 
-The supported public installation source is the repository's **default `main` branch**, not a PR or feature branch. It uses Docker Compose and does not require a hosted account. Use the command below exactly as an external developer would; do not switch branches. **Release gate:** the PR #56 all-in-one `scripts/demo_local.py` and verified browser-mutation experience count as published only when those files are present in the checked-out `main` revision. The existence of a PR or passing feature-branch CI does not establish public availability.
+The supported public installation source is **`main`**, not an unmerged feature branch. Docker Compose and Python are required; no hosted AMC account is needed. The local demo is on published `main`. Automated CI cold-start checks exist, but unassisted external human acceptance [#57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57) is still open. Record your exact `git rev-parse HEAD` when reproducing.
 
 **Prerequisites:** Git, Docker Compose v2, Python 3.10+.
 
@@ -185,7 +231,7 @@ python scripts/launch_local.py down
 
 ## Run the product locally in a browser
 
-For a **`main` revision that contains `scripts/demo_local.py`**, use this all-in-one browser walkthrough. Verify that the script exists after cloning. If it is missing from that `main` checkout, record the P0-1 full-browser acceptance as **BLOCKED (feature not released)**; do not switch to a PR branch as a workaround.
+Use the published mainline browser walkthrough. If the script is unexpectedly absent from the exact `main` checkout, report the SHA and failure rather than switching to an unmerged PR.
 
 ```bash
 git clone --branch main --single-branch https://github.com/hippoley/Agent-Memory-Core-v0.1.0.git
@@ -400,16 +446,16 @@ Lite still uses the PostgreSQL database image; it is not SQLite-only or a measur
 - Public REST API and OpenAPI contract for core memory operations.
 - Python SDK for identity-aware API access, memory lifecycle, search, evidence, events and workflow operations.
 - PostgreSQL canonical claims, provenance, revision history and outbox.
-- Real independent third-party consumer example; its create/revise/read/search/provenance/events/forget lifecycle has run against the integrated API stack.
+- A **separately runnable consumer example** exercised by this project's integration tests; this is **not evidence of adoption by an unrelated maintainer**.
 - Local Observatory and browser-based OIDC integration.
 - Optional pgvector, Apache AGE and Temporal integration paths.
 
 ### Still being productized
 
-- A fully repeatable clean-machine deployment and Owner bootstrap experience.
+- Independently verified **non-author** clean-machine installation and Owner bootstrap ([#57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57)); project-owned automated cold-start tests already exist.
 - Production-ready shared multi-tenant worker routing and complete worker authorization across every projection.
-- Webhook delivery operations, dead-letter handling and replay under failure.
-- Fault-injected process/database recovery and independently verified backup/restore.
+- Independent public-TLS Webhook receiver, credential rotation and receiver-side idempotency/replay evidence; internal delivery/DLQ mechanisms already exist.
+- Complete process/DB restoration, external-effect reconciliation and independently verified backup/restore for supported deployment modes; narrower process-level tests exist.
 - Invitation onboarding, full membership administration and complete resource-level RBAC.
 - External OIDC provider compatibility, production secret rotation, rate limiting, TLS deployment hardening and independent security review.
 - Cross-domain model extraction/retrieval quality and measured load/latency/recovery targets.
@@ -429,6 +475,30 @@ pytest -q
 
 For integration tests, use a disposable PostgreSQL / pgvector / AGE environment and set `MEMORY_TEST_DSN` as described in the [acceptance guide](docs/USER-STORY-ACCEPTANCE.md).
 
+## Independent reproduction & external integration
+
+The best contribution is a small **reproducible failure or independent implementation**,
+not another architecture diagram. Include OS, Python/Docker versions, exact
+`git rev-parse HEAD`, commands, exit code, expected/observed state, and
+redacted evidence; never publish credentials or personal data.
+
+1. **Released product:** clone public `main`, run the [local guide](docs/LOCAL-DEMO.zh-CN.md), and independently verify create → revise → historical read → forget → restart. Record failures or a non-author acceptance result in [#57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57).
+2. **Portable, offline task/effect consistency (experimental):** [PR #69](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/69) has a pinned 12-vector stdlib-only verifier, intentionally **not in `main` yet**. Check out that PR's explicitly documented SHA and run `python -I -S tools/run_continuity_vectors.py`. Its PASS is only consistency of *caller-supplied, untrusted JSON*, **not** authentication, source validity or evidence of physical execution. Share independent runs or compatible implementations via [#70](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/70).
+3. **Real effect safety:** submit a deterministic source-revocation-before-intent test to [#67](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/67), or review the independent task terminal-state acceptance contract in [#68](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/68).
+4. **Multi-cloud correctness (experimental):** review [#71](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/71); SDK simulations and local PostgreSQL tests must not be presented as real AWS/Alibaba/Azure cloud acceptance.
+
+**What counts as a third-party dependency?** A non-author project referencing a pinned
+artifact in its own code/CI, publishing a minimal failing case, or shipping an
+independently implemented compatible verifier. Stars, author-run tests, and
+unreviewed endorsements do not count.
+
+**Prior art:** [LangGraph checkpointing](https://github.com/langchain-ai/langgraph),
+[Agent Memory Continuity Protocol](https://github.com/nunchi-ai/amcp) and
+other handoff systems already cover adjacent problems. AMC does not claim
+to invent persistence or agent-to-agent state transfer; evaluate this work
+on independently testable **revision, source authority, UNKNOWN effects,
+and terminal continuity semantics**.
+
 ## Contributing
 
 The most valuable contributions are reproducible improvements to the public product path:
@@ -442,15 +512,6 @@ The most valuable contributions are reproducible improvements to the public prod
 
 See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [User Story acceptance](docs/USER-STORY-ACCEPTANCE.md), and the [engineering roadmap](docs/AGE-TEMPORAL-STRATEGY.md).
 
----
-
-<div align="center">
-
-**Memory shouldn't just survive a session. It should survive being wrong.**
-
-[中文导览](docs/START-HERE.zh-CN.md) · [Interactive Atlas](docs/demo/index.html) · [API reference](docs/API-REFERENCE.md) · [Report an issue](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues)
-
-</div>
 
 
 ## Durable Task Worker Runtime (PR #52, Draft)
@@ -492,3 +553,13 @@ The fencing boundary is enforced inside the canonical Python task store too:
 checkpoint and status mutations require the current Worker ID and Lease Epoch.
 The HTTP layer is not the only guard; a tenant-only SDK/store write cannot
 bypass the PostgreSQL lease check.
+
+---
+
+<div align="center">
+
+**Memory shouldn't just survive a session. It should survive being wrong.**
+
+[中文导览](docs/START-HERE.zh-CN.md) · [Interactive Atlas](docs/demo/index.html) · [API reference](docs/API-REFERENCE.md) · [Report an issue](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues)
+
+</div>

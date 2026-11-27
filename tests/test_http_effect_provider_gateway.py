@@ -150,8 +150,13 @@ def test_postgres_worker_to_http_gateway_revocation_reconcile_and_cancel(gateway
         db.close()
     identity = IdentityStore(dsn)
     owner = identity.create_principal(principal_type="service", display_name="HTTP creator")
+    replacement_owner = identity.create_principal(
+        principal_type="service", display_name="HTTP recovery administrator")
     tenant = "http-gateway-c02-" + uuid4().hex
     identity.create_tenant(tenant_id=tenant, display_name="HTTP gateway", owner_principal_id=owner)
+    # The identity system correctly forbids demoting the sole tenant owner.
+    # Keep a separate active owner so the test can revoke the task creator.
+    identity.add_membership(tenant_id=tenant, principal_id=replacement_owner, role="owner")
     identity.close()
 
     def connect():

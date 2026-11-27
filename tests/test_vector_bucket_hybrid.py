@@ -64,3 +64,18 @@ def test_unknown_provider_is_rejected():
     import pytest
     with pytest.raises(ValueError, match="unknown"):
         HybridMemorySearch(CanonicalStore(), vector_buckets={"untrusted": FakeCloud()})
+
+def test_azure_candidates_are_canonically_revalidated_and_fail_independently():
+    azure = FakeCloud(["m1", "stale-or-wrong-tenant"])
+    report = HybridMemorySearch(
+        CanonicalStore(), vector_buckets={
+            "azure": azure, "aws": FakeCloud(fail=True),
+            "aliyun": FakeCloud(["m1"]),
+        }
+    ).search_detailed(
+        tenant_id="tenant-a", query="", embedding=[0.1] * 384,
+        model_id="model-v1", limit=5)
+    assert [hit.memory_id for hit in report.hits] == ["m1"]
+    assert report.hits[0].channels == ("vector_aliyun", "vector_azure")
+    assert "vector_aws" in report.degraded_channels
+    assert "vector_azure" in report.channels_used

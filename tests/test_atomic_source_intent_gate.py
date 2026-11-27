@@ -77,6 +77,7 @@ def test_verified_source_is_checked_before_intent_in_same_transaction(monkeypatc
         assert events == ["txn_open"]
         events.append("source_locked")
         return SimpleNamespace(state="VERIFIED", allowed_uses=("plan",),
+                               source_id="contract:v3",
                                reason="INDEPENDENT_SOURCE_MATCH")
 
     result = fenced_worker.register_intent(

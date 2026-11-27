@@ -59,6 +59,52 @@ def provider_fence(event, headers):
                     or row[2] != "executing" or row[3] != worker or row[4] != epoch):
                 yield False
                 return
+            # For source-bound intentions, the Provider must recheck the
+            # live source at admission, not trust the earlier Worker verdict.
+            # This is a trusted resource-server DB lookup, NOT an Agent token.
+            checkpoint_row = db.conn.execute(
+                """SELECT checkpoint FROM memory_task_checkpoints
+                   WHERE task_id=%s::uuid ORDER BY version DESC LIMIT 1""",
+                (task_id,),
+            ).fetchone()
+            checkpoint = checkpoint_row[0] if checkpoint_row else None
+            source = checkpoint.get("source_authority") if isinstance(checkpoint, dict) else None
+            if source is not None:
+                if (not isinstance(source, dict)
+                        or any(not isinstance(source.get(field), str)
+                               or not source[field]
+                               for field in ("source_id", "subject_id", "predicate"))
+                        or event.get("payload", {}).get("subject") != source["subject_id"]):
+                    yield False
+                    return
+                active = db.conn.execute(
+                    """SELECT 1 FROM memory_knowledge_source_revisions revision
+                       JOIN memory_tenants tenant ON tenant.tenant_id=revision.tenant_id
+                       JOIN memory_evidence_producer_keys producer
+                         ON producer.issuer=revision.issuer
+                        AND producer.key_id=revision.key_id
+                       JOIN memory_principals principal
+                         ON principal.principal_id=producer.principal_id
+                       WHERE revision.tenant_id=%s
+                         AND revision.subject_id=%s
+                         AND revision.predicate=%s
+                         AND revision.source_id=%s
+                         AND revision.revoked_at IS NULL
+                         AND tenant.status='active'
+                         AND principal.status='active'
+                         AND principal.principal_type='service'
+                         AND producer.revoked_at IS NULL
+                         AND producer.audience='amc-knowledge-source'
+                         AND producer.not_before <= clock_timestamp()
+                         AND (producer.expires_at IS NULL
+                              OR producer.expires_at > clock_timestamp())
+                       FOR SHARE OF revision,tenant,producer,principal""",
+                    (tenant, source["subject_id"], source["predicate"],
+                     source["source_id"]),
+                ).fetchone()
+                if active is None:
+                    yield False
+                    return
             yield True
     finally:
         db.close()

@@ -267,6 +267,47 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert "LeaseConflict" in rejected_tenant.stderr
         with sqlite3.connect(db_path) as conn:
             assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
+        # Provider-side source check: revoke AFTER intent commit but BEFORE
+        # HTTP admission. The worker's valid lease and bearer token must
+        # not override an obsolete signed source revision.
+        trust_db = PostgresMemory(env["MEMORY_TEST_DSN"])
+        try:
+            with trust_db.conn.transaction():
+                trust_db.conn.execute(
+                    """UPDATE memory_knowledge_source_revisions SET source_id=%s
+                       WHERE tenant_id=%s AND subject_id=%s AND predicate='payment_period'""",
+                    ("supplier-contract:v4", tenant, subject))
+        finally:
+            trust_db.close()
+        live_headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + provider_token,
+            "X-AMC-Tenant": tenant,
+            "X-AMC-Task": manifest["task_id"],
+            "X-AMC-Worker": worker_result["worker_id"],
+            "X-AMC-Epoch": str(worker_result["lease_epoch"]),
+        }
+        revoked_post = Request(
+            f"http://127.0.0.1:{provider_port}/effects",
+            data=json.dumps(worker_result["effect_request"]).encode(),
+            headers=live_headers, method="POST",
+        )
+        with pytest.raises(HTTPError) as no_longer_current:
+            urlopen(revoked_post, timeout=3)
+        assert no_longer_current.value.code == 403
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
+        # Positive control: restore exactly the same registered revision;
+        # the original fenced worker can now be admitted once.
+        trust_db = PostgresMemory(env["MEMORY_TEST_DSN"])
+        try:
+            with trust_db.conn.transaction():
+                trust_db.conn.execute(
+                    """UPDATE memory_knowledge_source_revisions SET source_id=%s
+                       WHERE tenant_id=%s AND subject_id=%s AND predicate='payment_period'""",
+                    ("supplier-contract:v3", tenant, subject))
+        finally:
+            trust_db.close()
         if kill_after_provider_commit:
             # The provider writes the marker only AFTER it has committed the
             # real SQLite effect and BEFORE it sends the HTTP response.

@@ -36,6 +36,16 @@ def register_intent(*, tenant_id: str, task_id: str, handoff_id: str,
                         or decision.allowed_uses != ("plan",)):
                     raise RuntimeError(
                         "KNOWLEDGE_ADMISSION_REJECTED: " + decision.reason)
+            source_authority = None
+            if source_gate is not None:
+                source_id = getattr(decision, "source_id", None)
+                if not isinstance(source_id, str) or not source_id:
+                    raise RuntimeError("KNOWLEDGE_ADMISSION_REJECTED: MISSING_SOURCE_REVISION")
+                source_authority = {
+                    "source_id": source_id,
+                    "subject_id": subject_id,
+                    "predicate": "payment_period",
+                }
             store = DurableTaskLeaseStore(db.conn)
             claimed = store.claim(
                 tenant_id=tenant_id, worker_id=worker_id,
@@ -50,6 +60,8 @@ def register_intent(*, tenant_id: str, task_id: str, handoff_id: str,
                 "handoff_id": handoff_id,
                 "effect_request": request,
             }
+            if source_authority is not None:
+                checkpoint["source_authority"] = source_authority
             result = store.commit_checkpoint(
                 tenant_id=tenant_id, task_id=task_id, worker_id=worker_id,
                 lease_epoch=claimed["lease_epoch"],

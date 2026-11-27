@@ -78,6 +78,22 @@ def test_creator_revocation_blocks_db_worker_before_handler_and_effect():
     with pytest.raises(LeaseConflict, match="no longer authorized"):
         ctx.assert_lease()
 
+    # The direct HTTP/SDK status entrypoint ultimately calls lease.finish().
+    # A scoped worker credential must NOT bypass creator revocation simply by
+    # presenting an otherwise-valid worker lease and epoch.
+    from agent_memory_core.worker_leases import DurableTaskLeaseStore
+    db = connect()
+    try:
+        with pytest.raises(LeaseConflict, match="no longer authorized"):
+            DurableTaskLeaseStore(db.conn).finish(
+                tenant_id=tenant, task_id=task["task_id"],
+                worker_id="restricted-worker", lease_epoch=claimed["lease_epoch"],
+                status="completed", result={"forged": True})
+        assert DurableTaskStore(db.conn).get_task(
+            tenant_id=tenant, task_id=task["task_id"])["status"] == "running"
+    finally:
+        db.close()
+
     # Expire the old lease using DB time, then try a fresh worker epoch.
     db = connect()
     try:

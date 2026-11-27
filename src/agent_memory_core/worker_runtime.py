@@ -46,24 +46,14 @@ class WorkerContext:
             DurableTaskLeaseStore(db.conn).assert_current(
                 tenant_id=self.tenant_id,task_id=self.task["task_id"],
                 worker_id=self.worker_id,lease_epoch=self.lease_epoch)
-            # Strict task type: permission is checked on the CURRENT tenant
-            # membership, not a stale grant or untrusted handler input.
+            # The same canonical policy guards BOTH execution and final
+            # durable task completion, including direct HTTP/SDK writes.
             from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
             if self.task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
-                permitted = db.conn.execute(
-                    """SELECT 1 FROM memory_durable_tasks t
-                       JOIN memory_principals p ON p.principal_id=t.created_by_principal_id
-                       JOIN memory_tenant_memberships m
-                         ON m.principal_id=p.principal_id AND m.tenant_id=t.tenant_id
-                       JOIN memory_tenants tenant ON tenant.tenant_id=t.tenant_id
-                       WHERE t.tenant_id=%s AND t.task_id=%s::uuid
-                         AND p.status='active' AND tenant.status='active'
-                         AND m.status='active'
-                         AND m.role IN ('owner','admin','editor')""",
-                    (self.tenant_id, self.task["task_id"]),
-                ).fetchone()
-                if permitted is None:
-                    raise LeaseConflict("Task creator is no longer authorized for external effects")
+                from .worker_identity import assert_current_task_creator_write_authority
+                assert_current_task_creator_write_authority(
+                    db.conn, tenant_id=self.tenant_id,
+                    task_id=self.task["task_id"])
         finally:
             db.close()
 

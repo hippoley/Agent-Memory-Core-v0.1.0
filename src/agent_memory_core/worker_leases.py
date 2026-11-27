@@ -149,6 +149,14 @@ class DurableTaskLeaseStore:
                 ).fetchone()
                 if specification is None:
                     raise LeaseConflict("Task not found under current tenant")
+                from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
+                if specification[0] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+                    # Final authorization is enforced in the canonical DB
+                    # transition, not only in the in-process WorkerContext.
+                    # Direct SDK/HTTP status writes cannot skip this check.
+                    from .worker_identity import assert_current_task_creator_write_authority
+                    assert_current_task_creator_write_authority(
+                        self.conn, tenant_id=tenant_id, task_id=task_id)
                 required = required_effect_keys(specification[0], specification[1])
                 if required:
                     recorded = self.conn.execute(

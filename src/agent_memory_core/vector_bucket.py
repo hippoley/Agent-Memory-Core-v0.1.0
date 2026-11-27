@@ -10,9 +10,12 @@ from dataclasses import dataclass
 import hashlib
 import math
 import re
+from urllib.parse import urlsplit
 from typing import Any, Sequence
 
-_SAFE_INDEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
+_COMMON_INDEX = re.compile(r"^[a-z][a-z0-9]{2,62}$")
+_AWS_INDEX = re.compile(r"^[a-z0-9][a-z0-9.-]{2,62}$")
+_BUCKET = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$")
 
 
 @dataclass(frozen=True)
@@ -27,13 +30,22 @@ class VectorBucketConfig:
     def __post_init__(self) -> None:
         if self.provider not in {"aws", "aliyun"}:
             raise ValueError("provider must be aws or aliyun")
-        if not self.bucket or not self.index or not _SAFE_INDEX.fullmatch(self.index):
-            raise ValueError("valid vector bucket and index are required")
+        if not _BUCKET.fullmatch(self.bucket):
+            raise ValueError("vector bucket must be a lowercase DNS-safe name (3-32 chars)")
+        index_pattern = _COMMON_INDEX if self.provider == "aliyun" else _AWS_INDEX
+        if not index_pattern.fullmatch(self.index):
+            raise ValueError("index name is not supported by this provider")
         if not self.region or not 1 <= self.dimensions <= 4096:
             raise ValueError("region and supported dimensions are required")
         if self.provider == "aliyun":
-            if not self.endpoint_url or not self.endpoint_url.startswith("https://"):
+            if not self.endpoint_url:
                 raise ValueError("aliyun requires explicit HTTPS vector bucket endpoint")
+            url = urlsplit(self.endpoint_url)
+            expected = rf"^{re.escape(self.bucket)}-[0-9]+\\.{re.escape(self.region)}\\.oss-vectors\\.aliyuncs\\.com$"
+            if (url.scheme != "https" or not re.fullmatch(expected, url.hostname or "")
+                    or url.username or url.password or url.port or url.path
+                    or url.query or url.fragment):
+                raise ValueError("aliyun endpoint must match the bucket, account and region")
         elif self.endpoint_url:
             raise ValueError("AWS custom endpoints are disabled by this adapter")
 
@@ -59,6 +71,24 @@ def _safe_identity(value: str, label: str) -> str:
     return value
 
 
+@dataclass(frozen=True)
+class VectorBucketCapabilities:
+    """Portable API is classic vector search; provider-specific features are opt-in."""
+    vector_search: bool = True
+    metadata_filter: bool = True
+    enhanced_mode: bool = False
+    fusion_mode: bool = False
+    server_side_encryption_configurable: bool = False
+
+
+def provider_capabilities(provider: str) -> VectorBucketCapabilities:
+    if provider == "aws":
+        return VectorBucketCapabilities(enhanced_mode=True, server_side_encryption_configurable=True)
+    if provider == "aliyun":
+        return VectorBucketCapabilities(fusion_mode=True)
+    raise ValueError("unknown vector bucket provider")
+
+
 class VectorBucketAdapter:
     """Inject a boto3 s3vectors client for offline tests, or construct it explicitly.
 
@@ -69,6 +99,7 @@ class VectorBucketAdapter:
     def __init__(self, config: VectorBucketConfig, *, client: Any):
         self.config = config
         self.client = client
+        self.capabilities = provider_capabilities(config.provider)
 
     @classmethod
     def from_boto3(cls, config: VectorBucketConfig, *,

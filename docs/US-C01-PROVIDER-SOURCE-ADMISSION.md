@@ -46,3 +46,26 @@ then revokes v3 to v4, and demands that a valid signed-in Worker POST
 still return 403 with **zero external effects**. The positive v3 path
 must still execute. This is a regression for an actual detected code
 bypass, not a blanket physical-world authorization claim.
+
+
+## Cross-process Agent B must read the same effect-bound intent
+
+An adversarial later progress checkpoint also exposed a second bug: the
+isolated Agent B was using `GET /v1/tasks/{id}`'s latest checkpoint as if
+it necessarily carried the requested effect intent. On a legitimate
+additional progress update, Agent B falsely rejected the existing intent.
+
+The narrow tenant-authorized read endpoint
+`GET /v1/tasks/{task_id}/effects/{effect_key}/intent` now returns the
+**original checkpoint matching the effect key and request SHA-256**, plus
+the immutable stored effect request, through
+`DurableTaskStore.get_effect_intent` and
+`MemoryClient.get_task_effect_intent`.
+
+The Producer's HTTP gateway and Agent B now independently resolve the
+same effect identity instead of relying on mutable task progress ordering.
+This endpoint returns a database record, NOT physical execution
+attestation or external authority. Nonexistent and cross-tenant entries
+must return 404. The integration test advances task progress after intent
+creation, then performs the existing revoke / restore / lost ACK and Agent B
+recovery scenarios.

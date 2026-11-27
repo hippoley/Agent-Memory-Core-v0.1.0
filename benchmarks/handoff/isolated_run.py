@@ -254,10 +254,12 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str, *,
         # Agent B cannot create intent or impersonate the fenced Worker.
         # It only checks that a separate Worker committed the exact request
         # before any contact with the external Provider.
-        task = api.get_task(pack["task_id"])
-        latest = task.get("checkpoint") or {}
-        intent = latest.get("checkpoint") or {}
-        if (latest.get("version") != task.get("checkpoint_version")
+        # Progress checkpoints can advance independently after an Effect is
+        # requested. Read the immutable checkpoint bound to this effect key
+        # and exact payload, not the last unrelated task progress update.
+        bound = api.get_task_effect_intent(pack["task_id"], effect_key)
+        intent = bound.get("checkpoint") or {}
+        if (bound.get("effect_request") != expected_request
                 or intent.get("phase") != "effect-intent-registered"
                 or intent.get("handoff_id") != handoff_id
                 or intent.get("effect_request") != expected_request):

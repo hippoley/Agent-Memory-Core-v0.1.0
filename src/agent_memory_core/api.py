@@ -1738,6 +1738,29 @@ def create_app(*, api_key=None, tenant_id=None, store_factory=None,
         finally:
             db.close()
 
+    @app.get("/v1/tasks/{task_id}/effects/{effect_key}/intent",
+             tags=["Durable Tasks"],
+             summary="Read the original effect-bound intent, not the latest progress checkpoint")
+    def get_effect_bound_intent(task_id: str, effect_key: str,
+                                t: str = Depends(auth)):
+        from .durable_tasks import DurableTaskStore
+        try:
+            task_id = str(UUID(task_id))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="task_id must be a UUID")
+        if not effect_key or len(effect_key) > 255:
+            raise HTTPException(status_code=422, detail="Invalid effect_key")
+        db = store_factory()
+        try:
+            intent = DurableTaskStore(db.conn).get_effect_intent(
+                tenant_id=t, task_id=task_id, effect_key=effect_key)
+            if intent is None:
+                raise HTTPException(status_code=404,
+                                    detail="Effect-bound intent not found")
+            return intent
+        finally:
+            db.close()
+
     @app.post("/v1/tasks/worker/claim", tags=["Durable Tasks"],
               summary="Atomically claim one task using a dedicated worker credential")
     def claim_durable_task(item: DurableTaskClaimWrite,

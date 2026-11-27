@@ -259,6 +259,12 @@ class MemoryClient:
     def get_task(self, task_id: str):
         return self._request("GET","/v1/tasks/"+self._segment(task_id))
 
+    def get_task_effect_intent(self, task_id: str, effect_key: str):
+        """Inspect the original, exact-effect checkpoint through tenant auth."""
+        return self._request(
+            "GET", "/v1/tasks/" + self._segment(task_id)
+            + "/effects/" + self._segment(effect_key) + "/intent")
+
     def commit_task_checkpoint(self, task_id: str, *, expected_version: int,
                                checkpoint: dict, idempotency_key: str,
                                progress_completed: int = 0, progress_total: int = 0,

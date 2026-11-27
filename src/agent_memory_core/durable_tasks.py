@@ -141,6 +141,32 @@ class DurableTaskStore:
         )) if checkpoint else None)
         return task
 
+    def get_effect_intent(self, *, tenant_id: str, task_id: str,
+                          effect_key: str) -> dict | None:
+        """Read the immutable original intent, not the latest task progress."""
+        row = self.conn.execute(
+            """SELECT cp.version,cp.checkpoint,e.request,e.request_sha256
+               FROM memory_task_checkpoints cp
+               JOIN memory_task_effects e
+                 ON e.task_id=cp.task_id AND e.effect_key=cp.effect_key
+                AND e.request_sha256=cp.effect_request_sha256
+               JOIN memory_durable_tasks t ON t.task_id=cp.task_id
+               WHERE t.tenant_id=%s AND t.task_id=%s::uuid
+                 AND cp.effect_key=%s
+               ORDER BY cp.version ASC LIMIT 1""",
+            (tenant_id, task_id, effect_key),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "task_id": task_id,
+            "effect_key": effect_key,
+            "version": row[0],
+            "checkpoint": row[1],
+            "effect_request": row[2],
+            "effect_request_sha256": row[3],
+        }
+
     def commit_checkpoint(
         self, *, tenant_id: str, task_id: str, worker_id: str,
         lease_epoch: int, expected_version: int,

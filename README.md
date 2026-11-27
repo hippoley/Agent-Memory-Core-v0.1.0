@@ -21,45 +21,32 @@
 
 ## Why Agent Memory Core?
 
-An agent learns that a supplier is paid monthly. A new contract changes the term to quarterly. A conventional vector store may retrieve both statements with similar confidence — but an agent needs to know which belief is current, why it changed, and what it believed yesterday.
+An agent remembers that a supplier is paid monthly. A newer contract changes
+it to quarterly. Agent A disappears and Agent B resumes after an external
+operation times out. A similarity search may retrieve both statements; it
+doesn't answer which was valid, what Agent B is allowed to do, or whether the
+external operation actually happened.
 
-Agent Memory Core treats memory as a **versioned, evidence-carrying belief**, not just a chunk of text:
+**AMC stores versioned, evidence-linked claims in canonical PostgreSQL, with
+explicit correction, historical recall and recoverable projections.** Its
+experimental work-continuity direction connects memory history to source-aware
+handoff, durable effect state and independently checkable results.
 
-- **Current state:** retrieve the claim that is valid now.
-- **Revision history:** preserve superseded versions instead of silently overwriting them.
-- **Evidence and provenance:** trace a claim to the source that supports it.
-- **Bitemporal recall:** ask what was true at one time and what the system knew at another.
-- **Tenant-aware API:** let independent agents use scoped credentials without database access.
-- **Durable work:** expose events and optional Temporal verification through public APIs.
-
-> **Models propose. The memory runtime validates, commits and preserves the evidence.**
-
-The project does not claim universal truth detection or reliable natural-language understanding across every domain. Extraction quality depends on the caller's model or rules; the canonical memory layer provides deterministic identity, revision, scope and history semantics.
-
-## Why continuity, not just vector memory?
-
-An agent reads a monthly supplier contract. The contract is revised to quarterly.
-Agent A exits; Agent B continues after a tool call times out. Finding the old
-embedding is easy. Answering **what was valid, which source version authorized
-the action, whether the external effect occurred, and whether the next agent
-can proceed** is not.
-
-| Question | AMC's relevant boundary | What it cannot automatically prove |
+| What needs to be decided | Existing or experimental boundary | Not yet proved |
 |---|---|---|
-| Which claim was current *then*? | Canonical PostgreSQL, explicit revisions, `valid_at` / `known_at` | The original source was truthful |
-| Can Agent B accept the context? | Experimental source-linked, freshness-checked handoff | A new actor has valid delegated authorization |
-| Did an external effect complete? | Fenced intent, durable effect states including `UNKNOWN` | Exactly-once physical action or independent causality |
-| Can another maintainer reproduce the result? | Public API, SDK and separately scoped conformance work | Independent adoption or security certification |
+| What did the system know, and when? | Canonical revision ledger and `valid_at`/`known_at` | Whether every source was truthful |
+| Can Agent B safely resume? | Experimental freshness-checked handoff | Principal-bound delegation across all agents |
+| Did the external call commit? | Fenced intent, `UNKNOWN` effect reconciliation | Exactly-once physical execution or causal independence |
+| Can another team rely on this? | REST/SDK, test fixtures, experimental conformance | Non-author acceptance and adoption |
 
-**Invariant:** PostgreSQL is the canonical fact authority. Vector, FTS, graph,
-AWS S3 Vectors, Alibaba OSS Vectors and Azure AI Search are **candidate indexes,
-not additional factual authorities**. A search hit, model assertion or a saved
-receipt is not automatically proof of an external effect.
+> **Models propose; PostgreSQL validates and commits. Indexed candidates are not
+> authoritative facts. Recorded receipts are not automatically independent
+> proof of physical effects.**
 
-AMC complements LangGraph checkpoints, Temporal, Mem0 and vector databases;
-it does not replace them. The value to validate is **source-version-aware,
-fail-closed, independently checkable work continuation**, not a new retrieval
-algorithm or orchestration framework.
+AMC complements LangGraph, Temporal, Mem0, PostgreSQL/pgvector and object stores.
+It is not a new LLM, workflow engine or universal truth oracle. What AMC must
+earn through tests—not marketing—is **verifiable continuation of work across
+agent, model and storage boundaries**.
 
 ## Agent Work Continuity · experimental US-C01
 
@@ -439,6 +426,46 @@ Start a profile with `python scripts/launch_local.py up --profile <lite|standard
 
 Lite still uses the PostgreSQL database image; it is not SQLite-only or a measured low-memory guarantee. See [runtime profiles and limitations](docs/LIGHTWEIGHT-RUNTIME.md).
 
+## Durable Task Worker Runtime (merged foundation; release gates remain)
+
+The PostgreSQL task store now has an independent worker runtime with
+lease/heartbeat renewal, epoch-fenced checkpoint commits and process-level
+recovery. Worker credentials require the explicit `tasks:execute` scope;
+ordinary memory write credentials cannot claim or mutate durable tasks.
+
+- [Standalone worker handler example](examples/durable_task_worker/README.md)
+- [API and worker authorization contract](docs/API-REFERENCE.md)
+- Runtime entrypoint: `python -m agent_memory_core.worker_runtime`
+
+The SIGKILL acceptance test starts Worker A as a separate OS process, kills it
+after a durable checkpoint, then starts Worker B to reclaim the expired lease
+and resume from that checkpoint. The test passed in the PostgreSQL integration workflow on HEAD
+`3e1bce2db53e074baf0c7ba8d3755cc02b67341f`. The integration workflow
+reported 62 passed and 7 skipped; skipped tests are not counted as passing. Provider-side idempotency and
+UNKNOWN reconciliation remain separate release gates; a database lease does
+not make a remote side effect exactly once.
+
+
+## External effect safety (Migration 008)
+
+Durable checkpoints can record external effect intents transactionally.
+`agent_memory_core.durable_effects` adds fenced provider execution and
+UNKNOWN reconciliation. An expired Worker does not trigger an automatic
+provider retry: the replacement Worker first reconciles the prior idempotency
+key. Only a definitive provider `NOT_FOUND` returns the effect to
+`requested`; task completion is blocked until every effect is committed.
+
+Provider adapters must implement `execute(request, idempotency_key)` and
+`reconcile(request, idempotency_key, provider_reference)`. The stable key
+is scoped to tenant + task + effect. Exactly-once remote execution is not
+claimed; it depends on provider-side idempotency and reconciliation semantics.
+
+
+The fencing boundary is enforced inside the canonical Python task store too:
+checkpoint and status mutations require the current Worker ID and Lease Epoch.
+The HTTP layer is not the only guard; a tenant-only SDK/store write cannot
+bypass the PostgreSQL lease check.
+
 ## What is implemented — and what is not
 
 ### Working foundations
@@ -480,7 +507,8 @@ For integration tests, use a disposable PostgreSQL / pgvector / AGE environment 
 The best contribution is a small **reproducible failure or independent implementation**,
 not another architecture diagram. Include OS, Python/Docker versions, exact
 `git rev-parse HEAD`, commands, exit code, expected/observed state, and
-redacted evidence; never publish credentials or personal data.
+redacted evidence; never publish credentials or personal data. Use the
+[third-party reproduction record](docs/EXTERNAL-REPRODUCTION-RECORD.md) for a concise, auditable issue report.
 
 1. **Released product:** clone public `main`, run the [local guide](docs/LOCAL-DEMO.zh-CN.md), and independently verify create → revise → historical read → forget → restart. Record failures or a non-author acceptance result in [#57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57).
 2. **Portable, offline task/effect consistency (experimental):** [PR #69](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/pull/69) has a pinned 12-vector stdlib-only verifier, intentionally **not in `main` yet**. Check out that PR's explicitly documented SHA and run `python -I -S tools/run_continuity_vectors.py`. Its PASS is only consistency of *caller-supplied, untrusted JSON*, **not** authentication, source validity or evidence of physical execution. Share independent runs or compatible implementations via [#70](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/70).
@@ -514,45 +542,6 @@ See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [User Story accept
 
 
 
-## Durable Task Worker Runtime (PR #52, Draft)
-
-The PostgreSQL task store now has an independent worker runtime with
-lease/heartbeat renewal, epoch-fenced checkpoint commits and process-level
-recovery. Worker credentials require the explicit `tasks:execute` scope;
-ordinary memory write credentials cannot claim or mutate durable tasks.
-
-- [Standalone worker handler example](examples/durable_task_worker/README.md)
-- [API and worker authorization contract](docs/API-REFERENCE.md)
-- Runtime entrypoint: `python -m agent_memory_core.worker_runtime`
-
-The SIGKILL acceptance test starts Worker A as a separate OS process, kills it
-after a durable checkpoint, then starts Worker B to reclaim the expired lease
-and resume from that checkpoint. The test passed in the PostgreSQL integration workflow on HEAD
-`3e1bce2db53e074baf0c7ba8d3755cc02b67341f`. The integration workflow
-reported 62 passed and 7 skipped; skipped tests are not counted as passing. Provider-side idempotency and
-UNKNOWN reconciliation remain separate release gates; a database lease does
-not make a remote side effect exactly once.
-
-
-## External effect safety (Migration 008)
-
-Durable checkpoints can record external effect intents transactionally.
-`agent_memory_core.durable_effects` adds fenced provider execution and
-UNKNOWN reconciliation. An expired Worker does not trigger an automatic
-provider retry: the replacement Worker first reconciles the prior idempotency
-key. Only a definitive provider `NOT_FOUND` returns the effect to
-`requested`; task completion is blocked until every effect is committed.
-
-Provider adapters must implement `execute(request, idempotency_key)` and
-`reconcile(request, idempotency_key, provider_reference)`. The stable key
-is scoped to tenant + task + effect. Exactly-once remote execution is not
-claimed; it depends on provider-side idempotency and reconciliation semantics.
-
-
-The fencing boundary is enforced inside the canonical Python task store too:
-checkpoint and status mutations require the current Worker ID and Lease Epoch.
-The HTTP layer is not the only guard; a tenant-only SDK/store write cannot
-bypass the PostgreSQL lease check.
 
 ---
 

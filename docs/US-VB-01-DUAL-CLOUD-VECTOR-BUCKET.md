@@ -12,7 +12,7 @@ This first slice adds `agent_memory_core.vector_bucket` with a shared Boto3 `s3v
 - `delete`: deterministic key deletion.
 - Injected clients for offline contract tests, with no cloud credentials required.
 
-It does **not** yet connect remote writes to the Postgres outbox or remote reads into `HybridMemorySearch`. No real AWS/Alibaba call is claimed, and the adapter is not a drop-in replacement for Postgres.
+It does **not** yet connect remote writes to the Postgres outbox. Optional remote candidate retrieval is available in `HybridMemorySearch` through explicit `vector_buckets` injection, but API/server defaults remain unchanged. No real AWS/Alibaba call is claimed, and the adapter is not a drop-in replacement for Postgres.
 
 ## Install and configure
 
@@ -54,7 +54,7 @@ Both use `put(tenant_id=..., memory_id=..., model_id=..., embedding=...)`, `quer
 ## Required follow-up before calling this integrated
 
 1. **Transactional outbox publication**: Add separately tracked `aws_vector` and `aliyun_vector` destinations. The current `ProjectionWorker.consume()` executes handlers inside a PostgreSQL transaction, so DO NOT make remote PUT or DELETE from that handler and call it atomic. Instead claim/lease events, perform idempotent remote mutation outside the SQL transaction, then persist independent success/receipt/retry/dead state. Handle crash-after-remote-write-before-ack and correction/supersession deletes.
-2. **Canonical lookup on search**: extend `HybridMemorySearch` with optional provider candidate source(s). The cloud is allowed to return IDs only; the existing final canonical SQL tenant + two-times + supersession recheck must still apply. Never return provider metadata as an authoritative fact.
+2. **Canonical lookup on search**: optional `vector_buckets={"aws": aws_adapter, "aliyun": aliyun_adapter}` is now supported in `HybridMemorySearch`; candidates pass the existing final canonical SQL tenant + two-times + supersession recheck. Still wire it behind opt-in application configuration and verify real PostgreSQL integration. Never return provider metadata as an authoritative fact.
 3. **Bounded retries and visibility**: distinguish remote timeout, throttling, API permission errors, index not found, stale projection. Alibaba documents eventual query visibility after PutVectors; do not treat PUT success as immediate query visibility.
 4. **Index/version lifecycle**: one embedding model/dimension per index, strict config validation, rotation and reindex/cutover, deletion/retention reconciliation. Encrypt sensitive metadata and avoid storing raw user content in vector metadata.
 5. **Real credentials acceptance**: provision AWS and Alibaba vector buckets, write known embeddings, query exact tenant, test tenant rejection, delete, restart/replay, and rate-limit/error cases. Save redacted request IDs, counts, run SHA, time and billed usage.
@@ -95,3 +95,22 @@ Sources:
 - https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-query.html
 
 No IAM/RAM provisioning is performed automatically. Operator must verify the SDK/region's actual protocol behavior, including request-signing and paginated query responses. Cloud production acceptance remains pending.
+
+## Explicit opt-in retrieval wiring (not activated in production)
+
+```python
+from agent_memory_core.hybrid import HybridMemorySearch
+search = HybridMemorySearch(postgres_store, vector_buckets={
+    "aws": aws_adapter,
+    "aliyun": aliyun_adapter,
+})
+report = search.search_detailed(
+    tenant_id=tenant_id, query="客厅上次窗口控制失败",
+    embedding=embedding, model_id=embedding_model_id,
+    valid_at=valid_at, known_at=known_at,
+)
+# Every provider candidate is re-checked against canonical SQL.
+# Inspect report.degraded_channels for provider errors.
+```
+
+The application/server has not yet been reconfigured to create or inject these adapters automatically.

@@ -8,6 +8,8 @@ on:
       - 'tests/test_temporal_integration.py'
       - 'tests/test_temporal_worker_crash.py'
       - 'tests/test_work_continuity.py'
+      - 'tests/test_handoff_real_process.py'
+      - 'benchmarks/handoff/**'
       - 'tests/temporal_crash_fixture.py'
       - '.github/workflows/temporal.yml'
       - 'docker/**'
@@ -79,6 +81,7 @@ jobs:
         run: |
           python -m pytest -q tests/test_temporal_integration.py
           python -m pytest -q -rs tests/test_work_continuity.py
+          python -m pytest -q -rs tests/test_handoff_real_process.py
           python -m pytest -q tests/test_temporal_durable_task_workflow.py tests/test_temporal_durable_task_execution.py tests/test_temporal_dispatcher_recovery.py tests/test_temporal_reconciliation.py
           MEMORY_TEMPORAL_CRASH_TEST=1 python -m pytest -q tests/test_temporal_worker_crash.py
           # This same PostgreSQL login/RLS adversarial test conditionally

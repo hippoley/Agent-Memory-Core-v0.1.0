@@ -634,6 +634,15 @@ STORIES: dict[tuple[str, str], Story] = {
                "响应包含 checkpoint_version、progress 与最新 checkpoint。"),
         example=CURL + " $API/v1/tasks/<task-uuid>",
     ),
+    ("GET", "/v1/tasks/{task_id}/effects/{effect_key}/intent"): Story(
+        persona="接手任务的独立 Agent",
+        goal="按 Effect Key 读取登记该副作用时的原始意图，而非最新任务进度",
+        value="后续普通 Checkpoint 不会遮蔽或改变 Effect 的原始来源与请求绑定",
+        steps=("使用已认证租户读取；不存在或跨租户的 Effect 意图返回 404。",
+               "返回与 Effect 请求摘要匹配的原始 Checkpoint 和不可变请求。",
+               "这是数据库意图证据，不证明远端 Provider 执行或设备状态。"),
+        example=CURL + " $API/v1/tasks/<task-uuid>/effects/supplier-approval-request/intent",
+    ),
     ("POST", "/v1/tasks/worker/claim"): Story(
         persona="独立业务 Worker",
         goal="使用专用 tasks:execute 凭据原子领取当前租户的一条待执行任务",

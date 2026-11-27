@@ -108,8 +108,25 @@ def test_revocation_preserves_fenced_unknown_reconciliation_without_reexecution(
                 tenant_id=tenant, task_id=task["task_id"],
                 worker_id="recovery-worker", lease_epoch=claimed["lease_epoch"],
                 status="completed", result={"falsely_done": True})
-        # Read-only reconciliation does not elevate revoked tasks to completed.
+        # Read-only reconciliation never elevates a revoked task to completed.
         assert DurableTaskStore(db.conn).get_task(
             tenant_id=tenant, task_id=task["task_id"])["status"] == "running"
+        # The operator can explicitly cancel after UNKNOWN has been resolved.
+        # Cancelled does NOT mean no remote effect: the committed first effect
+        # remains in the durable ledger for independent postmortem review.
+        assert DurableTaskLeaseStore(db.conn).finish(
+            tenant_id=tenant, task_id=task["task_id"],
+            worker_id="recovery-worker", lease_epoch=claimed["lease_epoch"],
+            status="cancelled",
+            error={"code": "CREATOR_AUTH_REVOKED_AFTER_PARTIAL_EFFECT"})
+        assert DurableTaskStore(db.conn).get_task(
+            tenant_id=tenant, task_id=task["task_id"])["status"] == "cancelled"
+        from agent_memory_core.durable_effects import DurableTaskEffectStore
+        after_cancel = {e["effect_key"]: e for e in
+                        DurableTaskEffectStore(db.conn).list_effects(
+                            tenant_id=tenant, task_id=task["task_id"])}
+        assert after_cancel["first"]["status"] == "committed"
+        assert after_cancel["first"]["attempt_count"] == 1
+        assert after_cancel["second"]["status"] == "requested"
     finally:
         db.close()

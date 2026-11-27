@@ -31,3 +31,16 @@ mutating devices inside `reconcile`. Production adapters and physical
 gateways must separate read-only reconciliation credentials from actuation
 authority. This change does not confer delegated Agent B execution rights,
 physical-causality evidence or external adoption.
+
+
+## Safe terminal classification after revocation
+
+A task that already caused an external effect should NOT be marked
+`completed` when its creator has lost write authority. Once all ambiguous
+effects are reconciled, an authorized operator/worker with a valid fencing
+epoch may explicitly transition the task to `cancelled` with a machine-readable
+reason. The **committed** effect remains in the ledger. The task result
+`cancelled` must never be interpreted as "no external side effects".
+
+The same real PostgreSQL test now asserts this cancelled terminal state and
+the preserved provider attempt count.

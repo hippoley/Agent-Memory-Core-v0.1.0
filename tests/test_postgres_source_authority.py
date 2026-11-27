@@ -129,6 +129,41 @@ def test_real_postgres_source_key_revoke_and_revision_change():
             proposed_value={"period": "quarterly"})
         correct = review_registry_handoff_claim(**common)
         assert correct.allowed_uses == ("answer",)
+
+        # Real two-connection race barrier: nested verification may release
+        # its savepoint, but PostgreSQL FOR SHARE locks must survive until
+        # the OUTER intent transaction commits.
+        import psycopg
+        competing = PostgresMemory(dsn)
+        try:
+            with db.conn.transaction():
+                locked = review_registry_handoff_claim(**common)
+                assert locked.allowed_uses == ("answer",)
+                # An independent revoker cannot modify the pinned revision
+                # while the verifier's outer effect-intent tx is active.
+                with pytest.raises(psycopg.errors.LockNotAvailable):
+                    with competing.conn.transaction():
+                        competing.conn.execute(
+                            "SET LOCAL lock_timeout='100ms'")
+                        competing.conn.execute(
+                            """UPDATE memory_knowledge_source_revisions
+                               SET source_id=%s
+                               WHERE tenant_id=%s AND subject_id=%s AND predicate=%s""",
+                            ("contract:revoked-between-check-and-use",
+                             tenant, SUBJECT, PREDICATE))
+            # The revoker CAN act after the outer transaction commits.
+            with competing.conn.transaction():
+                competing.conn.execute(
+                    """UPDATE memory_knowledge_source_revisions
+                       SET source_id=%s
+                       WHERE tenant_id=%s AND subject_id=%s AND predicate=%s""",
+                    ("contract:revoked-between-check-and-use",
+                     tenant, SUBJECT, PREDICATE))
+        finally:
+            competing.close()
+        denied_after = review_registry_handoff_claim(**common)
+        assert denied_after.reason == "SOURCE_REVISION_NOT_ACTIVE"
+
         with db.conn.transaction():
             db.conn.execute(
                 """UPDATE memory_knowledge_source_revisions

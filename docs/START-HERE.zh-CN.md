@@ -15,7 +15,7 @@
 - [首屏记忆演化图](assets/hero-belief-lifecycle.svg)：用月结 → 季结这个**示意例子**表达“更新事实，但保留历史证据”。
 - [运行时架构图](assets/architecture.svg)：PostgreSQL 是唯一权威事实源，pgvector 和 AGE 是检索视图，Temporal 是可选持久执行适配器。
 - [记忆生命周期图](assets/memory-lifecycle.svg)：区分写入、派生投影与带规范事实复核的召回。
-- [Memory Observatory](../src/agent_memory_core/resources/dashboard/observatory.html)：现有前端包含时间筛选、来源检查、合成 Demo 与 Live API；**PR #56 的写入回读核验和一键 Demo 只有进入 `main` 后才算正式发布**，不能把 PR 环境测试当作公开版本能力。
+- [Memory Observatory](../src/agent_memory_core/resources/dashboard/observatory.html)：现有前端包含时间筛选、来源检查、合成 Demo 与 Live API；**PR #56 已合并到公共 `main`，写入回读与一键 Demo 的代码已发布**；但独立第三方从零安装、浏览器操作和重启回读的人工验收 [#57](https://github.com/hippoley/Agent-Memory-Core-v0.1.0/issues/57) 仍未关闭。
 
 这里的蓝色装饰线并不表示 AGE 图边、Embedding 距离或真实验证结果；新版 Observatory 的 Live 读取有限页的认证事实，不代表整个租户数据。前端截图需要真实浏览器验收之后才能放入首页，不能用视觉效果代替测量。
 
@@ -51,7 +51,7 @@ python scripts/launch_local.py up --profile lite
 # main 的本地 Observatory：http://127.0.0.1:8765/dashboard/observatory.html
 ```
 
-Demo 无需密钥；Live 只应连接受保护的同源 API。**第三方只应从 `main` 安装。完整 P0-1 外部验收必须以检出的 `main` 确实包含 `scripts/demo_local.py` 和完整写入／修订／软遗忘验证为前提；若缺失则记录 BLOCKED，不能指导测试者切换功能分支绕过发布门槛。** [产品设计与隐私说明](memory-observatory-preview.md)。
+Demo 无需密钥；Live 只应连接受保护的同源 API。**第三方只应从 `main` 安装。** 当前公共 `main` 已包含 `scripts/demo_local.py`；复现者须记录实际 SHA，并独立验证写入／修订／软遗忘／重启回读。测试失败应提交精确记录，不要切换未合并分支绕过验收。见[外部复现模板](EXTERNAL-REPRODUCTION-RECORD.md)。 [产品设计与隐私说明](memory-observatory-preview.md)。
 
 ## 为什么有 Apache AGE 和 Temporal？
 
@@ -71,7 +71,7 @@ AGE 不是第二个事实权威，Temporal 也不是第二个记忆数据库。�
 
 ## 先跑起来
 
-**正式安装入口只认 `main`。** PR 和功能分支只用来内部开发；如果文档要求的文件在 `main` 缺失，属于发布阻断，不能让第三方临时切换分支。`main` 按下面的命令运行基础服务；完整 Demo 是否已发布以本地 `main` 检出后文件是否存在为准，而非 PR 的 CI 状态。
+**正式安装入口只认 `main`。** PR 和功能分支只用来内部开发；如果文档要求的文件在 `main` 缺失，属于发布阻断，不能让第三方临时切换分支。`main` 按下面的命令运行基础服务；一键 Demo 已发布在 `main`，执行前记录 `git rev-parse HEAD` 并核对本地脚本；自动化 CI 不等于非作者独立验收。
 
 前提：Git、Python 3.10+，Docker Compose v2。
 

@@ -125,3 +125,22 @@ def test_provider_failure_diagnostics_redact_sensitive_transport_payload():
     assert "vector_aws" in report.degraded_channels
     assert "REDACT_THIS_SECRET" not in str(report.degraded_channels)
     assert "private.example" not in str(report.degraded_channels)
+
+
+def test_pgvector_and_cloud_mirror_are_one_vector_family():
+    class LocalWorkingStore(CanonicalStore):
+        def vector_search(self, **kwargs):
+            return [(VALID_ID, 0.1)]
+
+    local = HybridMemorySearch(LocalWorkingStore()).search_detailed(
+        tenant_id="tenant-a", query="", embedding=[0.1] * 384, model_id="model-v1")
+    all_indices = HybridMemorySearch(
+        LocalWorkingStore(), vector_buckets={
+            "aws": FakeCloud([VALID_ID]), "aliyun": FakeCloud([VALID_ID]),
+            "azure": FakeCloud([VALID_ID]),
+        }
+    ).search_detailed(
+        tenant_id="tenant-a", query="", embedding=[0.1] * 384, model_id="model-v1")
+    assert local.hits[0].score == all_indices.hits[0].score
+    assert all_indices.hits[0].channels == (
+        "vector", "vector_aliyun", "vector_aws", "vector_azure")

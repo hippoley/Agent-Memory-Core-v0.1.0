@@ -7,14 +7,19 @@ from agent_memory_core.api import create_app
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def test_both_readmes_use_main_and_disclose_unreleased_demo_boundary():
+def test_both_readmes_use_published_main_and_disclose_independent_acceptance_boundary():
     for name in ("README.md", "docs/START-HERE.zh-CN.md"):
         path=ROOT/name
         content=path.read_text(encoding="utf-8")
         assert "Memory Observatory" in content
-        assert "PR #56" in content
+        # PR #56 is merged; require public-main install instructions and
+        # the actual demo path rather than a stale feature-branch status token.
+        assert "scripts/demo_local.py" in content
+        assert (ROOT/"scripts/demo_local.py").is_file()
+        assert ("#57" in content or "issues/57" in content)
         assert "git clone --branch main --single-branch" in content
         assert "feat/identity-foundation-schema-20261118" not in content
+        assert "main" in content
         assert "AGE" in content and "Temporal" in content
         for href in re.findall(r"\]\(([^)]+)\)",content):
             if href.startswith(("https://","http://","mailto:","#")):

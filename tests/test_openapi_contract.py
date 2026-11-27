@@ -53,6 +53,7 @@ EXPECTED={
     "/v1/handoffs/{handoff_id}/accept":{"post"},
     "/v1/tasks":{"get","post"},
     "/v1/tasks/{task_id}":{"get"},
+    "/v1/tasks/{task_id}/effects/{effect_key}/intent":{"get"},
     "/v1/tasks/worker/claim":{"post"},
     "/v1/tasks/{task_id}/lease/renew":{"post"},
     "/v1/tasks/{task_id}/checkpoints":{"post"},

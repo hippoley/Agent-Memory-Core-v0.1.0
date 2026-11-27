@@ -122,11 +122,23 @@ class HybridMemorySearch:
     def search_detailed(self, *, tenant_id: str, query: str,
                embedding: list[float] | None = None, model_id: str | None = None,
                anchor_entity: str | None = None, limit: int = 10,
-               valid_at: datetime | None = None, known_at: datetime | None = None) -> SearchReport:
+               valid_at: datetime | None = None, known_at: datetime | None = None,
+               cloud_providers: tuple[str, ...] | None = None) -> SearchReport:
         if not tenant_id or not (1 <= limit <= 100):
             raise ValueError("Invalid tenant or limit")
         if embedding is not None and not model_id:
             raise ValueError("model_id required with embedding")
+        # Explicitly choosing no cloud is a zero-cloud-request option. None
+        # preserves historical behavior (all configured cloud providers).
+        if cloud_providers is None:
+            selected_clouds = tuple(self.vector_buckets)
+        else:
+            if (not isinstance(cloud_providers, tuple)
+                    or len(set(cloud_providers)) != len(cloud_providers)
+                    or any(not isinstance(p, str) or p not in self.vector_buckets
+                           for p in cloud_providers)):
+                raise ValueError("cloud_providers must select configured providers exactly once")
+            selected_clouds = cloud_providers
         valid_at = valid_at or datetime.now(timezone.utc)
         known_at = known_at or datetime.now(timezone.utc)
         ranked: dict[str, list[tuple[str, int]]] = {}
@@ -148,7 +160,8 @@ class HybridMemorySearch:
         # as memory claims: the canonical tenant/bitemporal recheck below
         # remains the sole authority for all returned hits.
         if embedding is not None:
-            for provider, adapter in self.vector_buckets.items():
+            for provider in selected_clouds:
+                adapter = self.vector_buckets[provider]
                 channel = f"vector_{provider}"
                 try:
                     candidates = adapter.query(

@@ -48,3 +48,17 @@ This is intended as a minimal reproducible test vector for third-party Agent
 framework maintainers. It is not yet an independent standard, an upstream
 endorsement, or proof of external adoption. Extend it with authenticated and
 signed evidence only when such evidence actually exists.
+
+
+## v1 supported profiles and malformed input
+
+The checker recognizes both `continuity.effect.v1` and the creator-gated
+`continuity.authorized-effect.v1` profile **for ledger consistency only**.
+Even for the creator-gated profile, the returned
+`actor_authorization_verified` is ALWAYS `false`: this offline tool has no
+source of independently authenticated Principal or gateway permission evidence.
+
+The CLI rejects duplicate JSON object keys and non-standard `NaN` /
+`Infinity` literals rather than silently normalizing conflicting data.
+Malformed enum values (including arrays/objects) fail with reason codes
+instead of uncaught exceptions. CLI exit codes remain 0 / 1 / 2.

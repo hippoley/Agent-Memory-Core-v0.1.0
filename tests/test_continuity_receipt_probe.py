@@ -89,3 +89,51 @@ def test_cli_exit_codes_are_machine_consumable(tmp_path):
         assert result.returncode == expected_code
         assert json.loads(result.stdout)["decision"] == (
             "PASS" if state == "completed" else "UNKNOWN")
+
+
+def test_strict_creator_profile_is_a_ledger_profile_not_auth_attestation():
+    b = valid()
+    b["task"]["task_type"] = "continuity.authorized-effect.v1"
+    result = probe.verify(b)
+    assert result["decision"] == "PASS"
+    assert result["actor_authorization_verified"] is False
+    assert result["physical_effect_verified"] is False
+    assert result["snapshot_authenticity_verified"] is False
+
+
+@pytest.mark.parametrize("field_path,bad_value,reason", [
+    (("task", "task_type"), [], "INVALID_TASK_PROFILE"),
+    (("task", "status"), [], "INVALID_TASK_STATUS"),
+    (("effects", "items", 0, "status"), [], "INVALID_EFFECT_STATUS"),
+    (("effects", "items", 0, "status"), {"x": 1}, "INVALID_EFFECT_STATUS"),
+])
+def test_malformed_unhashable_enums_return_fail_not_uncaught_exception(
+        field_path, bad_value, reason):
+    b = valid()
+    obj = b
+    for key in field_path[:-1]:
+        obj = obj[key]
+    obj[field_path[-1]] = bad_value
+    assert probe.verify(b)["reasons"] == [reason]
+
+
+def test_cli_rejects_duplicate_json_keys(tmp_path):
+    p = tmp_path / "duplicate.json"
+    # Silent last-key wins would permit contradictory task status claims.
+    p.write_text('{"task":{"status":"running","status":"completed"},"effects":{}}',
+                 encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(p)],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["reasons"] == ["INVALID_INPUT_FILE"]
+
+
+def test_cli_rejects_nonstandard_json_nan(tmp_path):
+    p = tmp_path / "nan.json"
+    p.write_text('{"task":NaN,"effects":{}}', encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(p)],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["reasons"] == ["INVALID_INPUT_FILE"]

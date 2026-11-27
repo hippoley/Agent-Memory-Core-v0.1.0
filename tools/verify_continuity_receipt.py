@@ -16,6 +16,17 @@ from pathlib import Path
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 VALID_EFFECT_STATES = {"requested", "executing", "unknown", "reconciling",
                        "committed", "failed"}
+SUPPORTED_TASK_PROFILES = {"continuity.effect.v1", "continuity.authorized-effect.v1"}
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Refuse ambiguous duplicate JSON keys instead of silently keeping the last."""
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError("Duplicate JSON object member")
+        out[key] = value
+    return out
 
 
 def verify(bundle: object) -> dict:
@@ -38,7 +49,10 @@ def verify(bundle: object) -> dict:
         return result("FAIL", "INVALID_TASK_ID")
     if effects.get("task_id") != task_id:
         return result("FAIL", "TASK_ID_MISMATCH")
-    if task.get("task_type") != "continuity.effect.v1":
+    profile = task.get("task_type")
+    if not isinstance(profile, str):
+        return result("FAIL", "INVALID_TASK_PROFILE")
+    if profile not in SUPPORTED_TASK_PROFILES:
         return result("UNKNOWN", "UNSUPPORTED_TASK_PROFILE")
     task_input = task.get("input")
     if not isinstance(task_input, dict):
@@ -60,7 +74,7 @@ def verify(bundle: object) -> dict:
         if not isinstance(key, str) or not key or key in index:
             return result("FAIL", "INVALID_OR_DUPLICATE_EFFECT_KEY")
         status = item.get("status")
-        if status not in VALID_EFFECT_STATES:
+        if not isinstance(status, str) or status not in VALID_EFFECT_STATES:
             return result("FAIL", "INVALID_EFFECT_STATUS")
         digest = item.get("request_sha256")
         if not isinstance(digest, str) or not SHA256.fullmatch(digest):
@@ -78,8 +92,8 @@ def verify(bundle: object) -> dict:
         index[key] = item
 
     task_status = task.get("status")
-    if task_status not in {"queued", "running", "paused", "completed",
-                           "failed", "cancelled"}:
+    if not isinstance(task_status, str) or task_status not in {
+            "queued", "running", "paused", "completed", "failed", "cancelled"}:
         return result("FAIL", "INVALID_TASK_STATUS")
     if task_status != "completed":
         if any(x.get("status") == "unknown" for x in items):
@@ -101,8 +115,12 @@ def main(argv=None) -> int:
                         help="JSON containing task GET response and effects GET response")
     args = parser.parse_args(argv)
     try:
-        document = json.loads(args.bundle.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        document = json.loads(
+            args.bundle.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_json_object,
+            parse_constant=lambda _: (_ for _ in ()).throw(
+                ValueError("Nonfinite JSON numbers are not permitted")))
+    except (OSError, UnicodeError, ValueError) as exc:
         print(json.dumps({"decision": "FAIL", "reasons": [
             "INVALID_INPUT_FILE"], "detail": type(exc).__name__}, sort_keys=True))
         return 1

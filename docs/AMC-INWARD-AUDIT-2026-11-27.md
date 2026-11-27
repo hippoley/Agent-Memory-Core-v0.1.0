@@ -93,3 +93,14 @@ AMC 是 **Agent Work Continuity** 的候选基础设施：在 Agent A 离开后�
 **禁止**：把云检索当作 fact truth；把 receipt existence 当作 physical causality；把 CI 全绿当独立采用；把多云镜像重复命中当多份事实；把不同 SHA 的测试拼成一个虚假 release。
 
 下一次闭环以真实失败事件、独立复现与发布门槛选择方向；高质量负信息比新概念数量更有价值。
+
+## 9. 本轮后续增量：可控云查询和真实 PostgreSQL 权威关口
+
+在 PR #71 进一步暴露两个必须量化的问题：
+
+- 已配置 AWS+Alibaba+Azure 的系统，原先每一个检索都会顺序查询所有后端，造成没有明确预算的请求扩散、跨云尾延迟和按索引扫描成本。现在 `search_detailed(..., cloud_providers=())` 可选择完全不调用云；`("aliyun",)` 等仅调用指定厂商，默认 `None` 保留旧调用语义。未知、重复或未配置的厂商在产生网络请求之前拒绝。
+- 原有云候选 Canonical 检查主要通过 FakeConn 模拟。新增 `tests/test_vector_bucket_pg.py`，使用真实 PostgreSQL 写入版本 v1、纠正为 v2、另一个租户插入别的事实，云候选同时返回 stale / cross-tenant / malformed / v2，然后证明只有 v2 通过最终 SQL 复核。配置 `MEMORY_TEST_DSN` 才运行，未执行则应如实说明为 skipped。
+
+**验收等级**：提交源码 != 同 SHA CI 成功；真实 PostgreSQL CI != 真实 AWS/Aliyun/Azure SDK 请求；单作者 CI != 第三方非作者依赖。即使本轮测试成功，#67 和 #68 的执行安全、#57 的非作者人工验收、#70 的独立采用均依旧 OPEN。
+
+**经济上的下一步**：采集 per-index QPS、扫描 GB、跨云 egress、回填与重试次数，为每次有效召回计算完成态 TCO；当第二/第三家云对 Recall/SLO/真实灾备没有可测贡献时禁止默认 query-all。

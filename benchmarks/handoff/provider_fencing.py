@@ -64,11 +64,24 @@ def provider_fence(event, headers):
             # This is a trusted resource-server DB lookup, NOT an Agent token.
             checkpoint_row = db.conn.execute(
                 """SELECT checkpoint FROM memory_task_checkpoints
-                   WHERE task_id=%s::uuid ORDER BY version DESC LIMIT 1""",
-                (task_id,),
+                   WHERE task_id=%s::uuid AND effect_key=%s
+                     AND effect_request_sha256=%s
+                   ORDER BY version ASC LIMIT 1""",
+                (task_id, event["effect_key"], digest),
             ).fetchone()
-            checkpoint = checkpoint_row[0] if checkpoint_row else None
-            source = checkpoint.get("source_authority") if isinstance(checkpoint, dict) else None
+            # Never use the latest unrelated task progress checkpoint:
+            # authorization is attached to the exact effect-intent record.
+            if checkpoint_row is None:
+                yield False
+                return
+            checkpoint = checkpoint_row[0]
+            if not isinstance(checkpoint, dict):
+                yield False
+                return
+            if checkpoint.get("effect_request") != event:
+                yield False
+                return
+            source = checkpoint.get("source_authority")
             if source is not None:
                 if (not isinstance(source, dict)
                         or any(not isinstance(source.get(field), str)

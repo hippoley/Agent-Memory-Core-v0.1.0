@@ -267,6 +267,24 @@ def test_real_api_provider_and_agent_process_restart(tmp_path, kill_after_provid
         assert "LeaseConflict" in rejected_tenant.stderr
         with sqlite3.connect(db_path) as conn:
             assert conn.execute("SELECT COUNT(*) FROM effect_events").fetchone()[0] == 0
+        # A later ordinary progress checkpoint must never erase the source
+        # binding of the original effect. Previously Provider fetched the
+        # latest checkpoint, which might have no source_authority at all.
+        from agent_memory_core.worker_leases import DurableTaskLeaseStore
+        late = PostgresMemory(env["MEMORY_TEST_DSN"])
+        try:
+            new_progress = DurableTaskLeaseStore(late.conn).commit_checkpoint(
+                tenant_id=tenant,
+                task_id=manifest["task_id"],
+                worker_id=worker_result["worker_id"],
+                lease_epoch=worker_result["lease_epoch"],
+                expected_version=worker_result["checkpoint_version"],
+                checkpoint={"phase": "later-unrelated-progress"},
+                idempotency_key="unrelated-progress:" + hid,
+            )
+            assert new_progress["version"] > worker_result["checkpoint_version"]
+        finally:
+            late.close()
         # Provider-side source check: revoke AFTER intent commit but BEFORE
         # HTTP admission. The worker's valid lease and bearer token must
         # not override an obsolete signed source revision.

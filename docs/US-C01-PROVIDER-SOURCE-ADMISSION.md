@@ -24,3 +24,25 @@ to v4 AFTER intent registration but BEFORE Provider POST, assert HTTP 403
 and zero SQLite effects, then re-activate v3 and admit once. If executed
 before these checks, results are unverified. Read-only reconciliation must
 continue to use existing fenced recovery semantics.
+
+
+## Critical follow-up: bind authorization to the original Effect checkpoint
+
+The first gateway patch read the newest task checkpoint. This was unsafe:
+an unrelated progress checkpoint, written *after* the authorized Effect
+intent, could omit `source_authority` and cause Provider admission to
+skip the source check altogether. A valid Worker lease and matching
+Effect digest did not prevent that bypass.
+
+The Provider now reads the original `memory_task_checkpoints` row
+**identified by the request's task ID, Effect Key, and SHA-256 request
+digest**. Missing or malformed checkpoint rows, or an embedded
+`effect_request` mismatch, are rejected. Later progress checkpoints
+cannot replace the Effect's source restrictions.
+
+The existing PostgreSQL + HTTP + SQLite cross-process integration test
+writes an unrelated checkpoint *after* creating the source-gated intent,
+then revokes v3 to v4, and demands that a valid signed-in Worker POST
+still return 403 with **zero external effects**. The positive v3 path
+must still execute. This is a regression for an actual detected code
+bypass, not a blanket physical-world authorization claim.

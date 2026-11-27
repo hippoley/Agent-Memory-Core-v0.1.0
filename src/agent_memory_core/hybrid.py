@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from contextlib import nullcontext
+from uuid import UUID
 
 
 _STOPWORDS = frozenset("""
@@ -153,8 +154,20 @@ class HybridMemorySearch:
                     candidates = adapter.query(
                         tenant_id=tenant_id, model_id=model_id,
                         embedding=embedding, top_k=min(limit * 10, 100))
-                    for rank, candidate in enumerate(candidates, 1):
-                        ranked.setdefault(candidate.memory_id, []).append((channel, rank))
+                    malformed = 0
+                    for rank, candidate in enumerate(candidates[:min(limit * 10, 100)], 1):
+                        mid = getattr(candidate, "memory_id", None)
+                        # memory_claims.id is UUID. Never allow remote index data
+                        # to make the final canonical ::uuid[] query fail.
+                        try:
+                            if not isinstance(mid, str) or str(UUID(mid)) != mid:
+                                raise ValueError("not a canonical UUID")
+                        except (ValueError, TypeError, AttributeError):
+                            malformed += 1
+                            continue
+                        ranked.setdefault(mid, []).append((channel, rank))
+                    if malformed:
+                        degraded[channel] = f"rejected {malformed} malformed candidate IDs"
                 except Exception as exc:
                     degraded[channel] = f"{type(exc).__name__}: {str(exc)[:240]}"
 
@@ -233,8 +246,19 @@ class HybridMemorySearch:
             valid_from = row[5] if len(row) > 5 else None
             recorded_at = row[6] if len(row) > 6 else None
             channels=ranked[mid]
-            score=sum(self.channel_weights.get(channel, 0.5) / (k + rank)
-                      for channel, rank in channels)
+            # AWS/Alibaba/Azure are mirrored projections, not independent
+            # evidence of truth. A hit seen in all three must not receive three
+            # semantic-vote bonuses. Fuse them as ONE vector family, taking
+            # its best ranked contribution; keep each channel for diagnostics.
+            vectors = [
+                self.channel_weights.get(channel, 0.5) / (k + rank)
+                for channel, rank in channels
+                if channel == "vector" or channel.startswith("vector_")
+            ]
+            score = (max(vectors, default=0.0)
+                     + sum(self.channel_weights.get(channel, 0.5) / (k + rank)
+                           for channel, rank in channels
+                           if channel != "vector" and not channel.startswith("vector_")))
             results.append(MemoryHit(mid,subject,pred,value,source,score,
                                      tuple(sorted({channel for channel,_ in channels})),
                                      valid_from,recorded_at))

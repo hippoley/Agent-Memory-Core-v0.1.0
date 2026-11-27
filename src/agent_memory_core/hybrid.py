@@ -169,7 +169,9 @@ class HybridMemorySearch:
                     if malformed:
                         degraded[channel] = f"rejected {malformed} malformed candidate IDs"
                 except Exception as exc:
-                    degraded[channel] = f"{type(exc).__name__}: {str(exc)[:240]}"
+                    # Provider SDK failures can include endpoint, resource path,
+                    # and transport details. Diagnostics must not echo secrets.
+                    degraded[channel] = f"{type(exc).__name__}: remote vector query failed"
 
         # Search the rebuildable ranked full-text index when the backend
         # supports it. Its results are always revalidated below against

@@ -13,6 +13,7 @@ def evidence_from_hits(hits, *, limit: int = 8) -> list[dict]:
     if not 1 <= limit <= 20:
         raise ValueError("Evidence limit out of range")
     result = []
+    seen = {}
     for hit in hits[:limit]:
         if isinstance(hit, dict):
             memory_id = hit.get("memory_id") or hit.get("id")
@@ -29,34 +30,98 @@ def evidence_from_hits(hits, *, limit: int = 8) -> list[dict]:
                 or not isinstance(predicate, str) or not predicate
                 or not isinstance(value, dict)):
             raise ValueError("Invalid canonical evidence")
-        result.append({
-            "memory_id": memory_id, "subject_id": subject,
-            "predicate": predicate, "value": value
-        })
+        row = {"memory_id": memory_id, "subject_id": subject,
+               "predicate": predicate, "value": value}
+        previous = seen.get(memory_id)
+        if previous is not None:
+            if json.dumps(previous, sort_keys=True, ensure_ascii=False, allow_nan=False) != json.dumps(
+                    row, sort_keys=True, ensure_ascii=False, allow_nan=False):
+                raise ValueError("Conflicting canonical evidence for the same memory_id")
+            continue
+        seen[memory_id] = row
+        result.append(row)
     return result
 
 
-def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict]:
+def guard_retractions(candidates: list[dict], evidence: list[dict],
+                      *, predicate_cardinality=None) -> list[dict]:
     """Validate model withdrawal proposals against supplied canonical evidence.
 
     A RETRACT must reference the exact canonical memory ID, subject, predicate
     and expected old JSON value, and cannot target two claims. This is a
     precondition, not authorization; PostgreSQL still checks the latest value.
     UPSERT is allowed to create novel domain facts and is not vocabulary bound.
+    Optional authoritative predicate_cardinality(predicate) prevents conflicting
+    single-valued writes without rejecting valid multi-valued predicates.
+    An absent policy does not imply that all predicates are single-valued.
     """
     if not isinstance(candidates, list):
         raise ValueError("Extractor must return a candidate list")
-    by_id = {e["memory_id"]: e for e in evidence}
-    result = []
+    by_id = {}
+    for item in evidence:
+        if not isinstance(item, dict) or not isinstance(item.get("memory_id"), str):
+            raise ValueError("Invalid canonical withdrawal evidence")
+        memory_id = item["memory_id"]
+        previous = by_id.get(memory_id)
+        if previous is not None and previous != item:
+            raise ValueError("Conflicting canonical evidence for the same memory_id")
+        by_id[memory_id] = item
+    # Validate the *whole* model response before the default non-atomic
+    # processor can apply any candidate. An invalid later operation, or a
+    # simultaneous UPSERT/RETRACT for one fact, must not retire a claim first.
+    operations_by_fact = {}
     for candidate in candidates:
         if not isinstance(candidate, dict):
             raise ValueError("Extractor returned a non-object candidate")
+        operation = candidate.get("operation", "UPSERT")
+        if operation not in ("UPSERT", "RETRACT"):
+            raise ValueError("Unsupported grounded memory operation")
+        subject, predicate = candidate.get("subject_id"), candidate.get("predicate")
+        if isinstance(subject, str) and subject and isinstance(predicate, str) and predicate:
+            key = (subject, predicate)
+            prior = operations_by_fact.setdefault(key, [])
+            prior.append(candidate)
+            if len(prior) > 2 or (len(prior) == 2 and
+                    tuple(c.get("operation", "UPSERT") for c in prior)
+                    not in (("UPSERT", "UPSERT"), ("RETRACT", "RETRACT"), ("RETRACT", "UPSERT"))):
+                raise ValueError("Conflicting memory operations for the same canonical fact")
+            # Within one model response, two different UPSERT values for the
+            # same canonical fact have no reliable ordering. Refuse them
+            # before non-atomic processing can silently use last-write-wins.
+            if (len(prior) == 2
+                    and all(c.get("operation", "UPSERT") == "UPSERT" for c in prior)
+                    and callable(predicate_cardinality)
+                    and predicate_cardinality(predicate) == "one"):
+                values = [c.get("value") for c in prior]
+                if (not all(isinstance(v, dict) for v in values)
+                        or json.dumps(values[0], sort_keys=True, ensure_ascii=False, allow_nan=False)
+                        != json.dumps(values[1], sort_keys=True, ensure_ascii=False, allow_nan=False)):
+                    raise ValueError("Conflicting UPSERT values for the same canonical fact")
+            # A legitimate correction can withdraw the *grounded* old claim
+            # and create a genuinely different new value, in this order.
+            # Do not permit UPSERT then RETRACT or re-creating the old value.
+            if len(prior) == 2 and prior[0].get("operation", "UPSERT") == "RETRACT" and operation == "UPSERT":
+                old_id = prior[0].get("expected_memory_id")
+                old = by_id.get(old_id) if isinstance(old_id, str) else None
+                new_value = candidate.get("value")
+                if (old is None or not isinstance(new_value, dict)
+                        or new_value == old["value"]):
+                    raise ValueError("Grounded replacement requires a distinct new canonical value")
+
+    result = []
+    withdrawn_ids = set()
+    for candidate in candidates:
         if candidate.get("operation", "UPSERT") != "RETRACT":
             result.append(candidate)
             continue
         memory_id = candidate.get("expected_memory_id")
         if not isinstance(memory_id, str) or memory_id not in by_id:
             raise ValueError("Unverified memory withdrawal: missing canonical memory reference")
+        # A single model extraction response must not withdraw the same
+        # canonical claim twice. Reject the entire proposed batch BEFORE
+        # MemoryProcessor can apply any of its items.
+        if memory_id in withdrawn_ids:
+            raise ValueError("Duplicate withdrawal target in one candidate batch")
         known = by_id[memory_id]
         # Caller text is untrusted. Canonical subject/predicate/value must all
         # match exact evidence; no entity alias expansion or fuzzy match here.
@@ -68,5 +133,6 @@ def guard_retractions(candidates: list[dict], evidence: list[dict]) -> list[dict
             raise ValueError("Unverified memory withdrawal: candidate differs from evidence")
         # Preserve the canonical claim ID as an additional database-level
         # precondition; checking only value would allow stale same-value claims.
+        withdrawn_ids.add(memory_id)
         result.append(candidate)
     return result

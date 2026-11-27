@@ -37,8 +37,12 @@ class WorkerContext:
         self.checkpoint_version = int(task["checkpoint_version"])
         self.checkpoint = task.get("checkpoint")
 
-    def assert_lease(self) -> None:
-        """Fail closed before a handler performs a non-database side effect."""
+    def assert_lease(self, *, reconciliation_only: bool = False) -> None:
+        """Check fencing; restrict writes, while permitting read-only UNKNOWN lookup.
+
+        reconciliation_only MUST only be used for trusted Provider.reconcile()
+        lookups. It never grants execute() or task-completion authority.
+        """
         if self.lease_lost.is_set():
             raise LeaseConflict("Worker heartbeat reports that the lease was lost")
         db = self.connection_factory()
@@ -46,6 +50,15 @@ class WorkerContext:
             DurableTaskLeaseStore(db.conn).assert_current(
                 tenant_id=self.tenant_id,task_id=self.task["task_id"],
                 worker_id=self.worker_id,lease_epoch=self.lease_epoch)
+            # The same canonical policy guards BOTH execution and final
+            # durable task completion, including direct HTTP/SDK writes.
+            from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
+            if (self.task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE
+                    and not reconciliation_only):
+                from .worker_identity import assert_current_task_creator_write_authority
+                assert_current_task_creator_write_authority(
+                    db.conn, tenant_id=self.tenant_id,
+                    task_id=self.task["task_id"])
         finally:
             db.close()
 
@@ -176,6 +189,12 @@ class DurableTaskWorker:
                     worker_id=self.worker_id,lease_epoch=task["lease_epoch"])
             finally:
                 db.close()
+            # A strict task must fail before any user handler code runs.
+            # The same check is repeated inside ctx.execute_effect before
+            # the outbound provider call, covering mid-task revocations.
+            from .durable_tasks import AUTHORIZED_CONTINUITY_TASK_TYPE
+            if task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+                context.assert_lease()
             handler = self.handlers.get(task["task_type"])
             if handler is None:
                 raise LookupError(f"No handler registered for task_type={task['task_type']!r}")
@@ -184,6 +203,8 @@ class DurableTaskWorker:
                 raise LeaseConflict("Worker lost its lease while the handler was running")
             stop.set()
             thread.join(timeout=max(1.0, self.heartbeat_interval * 2))
+            if task["task_type"] == AUTHORIZED_CONTINUITY_TASK_TYPE:
+                context.assert_lease()
             self._finish(task, status="completed", result=result or {})
         except LeaseConflict:
             log.exception("task execution fenced task=%s", task["task_id"])

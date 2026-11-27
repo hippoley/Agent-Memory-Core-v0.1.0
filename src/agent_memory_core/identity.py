@@ -340,7 +340,8 @@ class IdentityStore:
                   AND m.status='active'
                  JOIN memory_tenants t
                    ON t.tenant_id=m.tenant_id AND t.status='active'
-                 WHERE p.principal_id=%s AND p.status='active'"""
+                 WHERE p.principal_id=%s AND p.status='active'
+                   AND m.role IN ('owner','admin','editor')"""
         params=[tenant_id, principal_id]
         if membership_version is not None:
             sql += " AND m.version=%s"

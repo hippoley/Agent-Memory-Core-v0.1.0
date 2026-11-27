@@ -228,13 +228,14 @@ class MemoryClient:
 
     def create_handoff(self, *, task_id: str, source_agent: str,
                        target_agent: str, subject_ids: list[str],
-                       token_budget: int = 2048):
+                       token_budget: int = 2048, target_principal_id: str | None = None):
         """Freeze one immutable context snapshot; agent labels are descriptive."""
-        return self._request("POST", "/v1/handoffs", json={
-            "task_id": task_id, "source_agent": source_agent,
-            "target_agent": target_agent, "subject_ids": subject_ids,
-            "token_budget": token_budget,
-        })
+        body = {"task_id": task_id, "source_agent": source_agent,
+                "target_agent": target_agent, "subject_ids": subject_ids,
+                "token_budget": token_budget}
+        if target_principal_id is not None:
+            body["target_principal_id"] = target_principal_id
+        return self._request("POST", "/v1/handoffs", json=body)
 
     def accept_handoff(self, handoff_id: str, *, target_agent: str):
         """Validate snapshot freshness; never start/retry external work."""
@@ -259,13 +260,50 @@ class MemoryClient:
     def get_task(self, task_id: str):
         return self._request("GET","/v1/tasks/"+self._segment(task_id))
 
-    def commit_task_checkpoint(self, task_id: str, *, expected_version: int,
+    def get_task_effects(self, task_id: str):
+        """Read redacted effect status; never returns raw device requests or tokens."""
+        return self._request("GET", "/v1/tasks/" + self._segment(task_id) + "/effects")
+
+    def claim_task(self, *, worker_id: str, lease_seconds: int = 30):
+        """Claim a queued/expired task with a dedicated tasks:execute credential.
+
+        The returned task contains the server fencing epoch; never invent one.
+        """
+        if not isinstance(worker_id, str) or not worker_id.strip():
+            raise ValueError("A non-empty worker_id is required")
+        if type(lease_seconds) is not int or not 1 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be 1..3600")
+        return self._request("POST", "/v1/tasks/worker/claim", json={
+            "worker_id": worker_id, "lease_seconds": lease_seconds})
+
+    def renew_task_lease(self, task_id: str, *, worker_id: str,
+                         lease_epoch: int, lease_seconds: int = 30):
+        """Renew an existing lease; stale epochs are rejected by the server."""
+        self._validate_worker_lease(worker_id, lease_epoch)
+        if type(lease_seconds) is not int or not 1 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be 1..3600")
+        return self._request("POST", "/v1/tasks/" + self._segment(task_id) +
+                             "/lease/renew", json={"worker_id": worker_id,
+                             "lease_epoch": lease_epoch, "lease_seconds": lease_seconds})
+
+    @staticmethod
+    def _validate_worker_lease(worker_id: str, lease_epoch: int) -> None:
+        if not isinstance(worker_id, str) or not worker_id.strip():
+            raise ValueError("A non-empty worker_id is required")
+        if type(lease_epoch) is not int or lease_epoch < 1:
+            raise ValueError("A positive integer lease_epoch is required")
+
+    def commit_task_checkpoint(self, task_id: str, *, worker_id: str,
+                               lease_epoch: int, expected_version: int,
                                checkpoint: dict, idempotency_key: str,
                                progress_completed: int = 0, progress_total: int = 0,
                                artifact_sha256: str | None = None,
                                effect_key: str | None = None,
                                effect_request: dict | None = None):
-        body={"expected_version":expected_version,"checkpoint":checkpoint,
+        """Fenced checkpoint; effect intent must be durable before execution."""
+        self._validate_worker_lease(worker_id, lease_epoch)
+        body={"worker_id": worker_id, "lease_epoch": lease_epoch,
+              "expected_version":expected_version,"checkpoint":checkpoint,
               "idempotency_key":idempotency_key,
               "progress_completed":progress_completed,"progress_total":progress_total}
         for key,value in {"artifact_sha256":artifact_sha256,
@@ -275,10 +313,14 @@ class MemoryClient:
         return self._request("POST","/v1/tasks/"+self._segment(task_id)+"/checkpoints",
                              json=body,headers={"Idempotency-Key":idempotency_key})
 
-    def set_task_status(self, task_id: str, *, status: str,
+    def set_task_status(self, task_id: str, *, worker_id: str,
+                        lease_epoch: int, status: str,
                         result: dict | None = None, error: dict | None = None):
+        """Fenced terminal transition; never treat a memory receipt as completion."""
+        self._validate_worker_lease(worker_id, lease_epoch)
         return self._request("POST","/v1/tasks/"+self._segment(task_id)+"/status",
-                             json={"status":status,"result":result,"error":error})
+                             json={"worker_id":worker_id,"lease_epoch":lease_epoch,
+                                   "status":status,"result":result,"error":error})
 
     def verify_memory_async(self, memory_id: str, *, workflow_id: str | None = None):
         """Start a durable Temporal verification on the configured task queue."""

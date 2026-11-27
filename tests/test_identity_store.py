@@ -206,6 +206,25 @@ def test_queued_execution_is_denied_after_session_or_membership_revocation():
             principal_id=principal,tenant_id=tenant,
             credential_id=credential["credential_id"],
             membership_version=new_version)
+        # Role revocation must forbid queued writes even when the caller
+        # omits membership_version (otherwise version check can be bypassed).
+        role_version = store.set_membership_role(
+            tenant_id=tenant, principal_id=principal, role="reader")
+        assert role_version == new_version + 1
+        assert not store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session2["session_id"],
+            membership_version=role_version)
+        assert not store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            credential_id=credential["credential_id"],
+            membership_version=role_version)
+        assert not store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            session_id=session2["session_id"])
+        assert not store.authorize_background_execution(
+            principal_id=principal, tenant_id=tenant,
+            credential_id=credential["credential_id"])
         assert store.revoke_api_credential(
             credential_id=credential["credential_id"],principal_id=principal)
         assert not store.authorize_background_execution(

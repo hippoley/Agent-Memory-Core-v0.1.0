@@ -138,6 +138,15 @@ class Story:
 CURL = 'curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"'
 
 STORIES: dict[tuple[str, str], Story] = {
+    ("GET", "/v1/tasks/{task_id}/effects"): Story(
+        persona="独立任务审计员",
+        goal="在不接触设备凭据和原始请求体的情况下核对任务副作用状态",
+        value="区分账本提交、UNKNOWN 和真实物理效果，不把自报执行当成已验证的因果结果",
+        steps=("只能读取当前已授权租户的任务；不存在或跨租户的 task_id 返回 404。",
+               "按 effect_key 返回请求哈希、状态、尝试次数和时间，不返回原始请求或 Provider 敏感信息。",
+               "明确标记物理独立观察和因果验证未完成；GET 不会重试任何外部操作。"),
+        example=CURL + " $API/v1/tasks/<uuid>/effects",
+    ),
     ("POST", "/v1/context/prepare"): Story(
         persona="接力研究的 Agent A",
         goal="用任务和明确的主体集合生成有版本来源的上下文包",
@@ -162,7 +171,7 @@ STORIES: dict[tuple[str, str], Story] = {
         value="陈旧事实、错误目标、裁剪信息和未决外部副作用不会被误当成完成交接",
         steps=("必须通过当前租户权限验证；其他租户的收据返回 404。",
                "在同一数据库事务检查快照哈希、Task checkpoint、事实版本和未决副作用。",
-               "冲突返回 409；接受不会触发外部执行，重复接受具有幂等语义。"),
+               "冲突返回 409；接受不会触发外部执行，只有快照仍新鲜时重复接受才幂等。"),
         example=CURL + """ -d '{"target_agent":"B"}' $API/v1/handoffs/<uuid>/accept""",
     ),
 

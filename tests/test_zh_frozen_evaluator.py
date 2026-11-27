@@ -143,3 +143,56 @@ def test_configuration_booleans_required_and_answers_not_llm_judged():
     with pytest.raises(ValueError,match="booleans"):
         MODULE.validate_predictions(payload,gold,sha)
     assert MODULE._normalize_answer("26℃。") == MODULE._normalize_answer(" 26度 ")
+
+
+def test_strict_grounding_comparison_rejects_confounds():
+    compare_spec=importlib.util.spec_from_file_location(
+        "zh_compare",ROOT/"scripts/eval/compare_zh_frozen.py")
+    compare=importlib.util.module_from_spec(compare_spec)
+    compare_spec.loader.exec_module(compare)
+    identity={"verified":True,"response_model":"local-qwen",
+              "model_digest":"sha256-pinned","cryptographic_weight_identity":False}
+    answer={"verified":True,"response_model":"answer-qwen",
+            "system_fingerprint":"stable","cryptographic_weight_identity":False}
+    baseline={"name":"context-only","extractor":"local-qwen",
+              "context_enabled":True,"context_window":3,
+              "ground_with_memory":False,"aliases_enabled":False,
+              "answer_model":"answer-qwen",
+              "case_isolation":"fresh_tenant_per_story",
+              "extractor_runtime_identity":identity,
+              "answer_runtime_identity":answer}
+    observed={"aliases_enabled":False,"alias_count":0,"alias_sha256":"a"*64}
+    a={"dataset_sha256":"a"*64,"configuration":baseline,
+       "run_id":"run-a","search_attestation":dict(observed)}
+    b={"dataset_sha256":"a"*64,"configuration":{
+        **baseline,"name":"context-plus-memory","ground_with_memory":True},
+       "run_id":"run-b","search_attestation":dict(observed)}
+    compare.require_grounding_pair(a,b)
+    for update in (
+        {"context_window":1},
+        {"case_isolation":"shared_tenant_soft_reset"},
+        {"aliases_enabled":True},
+        {"extractor_runtime_identity":{**identity,"response_model":"other"}},
+        {"answer_runtime_identity":{**answer,"system_fingerprint":"changed"}},
+        {"context_enabled":False},
+        {"ground_with_memory":False},
+    ):
+        bad=deepcopy(b)
+        bad["configuration"].update(update)
+        with pytest.raises(ValueError):
+            compare.require_grounding_pair(a,bad)
+    with pytest.raises(ValueError,match="dataset"):
+        compare.require_grounding_pair(a,{**b,"dataset_sha256":"b"*64})
+
+    for altered in (
+        {"search_attestation":{**observed,"alias_sha256":"b"*64}},
+        {"search_attestation":{**observed,"alias_count":1}},
+        {"search_attestation":None},
+        {"run_id":"run-a"},
+        {"run_id":None},
+    ):
+        bad=deepcopy(b)
+        bad.update(altered)
+        with pytest.raises(ValueError):
+            compare.require_grounding_pair(a,bad)
+

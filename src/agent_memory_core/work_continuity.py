@@ -17,6 +17,10 @@ class HandoffConflict(ValueError):
     """Snapshot changed, capacity insufficient, or handoff already accepted."""
 
 
+class HandoffForbidden(PermissionError):
+    """Authenticated caller cannot offer or accept this delegated handoff."""
+
+
 def _wire(value):
     if isinstance(value, datetime):
         return value.isoformat()
@@ -62,12 +66,12 @@ class ContinuityStore:
         if task is None:
             raise LookupError("Task not found")
         effects = self.conn.execute(
-            """SELECT e.effect_key,e.status FROM memory_task_effects AS e
+            """SELECT e.effect_key,e.status,e.request_sha256 FROM memory_task_effects AS e
                JOIN memory_durable_tasks AS t ON t.task_id=e.task_id
                WHERE t.tenant_id=%s AND e.task_id=%s::uuid
                ORDER BY e.effect_key""", (tenant_id, task_id)
         ).fetchall()
-        pending_effects = [{"effect_key": k, "status": state} for k, state in effects
+        pending_effects = [{"effect_key": k, "status": state} for k, state, _ in effects
                            if state != "committed"]
         core = {
             "schema": "amc.context-pack.v1",
@@ -77,6 +81,9 @@ class ContinuityStore:
             "checkpoint_version": task["checkpoint_version"],
             "checkpoint": _wire(task["checkpoint"]),
             "unresolved_effects": pending_effects,
+            # Full ledger hash includes committed effects, not just unresolved
+            # rows. A new committed effect after a handoff also stales it.
+            "effect_ledger_sha256": _hash(effects),
             "subjects": subjects,
             "claims": [],
             "omitted_claim_ids": [],
@@ -115,22 +122,53 @@ class ContinuityStore:
         return core
 
     def create_handoff(self, *, tenant_id, task_id, source_agent, target_agent,
-                       subject_ids, token_budget=2048):
+                       subject_ids, token_budget=2048, source_principal_id=None,
+                       target_principal_id=None):
         for value in (source_agent, target_agent):
             if not isinstance(value, str) or not 1 <= len(value) <= 120:
                 raise ValueError("agent labels must contain 1..120 characters")
         if source_agent == target_agent:
             raise ValueError("source_agent and target_agent must differ")
+        if target_principal_id is not None and not source_principal_id:
+            raise HandoffForbidden("Principal-bound handoff requires authenticated source")
+        if source_principal_id and target_principal_id == source_principal_id:
+            raise HandoffForbidden("Principal-bound handoff requires a distinct target")
         with self.conn.transaction():
             # Lock task while snapshotting its current version and references.
             row = self.conn.execute(
-                "SELECT task_id FROM memory_durable_tasks WHERE tenant_id=%s AND task_id=%s::uuid FOR SHARE",
+                """SELECT task_id,created_by_principal_id::text FROM memory_durable_tasks
+                   WHERE tenant_id=%s AND task_id=%s::uuid FOR SHARE""",
                 (tenant_id, task_id)
             ).fetchone()
             if not row:
                 raise LookupError("Task not found")
+            if target_principal_id is not None and row[1] != source_principal_id:
+                raise HandoffForbidden("Only the authenticated task creator can delegate")
             pack = self.prepare_context(tenant_id=tenant_id, task_id=task_id,
                                         subject_ids=subject_ids, token_budget=token_budget)
+            if target_principal_id is not None:
+                member = self.conn.execute(
+                    """SELECT m.version
+                       FROM memory_tenant_memberships m
+                       JOIN memory_principals p ON p.principal_id=m.principal_id
+                       WHERE m.tenant_id=%s AND m.principal_id=%s::uuid
+                         AND m.status='active' AND m.role IN ('owner','admin','editor')
+                         AND p.status='active' FOR SHARE OF m,p""",
+                    (tenant_id, target_principal_id),
+                ).fetchone()
+                if member is None:
+                    raise HandoffForbidden("Target principal has no active write membership")
+                pack["delegation"] = {
+                    "schema": "amc.principal-handoff.v1",
+                    "source_principal_id": source_principal_id,
+                    "target_principal_id": target_principal_id,
+                    "target_membership_version": int(member[0]),
+                    "scope": "context_accept_only",
+                }
+                # Recompute both digests after binding the immutable principal.
+                pack["sha256"] = _hash({k:v for k,v in pack.items() if k!="sha256"})
+                if _tokens(pack) > token_budget:
+                    raise HandoffConflict("Principal binding exceeds context budget")
             ident = str(uuid4())
             self.conn.execute(
                 """INSERT INTO memory_agent_handoffs
@@ -141,7 +179,8 @@ class ContinuityStore:
         return {"handoff_id": ident, "status": "offered", "payload": pack,
                 "payload_sha256": _hash(pack)}
 
-    def accept_handoff(self, *, tenant_id, handoff_id, target_agent):
+    def accept_handoff(self, *, tenant_id, handoff_id, target_agent,
+                       authenticated_principal_id=None):
         if not isinstance(target_agent, str) or not target_agent:
             raise ValueError("target_agent is required")
         with self.conn.transaction():
@@ -156,14 +195,33 @@ class ContinuityStore:
             task_id, target, status, pack, digest, accepted_by = row
             if target != target_agent:
                 raise HandoffConflict("Handoff target mismatch")
+            delegation = pack.get("delegation")
+            if delegation is not None:
+                if (not isinstance(delegation, dict)
+                        or delegation.get("schema") != "amc.principal-handoff.v1"
+                        or delegation.get("target_principal_id") != authenticated_principal_id):
+                    raise HandoffForbidden("Handoff bound to another authenticated principal")
+                membership = self.conn.execute(
+                    """SELECT m.version FROM memory_tenant_memberships m
+                       JOIN memory_principals p ON p.principal_id=m.principal_id
+                       WHERE m.tenant_id=%s AND m.principal_id=%s::uuid
+                         AND m.status='active' AND m.role IN ('owner','admin','editor')
+                         AND p.status='active' FOR SHARE OF m,p""",
+                    (tenant_id, authenticated_principal_id),
+                ).fetchone()
+                if (membership is None or int(membership[0]) !=
+                        delegation.get("target_membership_version")):
+                    raise HandoffForbidden("Target membership revoked or changed since offer")
             if _hash(pack) != digest or pack.get("sha256") != _hash({
                     k: v for k, v in pack.items() if k != "sha256"}):
                 raise HandoffConflict("Handoff payload integrity mismatch")
-            if status == "accepted":
-                if accepted_by != target_agent:
-                    raise HandoffConflict("Handoff already accepted by another agent")
-                return {"handoff_id": handoff_id, "status": status, "payload": pack,
-                        "verified_at": None, "idempotent": True}
+            if status == "accepted" and accepted_by != target_agent:
+                raise HandoffConflict("Handoff already accepted by another agent")
+            if status not in ("offered", "accepted"):
+                raise HandoffConflict("Handoff no longer accepts continuation")
+            # Re-acceptance is idempotent ONLY while task, canonical claims
+            # and external effects are unchanged. An earlier acceptance is
+            # not permission to re-use a stale context pack.
             task = DurableTaskStore(self.conn).get_task(tenant_id=tenant_id, task_id=task_id)
             if (not task or task["checkpoint_version"] != pack["checkpoint_version"]
                     or task["status"] != pack["task_status"]):
@@ -171,13 +229,17 @@ class ContinuityStore:
             # The frozen effect list is not enough: a new UNKNOWN effect can
             # appear after the handoff was created.
             effects = self.conn.execute(
-                """SELECT e.effect_key,e.status FROM memory_task_effects AS e
+                """SELECT e.effect_key,e.status,e.request_sha256 FROM memory_task_effects AS e
                    JOIN memory_durable_tasks AS t ON t.task_id=e.task_id
                    WHERE t.tenant_id=%s AND e.task_id=%s::uuid
                    ORDER BY e.effect_key""",
                 (tenant_id, task_id),
             ).fetchall()
-            if any(status != "committed" for _, status in effects):
+            if not isinstance(pack.get("effect_ledger_sha256"), str):
+                raise HandoffConflict("Handoff predates full effect ledger binding")
+            if pack["effect_ledger_sha256"] != _hash(effects):
+                raise HandoffConflict("External effect ledger changed since handoff")
+            if any(effect_status != "committed" for _, effect_status, _ in effects):
                 raise HandoffConflict("Current external effects need reconciliation")
             # A new fact can be as dangerous as a forgotten one: prevent an
             # old snapshot from claiming to be the entire current subject view.
@@ -209,6 +271,10 @@ class ContinuityStore:
                 raise HandoffConflict("Handoff context was truncated; cannot accept as complete")
             if pack["unresolved_effects"]:
                 raise HandoffConflict("External effects need reconciliation before safe continuation")
+            if status == "accepted":
+                return {"handoff_id": handoff_id, "status": "accepted",
+                        "payload": pack, "verified_at": datetime.now(timezone.utc).isoformat(),
+                        "idempotent": True, "principal_bound": bool(delegation)}
             self.conn.execute(
                 """UPDATE memory_agent_handoffs
                    SET status='accepted', accepted_by=%s, accepted_at=clock_timestamp()
@@ -217,4 +283,4 @@ class ContinuityStore:
             )
             return {"handoff_id": handoff_id, "status": "accepted", "payload": pack,
                     "verified_at": datetime.now(timezone.utc).isoformat(),
-                    "idempotent": False}
+                    "idempotent": False, "principal_bound": bool(delegation)}

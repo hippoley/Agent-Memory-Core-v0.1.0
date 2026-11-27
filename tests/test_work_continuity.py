@@ -112,6 +112,11 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             assert accepted.status_code == 200, accepted.text
             assert accepted.json()["status"] == "accepted"
             assert accepted.json()["idempotent"] is False
+            repeat_unchanged = await agent_b.post(
+                f"/v1/handoffs/{handoff_id}/accept",
+                json={"target_agent": "agent-B"})
+            assert repeat_unchanged.status_code == 200, repeat_unchanged.text
+            assert repeat_unchanged.json()["idempotent"] is True
             # Agent B performs new work through the public canonical memory API,
             # not through Agent A's process state or a privileged database handle.
             continuation = await agent_b.post("/v1/memories", json={
@@ -131,8 +136,33 @@ def test_us_c01_real_http_two_agent_handoff_and_adversarial_rejection():
             assert added_fact_conflict.status_code == 409, added_fact_conflict.text
             again = await agent_b.post(f"/v1/handoffs/{handoff_id}/accept",
                                        json={"target_agent": "agent-B"})
-            assert again.status_code == 200
-            assert again.json()["idempotent"] is True
+            assert again.status_code == 409, again.text
+            assert "claims changed" in again.text
+
+            # An already-committed new Effect is still a state change.
+            # Past logic checked only unresolved effects and would allow
+            # this stale packet. The full ledger fingerprint must reject it.
+            committed_packet = await agent_b.post("/v1/handoffs", json={
+                **base, "source_agent": "agent-A", "target_agent": "agent-B",
+            })
+            assert committed_packet.status_code == 201, committed_packet.text
+            fault_db_committed = PostgresMemory(dsn)
+            try:
+                with fault_db_committed.conn.transaction():
+                    fault_db_committed.conn.execute(
+                        """INSERT INTO memory_task_effects
+                           (task_id,effect_key,request_sha256,status)
+                           VALUES (%s::uuid,%s,%s,%s)""",
+                        (task_id, "already-committed-after-offer", "1" * 64,
+                         "committed"),
+                    )
+            finally:
+                fault_db_committed.close()
+            reject_committed = await agent_b.post(
+                f"/v1/handoffs/{committed_packet.json()['handoff_id']}/accept",
+                json={"target_agent": "agent-B"})
+            assert reject_committed.status_code == 409, reject_committed.text
+            assert "ledger changed" in reject_committed.text
 
             # A second packet becomes stale after a real memory revision.
             stale = await agent_b.post("/v1/handoffs", json={

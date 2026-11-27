@@ -141,3 +141,127 @@ def test_history_replay_does_not_ground_against_current_database():
               "ground_with_memory":True,
               "observed_at":"2026-01-01T00:00:00+00:00"})
     assert response.status_code==422
+
+
+def test_identical_duplicate_evidence_is_deduplicated_without_changing_authority():
+    duplicated = evidence_from_hits([HIT, dict(HIT)])
+    assert duplicated == [HIT]
+    assert guard_retractions([CANDIDATE], duplicated) == [CANDIDATE]
+
+
+def test_conflicting_duplicate_memory_ids_fail_closed_before_any_withdrawal():
+    altered = {**HIT, "value": {"months": 3}}
+    with pytest.raises(ValueError, match="Conflicting canonical evidence"):
+        evidence_from_hits([HIT, altered])
+    # Defense in depth: reject even if a caller bypasses evidence_from_hits.
+    with pytest.raises(ValueError, match="Conflicting canonical evidence"):
+        guard_retractions([CANDIDATE], [HIT, altered])
+    with pytest.raises(ValueError, match="Conflicting canonical evidence"):
+        guard_retractions([CANDIDATE], [altered, HIT])
+
+
+def test_api_rejects_contradictory_retrieval_for_same_memory_id():
+    altered = {**HIT, "value": {"months": 3}}
+    response, memory, search, extractor = run_request([CANDIDATE], [HIT, altered])
+    assert response.status_code == 422
+    assert memory.forgotten == []
+    assert search.closed
+    # The extractor never receives a fabricated or last-write-wins evidence view.
+    assert extractor.seen is None
+
+
+def test_duplicate_retraction_target_rejected_before_any_mutation():
+    # Both identical and contradictory duplicate withdrawal proposals are
+    # unsafe; in non-atomic processing the first would otherwise be applied.
+    with pytest.raises(ValueError, match="Duplicate withdrawal target"):
+        guard_retractions([CANDIDATE, dict(CANDIDATE)], [HIT])
+    conflicting = {**CANDIDATE, "value": {"reason": "different"}}
+    with pytest.raises(ValueError, match="Duplicate withdrawal target"):
+        guard_retractions([CANDIDATE, conflicting], [HIT])
+
+
+def test_api_rejects_duplicate_retractions_without_partial_forget():
+    response, memory, search, extractor = run_request(
+        [CANDIDATE, dict(CANDIDATE)], [HIT])
+    assert response.status_code == 422, response.text
+    assert memory.forgotten == []
+    assert search.closed
+
+
+def test_distinct_grounded_retractions_are_not_blocked():
+    second_hit = {"memory_id": "mem-2", "subject_id": "supplier-8",
+                  "predicate": "settlement_period", "value": {"months": 2}}
+    second = {**CANDIDATE, "subject_id": "supplier-8",
+              "expected_memory_id": "mem-2", "expected_value": {"months": 2}}
+    assert guard_retractions([CANDIDATE, second], [HIT, second_hit]) == [
+        CANDIDATE, second]
+
+
+@pytest.mark.parametrize("proposals", [
+    [CANDIDATE, {**CANDIDATE, "operation": "DELETE"}],
+    [{**CANDIDATE, "operation": "DELETE"}, CANDIDATE],
+    [{"subject_id": "supplier-7", "predicate": "settlement_period",
+      "value": {"months": 2}, "operation": "UPSERT"}, CANDIDATE],
+    [CANDIDATE, {"subject_id": "supplier-7", "predicate": "settlement_period",
+                 "value": {"months": 1}, "operation": "UPSERT"}],
+])
+def test_grounded_batch_preflight_fails_before_partial_mutation(proposals):
+    with pytest.raises(ValueError, match="Unsupported grounded|Conflicting memory|Grounded replacement"):
+        guard_retractions(proposals, [HIT])
+    response, memory, search, _ = run_request(proposals, [HIT])
+    assert response.status_code == 422, response.text
+    assert memory.forgotten == []
+    assert search.closed
+
+
+def test_grounded_batch_preserves_valid_unrelated_upserts():
+    novel = {"subject_id": "rail-signal-7", "predicate": "maintenance_window",
+             "value": {"days": 45}, "operation": "UPSERT", "confidence": 0.9}
+    assert guard_retractions([CANDIDATE, novel], [HIT]) == [CANDIDATE, novel]
+
+
+def test_grounded_correction_withdraws_old_then_creates_distinct_new_value():
+    replacement = {"subject_id": "supplier-7", "predicate": "settlement_period",
+                   "value": {"months": 3}, "operation": "UPSERT",
+                   "confidence": 0.99}
+    assert guard_retractions([CANDIDATE, replacement], [HIT]) == [
+        CANDIDATE, replacement]
+    # The real PostgreSQL E2E test proves the subsequent UPSERT commit.
+    # This lightweight dummy only implements the withdrawal adapter.
+
+
+def test_grounded_batch_rejects_contradictory_same_fact_upserts_before_commit():
+    first = {"subject_id": "supplier-7", "predicate": "settlement_period",
+             "value": {"months": 1}, "operation": "UPSERT", "confidence": 0.99}
+    second = {**first, "value": {"months": 3}}
+    with pytest.raises(ValueError, match="Conflicting UPSERT values"):
+        guard_retractions([first, second], [],
+                          predicate_cardinality=lambda pred: "one")
+    with pytest.raises(ValueError, match="Conflicting UPSERT values"):
+        guard_retractions([second, first], [],
+                          predicate_cardinality=lambda pred: "one")
+    response, memory, search, extractor = run_request([first, second], [])
+    assert response.status_code == 422, response.text
+    assert memory.forgotten == []
+    assert search.closed
+
+
+def test_grounded_batch_allows_identical_upserts_and_independent_facts():
+    first = {"subject_id": "supplier-7", "predicate": "settlement_period",
+             "value": {"months": 1}, "operation": "UPSERT"}
+    duplicate = {**first, "value": dict(first["value"])}
+    distinct = {"subject_id": "supplier-7", "predicate": "preferred_currency",
+                "value": {"currency": "EUR"}, "operation": "UPSERT"}
+    assert guard_retractions([first, duplicate], []) == [first, duplicate]
+    assert guard_retractions([first, distinct], []) == [first, distinct]
+
+
+def test_grounded_batch_keeps_distinct_multi_valued_facts():
+    a = {"subject_id": "researcher-7", "predicate": "interests",
+         "value": {"topic": "energy"}, "operation": "UPSERT"}
+    b = {**a, "value": {"topic": "robotics"}}
+    assert guard_retractions(
+        [a, b], [], predicate_cardinality=lambda p: "many") == [a, b]
+    # A missing authoritative cardinality policy must not invent singleton
+    # restrictions for arbitrary new-domain facts.
+    assert guard_retractions([a, b], []) == [a, b]

@@ -41,7 +41,7 @@ class VectorBucketConfig:
             if not self.endpoint_url:
                 raise ValueError("aliyun requires explicit HTTPS vector bucket endpoint")
             url = urlsplit(self.endpoint_url)
-            expected = rf"^{re.escape(self.bucket)}-[0-9]+\\.{re.escape(self.region)}\\.oss-vectors\\.aliyuncs\\.com$"
+            expected = rf"^{re.escape(self.bucket)}-[0-9]+\.{re.escape(self.region)}\.oss-vectors\.aliyuncs\.com$"
             if (url.scheme != "https" or not re.fullmatch(expected, url.hostname or "")
                     or url.username or url.password or url.port or url.path
                     or url.query or url.fragment):

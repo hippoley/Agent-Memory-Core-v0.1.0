@@ -17,6 +17,8 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 VALID_EFFECT_STATES = {"requested", "executing", "unknown", "reconciling",
                        "committed", "failed"}
 SUPPORTED_TASK_PROFILES = {"continuity.effect.v1", "continuity.authorized-effect.v1"}
+MAX_BUNDLE_BYTES = 2 * 1024 * 1024
+MAX_EFFECT_ITEMS = 2048
 
 
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
@@ -66,6 +68,8 @@ def verify(bundle: object) -> dict:
     items = effects.get("items")
     if not isinstance(items, list):
         return result("FAIL", "INVALID_EFFECT_LIST")
+    if len(items) > MAX_EFFECT_ITEMS:
+        return result("FAIL", "EFFECT_LIST_TOO_LARGE")
     index = {}
     for item in items:
         if not isinstance(item, dict):
@@ -115,16 +119,27 @@ def main(argv=None) -> int:
                         help="JSON containing task GET response and effects GET response")
     args = parser.parse_args(argv)
     try:
+        with args.bundle.open("rb") as stream:
+            raw = stream.read(MAX_BUNDLE_BYTES + 1)
+        if len(raw) > MAX_BUNDLE_BYTES:
+            print(json.dumps({"decision": "FAIL",
+                              "reasons": ["INPUT_TOO_LARGE"]}, sort_keys=True))
+            return 1
         document = json.loads(
-            args.bundle.read_text(encoding="utf-8"),
+            raw.decode("utf-8"),
             object_pairs_hook=_unique_json_object,
             parse_constant=lambda _: (_ for _ in ()).throw(
                 ValueError("Nonfinite JSON numbers are not permitted")))
-    except (OSError, UnicodeError, ValueError) as exc:
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         print(json.dumps({"decision": "FAIL", "reasons": [
             "INVALID_INPUT_FILE"], "detail": type(exc).__name__}, sort_keys=True))
         return 1
-    output = verify(document)
+    try:
+        output = verify(document)
+    except (RecursionError, OverflowError):
+        print(json.dumps({"decision": "FAIL",
+                          "reasons": ["INVALID_INPUT_STRUCTURE"]}, sort_keys=True))
+        return 1
     print(json.dumps(output, ensure_ascii=False, sort_keys=True))
     return {"PASS": 0, "FAIL": 1, "UNKNOWN": 2}[output["decision"]]
 

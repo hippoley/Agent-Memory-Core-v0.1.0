@@ -62,3 +62,21 @@ The CLI rejects duplicate JSON object keys and non-standard `NaN` /
 `Infinity` literals rather than silently normalizing conflicting data.
 Malformed enum values (including arrays/objects) fail with reason codes
 instead of uncaught exceptions. CLI exit codes remain 0 / 1 / 2.
+
+
+## Resource bounds and independent installation check
+
+The CLI reads at most **2 MiB + 1 byte** before JSON decoding, and rejects
+larger inputs with `FAIL: INPUT_TOO_LARGE`. The public verification function
+rejects more than 2,048 listed effects with
+`FAIL: EFFECT_LIST_TOO_LARGE`. Excessively nested JSON or duplicate keys
+must fail with structured output, not a Python traceback.
+
+The repository acceptance test copies **only the script** to a temporary
+directory and launches `python -I -S verify.py receipt.json` with that directory
+as the current working directory. `-I -S` disables Python environment/package
+imports, demonstrating the script works without AMC or installed dependencies.
+
+These are resource hygiene controls, not a security sandbox. Do not treat
+attacker-controlled receipts as trusted evidence; the program still cannot
+validate source authenticity, atomicity, authorization or physical causation.

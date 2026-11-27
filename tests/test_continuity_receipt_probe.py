@@ -3,6 +3,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import shutil
 from copy import deepcopy
 from pathlib import Path
 
@@ -137,3 +138,51 @@ def test_cli_rejects_nonstandard_json_nan(tmp_path):
         capture_output=True, text=True, check=False)
     assert result.returncode == 1
     assert json.loads(result.stdout)["reasons"] == ["INVALID_INPUT_FILE"]
+
+
+def test_effect_count_is_bounded_even_for_direct_python_import():
+    b = valid()
+    b["effects"]["items"] = [
+        {**valid()["effects"]["items"][0], "effect_key": f"effect-{i}"}
+        for i in range(probe.MAX_EFFECT_ITEMS + 1)
+    ]
+    assert probe.verify(b)["reasons"] == ["EFFECT_LIST_TOO_LARGE"]
+
+
+def test_cli_rejects_oversized_receipt_without_loading_all_data(tmp_path):
+    file = tmp_path / "oversized.json"
+    file.write_bytes(b"x" * (probe.MAX_BUNDLE_BYTES + 1))
+    run = subprocess.run(
+        [sys.executable, str(SCRIPT), str(file)],
+        capture_output=True, text=True, check=False)
+    assert run.returncode == 1
+    assert json.loads(run.stdout)["reasons"] == ["INPUT_TOO_LARGE"]
+
+
+def test_cli_deeply_nested_json_is_failure_not_traceback(tmp_path):
+    file = tmp_path / "deep.json"
+    file.write_text("[" * 1200 + "0" + "]" * 1200, encoding="utf-8")
+    run = subprocess.run(
+        [sys.executable, str(SCRIPT), str(file)],
+        capture_output=True, text=True, check=False)
+    assert run.returncode == 1
+    assert json.loads(run.stdout)["reasons"] == ["INVALID_INPUT_FILE"]
+    assert "Traceback" not in run.stderr
+
+
+def test_copied_single_script_runs_in_isolated_python_without_amc(tmp_path):
+    # Independent consumption: script and JSON, no project deps or source tree.
+    copied = tmp_path / "verify.py"
+    shutil.copyfile(SCRIPT, copied)
+    for state, expected_code, expected_decision in [
+        ("completed", 0, "PASS"), ("running", 2, "UNKNOWN")]:
+        bundle = valid()
+        bundle["task"]["status"] = state
+        receipt = tmp_path / "receipt.json"
+        receipt.write_text(json.dumps(bundle), encoding="utf-8")
+        run = subprocess.run(
+            [sys.executable, "-I", "-S", str(copied), str(receipt)],
+            cwd=tmp_path, capture_output=True, text=True, check=False)
+        assert run.returncode == expected_code, run.stderr
+        assert json.loads(run.stdout)["decision"] == expected_decision
+        assert "Traceback" not in run.stderr

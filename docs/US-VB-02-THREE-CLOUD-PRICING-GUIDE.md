@@ -156,3 +156,39 @@ This is explicit dependency injection; the AMC server does not yet automatically
 - Azure Cosmos: https://azure.microsoft.com/en-us/pricing/details/cosmos-db/standard-provisioned/
 - Azure PostgreSQL: https://azure.microsoft.com/en-us/pricing/details/postgresql/flexible-server/
 - Azure Blob: https://azure.microsoft.com/en-us/pricing/details/storage/blobs/
+
+## 9. Per-request provider selection: cost and failure-domain control
+
+An injected three-cloud search previously queried every configured provider on
+every embedding request. This can triple request-based charges, produce
+unnecessary WAN latency, and make degraded multi-cloud operation more complex.
+
+PR #71 now supports a backwards-compatible per-query selection argument:
+
+```python
+searcher.search_detailed(tenant_id=tenant, query=question,
+    embedding=query_embedding, model_id=embedding_model,
+    cloud_providers=())                        # zero cloud calls
+searcher.search_detailed(tenant_id=tenant, query=question,
+    embedding=query_embedding, model_id=embedding_model,
+    cloud_providers=("aliyun",))               # only Aliyun
+searcher.search_detailed(tenant_id=tenant, query=question,
+    embedding=query_embedding, model_id=embedding_model,
+    cloud_providers=("aws", "azure"))          # explicit two-provider compare
+```
+
+`None` retains legacy behavior: query every configured remote adapter.
+The default application/server path still does not inject cloud adapters.
+Unknown or duplicate requested providers are rejected BEFORE any network call.
+
+**Finance guidance**: set a per-request provider allowlist at your trusted API
+layer. Do not let unauthenticated model text freely choose a billable cloud.
+Track per-provider logical query counts, index scanned bytes, request fees,
+input/output network cost, and tail latency separately. Query only the
+cheapest *validated* provider by default; use second provider for explicit
+failover/experiments, not to manufacture independent evidence votes.
+
+This is a routing control, **not** a complete cost budget, timeout, circuit
+breaker, provider availability or billing enforcement system. Configure SDK
+timeouts and account billing alarms independently. Until the server exposes a
+trusted option, the new query argument is library-only.

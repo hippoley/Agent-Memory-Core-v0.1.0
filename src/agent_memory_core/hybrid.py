@@ -104,7 +104,8 @@ class HybridMemorySearch:
         # high; the simple-dictionary FTS is the weakest signal. Equal-weight
         # RRF let the noisiest channel crowd out correct hits, so every channel
         # contributes weight/(k+rank) instead.
-        self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)\n        self.channel_weights.update({"vector_aws": 1.0, "vector_aliyun": 1.0})
+        self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)
+        self.channel_weights.update({"vector_aws": 1.0, "vector_aliyun": 1.0})
         if channel_weights:
             self.channel_weights.update(
                 {str(k): float(v) for k, v in channel_weights.items()})

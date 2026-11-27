@@ -30,7 +30,7 @@ AWS (use IAM role / Boto3 default credential chain; no hard-coded key):
 ```python
 from agent_memory_core.vector_bucket import VectorBucketConfig, VectorBucketAdapter
 config = VectorBucketConfig(provider="aws", bucket="amc-vector-bucket",
-                            index="amc-384", region="us-east-1", dimensions=384)
+                            index="amc384", region="us-east-1", dimensions=384)
 adapter = VectorBucketAdapter.from_boto3(config)
 ```
 
@@ -40,8 +40,8 @@ Alibaba (endpoint is the **vector bucket** endpoint, not ordinary OSS):
 import os
 from agent_memory_core.vector_bucket import VectorBucketConfig, VectorBucketAdapter
 config = VectorBucketConfig(provider="aliyun", bucket="your-vector-bucket",
-    index="amc-384", region="cn-hangzhou", dimensions=384,
-    endpoint_url="https://your-vector-bucket-ACCOUNT.cn-hangzhou.oss-vectors.aliyuncs.com")
+    index="amc384", region="cn-hangzhou", dimensions=384,
+    endpoint_url="https://your-vector-bucket-123456789012.cn-hangzhou.oss-vectors.aliyuncs.com")
 adapter = VectorBucketAdapter.from_boto3(config,
     aws_access_key_id=os.environ["ALIBABA_CLOUD_ACCESS_KEY_ID"],
     aws_secret_access_key=os.environ["ALIBABA_CLOUD_ACCESS_KEY_SECRET"])
@@ -73,3 +73,25 @@ Both use `put(tenant_id=..., memory_id=..., model_id=..., embedding=...)`, `quer
 - https://docs.aws.amazon.com/boto3/latest/reference/services/s3vectors/client/put_vectors.html
 - https://docs.aws.amazon.com/boto3/latest/reference/services/s3vectors/client/query_vectors.html
 - https://www.alibabacloud.com/help/en/oss/developer-reference/compatibility-with-amazon-s3
+
+## Verified cross-provider compatibility profile (2026-11-27)
+
+| Property | AWS S3 Vectors | Alibaba OSS Vectors | AMC portable behavior |
+|---|---|---|---|
+| Boto3 service | `s3vectors` | `s3vectors` | shared calls |
+| Addressing | AWS regional endpoint + bucket name | `https://{bucket}-{account}.{region}.oss-vectors.aliyuncs.com` | bucket name and index name only, never AWS ARN |
+| Index naming | permits hyphen/dot | letters and digits only | choose `amc384` for both |
+| Put / Query / Delete | supported | supported via S3 compatibility | portable core |
+| Metadata filters | supported | supported in Standard mode | only tenant/model equality AND |
+| Enhanced/index mode | Enhanced available | not supported via S3 API | never send `queryMode` by default |
+| Fusion Mode | not Alibaba Fusion | Alibaba native API only | separate extension, not silently treated as portable |
+| SSE configuration | supported | AWS-compatible parameter ignored | no portable SSE guarantee |
+| Tags | supported | unsupported | no portable tags API |
+
+The adapter explicitly validates Alibaba index name and verifies bucket/account/region endpoint shape to avoid silently misdirecting sensitive data. The AWS index may use its broader naming rules, but portable deployments should use the common naming subset.
+
+Sources:
+- https://help.aliyun.com/zh/oss/developer-reference/compatibility-with-amazon-s3
+- https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-query.html
+
+No IAM/RAM provisioning is performed automatically. Operator must verify the SDK/region's actual protocol behavior, including request-signing and paginated query responses. Cloud production acceptance remains pending.

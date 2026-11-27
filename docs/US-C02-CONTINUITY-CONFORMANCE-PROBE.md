@@ -1,0 +1,111 @@
+# AMC Continuity Ledger Conformance Probe v1
+
+This is a deliberately **standalone, framework-neutral, Python stdlib-only**
+consumer of two public GET responses. A developer can copy just
+`tools/verify_continuity_receipt.py` to another repository without installing
+AMC or connecting to its database.
+
+Input JSON structure:
+```json
+{
+  "task": {
+    "task_id": "11111111-1111-4111-8111-111111111111",
+    "task_type": "continuity.effect.v1",
+    "status": "completed",
+    "input": {"required_effect_keys": ["device-effect-v1"]}
+  },
+  "effects": {
+    "task_id": "11111111-1111-4111-8111-111111111111",
+    "items": [{
+      "effect_key": "device-effect-v1",
+      "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "committed",
+      "attempt_count": 1,
+      "provider_reference_recorded": true,
+      "physical_independence_verified": false,
+      "causal_effect_verified": false
+    }]
+  }
+}
+```
+
+Run after saving the task and effects GET responses **from the same tenant and
+observation window** into the `task` and `effects` keys:
+```bash
+python tools/verify_continuity_receipt.py continuity-bundle.json
+# exit 0=PASS, 1=FAIL, 2=UNKNOWN
+```
+
+Result scope: **only local consistency of untrusted JSON**. The probe checks
+that every required Effect Key exists and is committed, no unresolved effects
+are concealed, task IDs align, and hashes/statuses are structurally plausible.
+It cannot know whether the JSON was forged, responses were captured atomically,
+the worker had authorization, an external provider actually committed, or a
+physical device changed. `PASS` is always labeled `LEDGER_CONSISTENT_ONLY`.
+No signatures, physical provenance or causal evidence are implied.
+
+This is intended as a minimal reproducible test vector for third-party Agent
+framework maintainers. It is not yet an independent standard, an upstream
+endorsement, or proof of external adoption. Extend it with authenticated and
+signed evidence only when such evidence actually exists.
+
+
+## v1 supported profiles and malformed input
+
+The checker recognizes both `continuity.effect.v1` and the creator-gated
+`continuity.authorized-effect.v1` profile **for ledger consistency only**.
+Even for the creator-gated profile, the returned
+`actor_authorization_verified` is ALWAYS `false`: this offline tool has no
+source of independently authenticated Principal or gateway permission evidence.
+
+The CLI rejects duplicate JSON object keys and non-standard `NaN` /
+`Infinity` literals rather than silently normalizing conflicting data.
+Malformed enum values (including arrays/objects) fail with reason codes
+instead of uncaught exceptions. CLI exit codes remain 0 / 1 / 2.
+
+
+## Resource bounds and independent installation check
+
+The CLI reads at most **2 MiB + 1 byte** before JSON decoding, and rejects
+larger inputs with `FAIL: INPUT_TOO_LARGE`. The public verification function
+rejects more than 2,048 listed effects with
+`FAIL: EFFECT_LIST_TOO_LARGE`. Excessively nested JSON or duplicate keys
+must fail with structured output, not a Python traceback.
+
+The repository acceptance test copies **only the script** to a temporary
+directory and launches `python -I -S verify.py receipt.json` with that directory
+as the current working directory. `-I -S` disables Python environment/package
+imports, demonstrating the script works without AMC or installed dependencies.
+
+These are resource hygiene controls, not a security sandbox. Do not treat
+attacker-controlled receipts as trusted evidence; the program still cannot
+validate source authenticity, atomicity, authorization or physical causation.
+
+
+## Public fixed negative vectors · v1.0.0
+
+The file `conformance/vectors/continuity-ledger-v1.json` contains twelve
+runnable cases, covering ledger PASS, unknown effects, required effects
+missing, mismatched task IDs, fabricated physical claims, completed-versus-
+cancelled semantics and unsupported task types. These cases are frozen under
+the manifest version and can be copied to an unrelated repository.
+
+Run using only the Python standard library:
+
+```bash
+python -I -S tools/run_continuity_vectors.py
+# JSON output: case-level pass/fail plus deterministic reason and exit
+```
+
+The runner invokes the actual verifier as a separate isolated process for
+each case; it checks `PASS/FAIL/UNKNOWN`, reason code, exit code and the
+three explicitly-false identity/provenance/physical flags. A tampered
+expectation must cause an overall nonzero exit. To check another compatible
+offline CLI, use `--verifier path/to/candidate_script.py`.
+
+This is an **offline structural compatibility** suite. It neither runs a
+third-party Agent runtime nor proves a physical device effect, credential
+authorization, signed evidence or independent adoption. In particular,
+`cancelled` with a prior committed effect returns UNKNOWN for task success:
+cancellation cannot erase the committed operation. Update manifest expectations
+only with reviewed compatibility-version changes.

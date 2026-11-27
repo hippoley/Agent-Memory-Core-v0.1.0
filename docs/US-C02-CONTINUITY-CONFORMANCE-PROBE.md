@@ -80,3 +80,32 @@ imports, demonstrating the script works without AMC or installed dependencies.
 These are resource hygiene controls, not a security sandbox. Do not treat
 attacker-controlled receipts as trusted evidence; the program still cannot
 validate source authenticity, atomicity, authorization or physical causation.
+
+
+## Public fixed negative vectors · v1.0.0
+
+The file `conformance/vectors/continuity-ledger-v1.json` contains twelve
+runnable cases, covering ledger PASS, unknown effects, required effects
+missing, mismatched task IDs, fabricated physical claims, completed-versus-
+cancelled semantics and unsupported task types. These cases are frozen under
+the manifest version and can be copied to an unrelated repository.
+
+Run using only the Python standard library:
+
+```bash
+python -I -S tools/run_continuity_vectors.py
+# JSON output: case-level pass/fail plus deterministic reason and exit
+```
+
+The runner invokes the actual verifier as a separate isolated process for
+each case; it checks `PASS/FAIL/UNKNOWN`, reason code, exit code and the
+three explicitly-false identity/provenance/physical flags. A tampered
+expectation must cause an overall nonzero exit. To check another compatible
+offline CLI, use `--verifier path/to/candidate_script.py`.
+
+This is an **offline structural compatibility** suite. It neither runs a
+third-party Agent runtime nor proves a physical device effect, credential
+authorization, signed evidence or independent adoption. In particular,
+`cancelled` with a prior committed effect returns UNKNOWN for task success:
+cancellation cannot erase the committed operation. Update manifest expectations
+only with reviewed compatibility-version changes.

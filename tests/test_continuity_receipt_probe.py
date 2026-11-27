@@ -186,3 +186,32 @@ def test_copied_single_script_runs_in_isolated_python_without_amc(tmp_path):
         assert run.returncode == expected_code, run.stderr
         assert json.loads(run.stdout)["decision"] == expected_decision
         assert "Traceback" not in run.stderr
+
+
+def test_public_vector_manifest_runs_without_amc_runtime():
+    runner = ROOT / "tools" / "run_continuity_vectors.py"
+    done = subprocess.run([sys.executable, "-I", "-S", str(runner)],
+                          capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stdout + done.stderr
+    result = json.loads(done.stdout)
+    assert result["cases"] >= 10
+    assert result["all_passed"] is True
+    assert result["failed"] == 0
+    assert result["physical_execution_verified"] is False
+    assert result["third_party_adoption_verified"] is False
+
+
+def test_vector_runner_rejects_corrupted_expectations(tmp_path):
+    original = ROOT / "conformance" / "vectors" / "continuity-ledger-v1.json"
+    document = json.loads(original.read_text(encoding="utf-8"))
+    document["cases"][0]["expected"]["reason"] = "WRONG_REASON"
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(document), encoding="utf-8")
+    runner = ROOT / "tools" / "run_continuity_vectors.py"
+    done = subprocess.run(
+        [sys.executable, "-I", "-S", str(runner), "--manifest", str(tampered)],
+        capture_output=True, text=True, check=False)
+    assert done.returncode == 1
+    report = json.loads(done.stdout)
+    assert report["failed"] == 1
+    assert report["all_passed"] is False

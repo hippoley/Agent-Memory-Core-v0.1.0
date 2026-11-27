@@ -1,0 +1,433 @@
+{
+  "schema": "amc.continuity-ledger-vectors.v1",
+  "version": "1.0.0",
+  "scope": "untrusted_offline_ledger_consistency",
+  "assertions_not_proven": [
+    "source_authenticity",
+    "actor_authorization",
+    "physical_causality",
+    "atomic_snapshot",
+    "remote_provider_authorization"
+  ],
+  "cases": [
+    {
+      "id": "completed-ledger-consistent",
+      "description": "All declared effects committed: structural PASS only",
+      "expected": {
+        "decision": "PASS",
+        "reason": "LEDGER_CONSISTENT_ONLY",
+        "exit_code": 0
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "creator-gated-ledger-only",
+      "description": "Strict creator profile does not prove authorization",
+      "expected": {
+        "decision": "PASS",
+        "reason": "LEDGER_CONSISTENT_ONLY",
+        "exit_code": 0
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.authorized-effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "required-effect-absent",
+      "description": "Completed task declares a missing required effect",
+      "expected": {
+        "decision": "FAIL",
+        "reason": "MISSING_REQUIRED_EFFECT",
+        "exit_code": 1
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": []
+        }
+      }
+    },
+    {
+      "id": "required-effect-unknown",
+      "description": "Completed task with unresolved required effect",
+      "expected": {
+        "decision": "FAIL",
+        "reason": "REQUIRED_EFFECT_NOT_COMMITTED",
+        "exit_code": 1
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "unknown",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "extra-effect-unknown",
+      "description": "Completed task with an unrelated UNKNOWN effect",
+      "expected": {
+        "decision": "FAIL",
+        "reason": "COMPLETED_WITH_UNRESOLVED_EFFECT",
+        "exit_code": 1
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            },
+            {
+              "effect_key": "unrelated-command",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "unknown",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "task-id-mismatch",
+      "description": "Task and effect ledger belong to different task identifiers",
+      "expected": {
+        "decision": "FAIL",
+        "reason": "TASK_ID_MISMATCH",
+        "exit_code": 1
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "22222222-2222-4222-8222-222222222222",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "committed-without-reference",
+      "description": "Committed effect lacks provider reference",
+      "expected": {
+        "decision": "FAIL",
+        "reason": "COMMITTED_WITHOUT_PROVIDER_REFERENCE",
+        "exit_code": 1
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": false,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "unverifiable-physical-flag",
+      "description": "Supplied JSON cannot assert physical proof",
+      "expected": {
+        "decision": "FAIL",
+        "reason": "UNSUPPORTED_PHYSICAL_ATTESTATION",
+        "exit_code": 1
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": true,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "task-still-running",
+      "description": "Nonterminal task is not success",
+      "expected": {
+        "decision": "UNKNOWN",
+        "reason": "TASK_NOT_COMPLETED",
+        "exit_code": 2
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "running",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "unknown-after-ack-loss",
+      "description": "Nonterminal task with UNKNOWN remote effect",
+      "expected": {
+        "decision": "UNKNOWN",
+        "reason": "UNRESOLVED_EXTERNAL_EFFECT",
+        "exit_code": 2
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "running",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "unknown",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cancelled-after-partial-effect",
+      "description": "Cancellation preserves prior committed effect but is not successful task completion",
+      "expected": {
+        "decision": "UNKNOWN",
+        "reason": "TASK_NOT_COMPLETED",
+        "exit_code": 2
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "continuity.effect.v1",
+          "status": "cancelled",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "unsupported-task",
+      "description": "Other runtime profile cannot be silently promoted to PASS",
+      "expected": {
+        "decision": "UNKNOWN",
+        "reason": "UNSUPPORTED_TASK_PROFILE",
+        "exit_code": 2
+      },
+      "bundle": {
+        "task": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "task_type": "another.runtime.task",
+          "status": "completed",
+          "input": {
+            "required_effect_keys": [
+              "set-bedroom-target-v1"
+            ]
+          }
+        },
+        "effects": {
+          "task_id": "11111111-1111-4111-8111-111111111111",
+          "items": [
+            {
+              "effect_key": "set-bedroom-target-v1",
+              "request_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "status": "committed",
+              "attempt_count": 1,
+              "provider_reference_recorded": true,
+              "physical_independence_verified": false,
+              "causal_effect_verified": false
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

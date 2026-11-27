@@ -91,7 +91,7 @@ class HybridMemorySearch:
         self.store = store
         self.graph = graph
         self.vector_buckets = dict(vector_buckets or {})
-        if set(self.vector_buckets) - {"aws", "aliyun"}:
+        if set(self.vector_buckets) - {"aws", "aliyun", "azure"}:
             raise ValueError("unknown vector bucket provider")
         self.query_aliases = {}
         for alias, predicate in (query_aliases or {}).items():
@@ -105,7 +105,7 @@ class HybridMemorySearch:
         # RRF let the noisiest channel crowd out correct hits, so every channel
         # contributes weight/(k+rank) instead.
         self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)
-        self.channel_weights.update({"vector_aws": 1.0, "vector_aliyun": 1.0})
+        self.channel_weights.update({"vector_aws": 1.0, "vector_aliyun": 1.0, "vector_azure": 1.0})
         if channel_weights:
             self.channel_weights.update(
                 {str(k): float(v) for k, v in channel_weights.items()})

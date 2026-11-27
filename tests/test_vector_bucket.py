@@ -30,7 +30,7 @@ class FakeVectors:
 ])
 def test_provider_contract(provider, endpoint):
     config = VectorBucketConfig(
-        provider=provider, bucket="mybucket", index="memory-384",
+        provider=provider, bucket="mybucket", index="memory384",
         region="cn-hangzhou" if provider == "aliyun" else "us-east-1",
         dimensions=384, endpoint_url=endpoint,
     )
@@ -82,3 +82,20 @@ def test_rejects_wrong_model_and_tampered_key():
         {"key": "tampered", "metadata": {"tenant_id": "t1", "memory_id": "m1", "model_id": "expected"}},
     ]}
     assert adapter.query(tenant_id="t1", model_id="expected", embedding=[0.1] * 384) == []
+
+def test_provider_name_and_endpoint_compatibility():
+    from agent_memory_core.vector_bucket import provider_capabilities
+    assert provider_capabilities("aws").enhanced_mode is True
+    assert provider_capabilities("aliyun").enhanced_mode is False
+    assert provider_capabilities("aliyun").fusion_mode is True
+    with pytest.raises(ValueError):
+        VectorBucketConfig("aliyun", "mybucket", "index-with-dashes", "cn-hangzhou",
+                           384, "https://mybucket-123.cn-hangzhou.oss-vectors.aliyuncs.com")
+    with pytest.raises(ValueError):
+        VectorBucketConfig("aliyun", "mybucket", "index123", "cn-hangzhou",
+                           384, "https://otherbucket-123.cn-hangzhou.oss-vectors.aliyuncs.com")
+    with pytest.raises(ValueError):
+        VectorBucketConfig("aliyun", "mybucket", "index123", "cn-hangzhou",
+                           384, "http://mybucket-123.cn-hangzhou.oss-vectors.aliyuncs.com")
+    with pytest.raises(ValueError):
+        VectorBucketConfig("aws", "mybucket", "index_name", "us-east-1", 384)

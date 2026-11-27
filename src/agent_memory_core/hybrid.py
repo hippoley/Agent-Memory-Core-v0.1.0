@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from contextlib import nullcontext
+from uuid import UUID
 
 
 _STOPWORDS = frozenset("""
@@ -86,9 +87,13 @@ _DEFAULT_CHANNEL_WEIGHTS = {"vector": 1.0, "sql": 0.8, "fts": 0.4, "graph": 0.6}
 
 class HybridMemorySearch:
     def __init__(self, store, graph=None, *, channel_weights: dict | None = None,
-                 query_aliases: dict[str, str] | None = None):
+                 query_aliases: dict[str, str] | None = None,
+                 vector_buckets: dict | None = None):
         self.store = store
         self.graph = graph
+        self.vector_buckets = dict(vector_buckets or {})
+        if set(self.vector_buckets) - {"aws", "aliyun", "azure"}:
+            raise ValueError("unknown vector bucket provider")
         self.query_aliases = {}
         for alias, predicate in (query_aliases or {}).items():
             if (not isinstance(alias, str) or not 1 <= len(alias) <= 32
@@ -101,6 +106,7 @@ class HybridMemorySearch:
         # RRF let the noisiest channel crowd out correct hits, so every channel
         # contributes weight/(k+rank) instead.
         self.channel_weights = dict(_DEFAULT_CHANNEL_WEIGHTS)
+        self.channel_weights.update({"vector_aws": 1.0, "vector_aliyun": 1.0, "vector_azure": 1.0})
         if channel_weights:
             self.channel_weights.update(
                 {str(k): float(v) for k, v in channel_weights.items()})
@@ -116,11 +122,23 @@ class HybridMemorySearch:
     def search_detailed(self, *, tenant_id: str, query: str,
                embedding: list[float] | None = None, model_id: str | None = None,
                anchor_entity: str | None = None, limit: int = 10,
-               valid_at: datetime | None = None, known_at: datetime | None = None) -> SearchReport:
+               valid_at: datetime | None = None, known_at: datetime | None = None,
+               cloud_providers: tuple[str, ...] | None = None) -> SearchReport:
         if not tenant_id or not (1 <= limit <= 100):
             raise ValueError("Invalid tenant or limit")
         if embedding is not None and not model_id:
             raise ValueError("model_id required with embedding")
+        # Explicitly choosing no cloud is a zero-cloud-request option. None
+        # preserves historical behavior (all configured cloud providers).
+        if cloud_providers is None:
+            selected_clouds = tuple(self.vector_buckets)
+        else:
+            if (not isinstance(cloud_providers, tuple)
+                    or len(set(cloud_providers)) != len(cloud_providers)
+                    or any(not isinstance(p, str) or p not in self.vector_buckets
+                           for p in cloud_providers)):
+                raise ValueError("cloud_providers must select configured providers exactly once")
+            selected_clouds = cloud_providers
         valid_at = valid_at or datetime.now(timezone.utc)
         known_at = known_at or datetime.now(timezone.utc)
         ranked: dict[str, list[tuple[str, int]]] = {}
@@ -137,6 +155,36 @@ class HybridMemorySearch:
                     ranked.setdefault(mid,[]).append(("vector",rank))
             except Exception as exc:
                 degraded["vector"]=f"{type(exc).__name__}: {str(exc)[:240]}"
+
+        # Cloud vector buckets produce candidate IDs only. Do not trust metadata
+        # as memory claims: the canonical tenant/bitemporal recheck below
+        # remains the sole authority for all returned hits.
+        if embedding is not None:
+            for provider in selected_clouds:
+                adapter = self.vector_buckets[provider]
+                channel = f"vector_{provider}"
+                try:
+                    candidates = adapter.query(
+                        tenant_id=tenant_id, model_id=model_id,
+                        embedding=embedding, top_k=min(limit * 10, 100))
+                    malformed = 0
+                    for rank, candidate in enumerate(candidates[:min(limit * 10, 100)], 1):
+                        mid = getattr(candidate, "memory_id", None)
+                        # memory_claims.id is UUID. Never allow remote index data
+                        # to make the final canonical ::uuid[] query fail.
+                        try:
+                            if not isinstance(mid, str) or str(UUID(mid)) != mid:
+                                raise ValueError("not a canonical UUID")
+                        except (ValueError, TypeError, AttributeError):
+                            malformed += 1
+                            continue
+                        ranked.setdefault(mid, []).append((channel, rank))
+                    if malformed:
+                        degraded[channel] = f"rejected {malformed} malformed candidate IDs"
+                except Exception as exc:
+                    # Provider SDK failures can include endpoint, resource path,
+                    # and transport details. Diagnostics must not echo secrets.
+                    degraded[channel] = f"{type(exc).__name__}: remote vector query failed"
 
         # Search the rebuildable ranked full-text index when the backend
         # supports it. Its results are always revalidated below against
@@ -213,8 +261,19 @@ class HybridMemorySearch:
             valid_from = row[5] if len(row) > 5 else None
             recorded_at = row[6] if len(row) > 6 else None
             channels=ranked[mid]
-            score=sum(self.channel_weights.get(channel, 0.5) / (k + rank)
-                      for channel, rank in channels)
+            # AWS/Alibaba/Azure are mirrored projections, not independent
+            # evidence of truth. A hit seen in all three must not receive three
+            # semantic-vote bonuses. Fuse them as ONE vector family, taking
+            # its best ranked contribution; keep each channel for diagnostics.
+            vectors = [
+                self.channel_weights.get(channel, 0.5) / (k + rank)
+                for channel, rank in channels
+                if channel == "vector" or channel.startswith("vector_")
+            ]
+            score = (max(vectors, default=0.0)
+                     + sum(self.channel_weights.get(channel, 0.5) / (k + rank)
+                           for channel, rank in channels
+                           if channel != "vector" and not channel.startswith("vector_")))
             results.append(MemoryHit(mid,subject,pred,value,source,score,
                                      tuple(sorted({channel for channel,_ in channels})),
                                      valid_from,recorded_at))

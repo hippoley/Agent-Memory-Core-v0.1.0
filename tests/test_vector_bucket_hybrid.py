@@ -144,3 +144,30 @@ def test_pgvector_and_cloud_mirror_are_one_vector_family():
     assert local.hits[0].score == all_indices.hits[0].score
     assert all_indices.hits[0].channels == (
         "vector", "vector_aliyun", "vector_aws", "vector_azure")
+
+
+def test_cloud_provider_selection_bounds_billable_query_fanout():
+    aws, aliyun, azure = FakeCloud([VALID_ID]), FakeCloud([VALID_ID]), FakeCloud([VALID_ID])
+    search = HybridMemorySearch(CanonicalStore(),
+        vector_buckets={"aws": aws, "aliyun": aliyun, "azure": azure})
+    zero = search.search_detailed(tenant_id="tenant-a", query="",
+        embedding=[0.1]*384, model_id="model-v1", cloud_providers=())
+    assert zero.hits == ()
+    assert not aws.calls and not aliyun.calls and not azure.calls
+    only_azure = search.search_detailed(tenant_id="tenant-a", query="",
+        embedding=[0.1]*384, model_id="model-v1",
+        cloud_providers=("azure",))
+    assert [h.memory_id for h in only_azure.hits] == [VALID_ID]
+    assert len(azure.calls) == 1 and not aws.calls and not aliyun.calls
+    assert only_azure.hits[0].channels == ("vector_azure",)
+
+
+def test_cloud_provider_selection_rejects_misconfiguration_before_network():
+    import pytest
+    aws = FakeCloud([VALID_ID])
+    search = HybridMemorySearch(CanonicalStore(), vector_buckets={"aws": aws})
+    for bad in (("aliyun",), ("aws", "aws"), ["aws"], "aws"):
+        with pytest.raises(ValueError, match="cloud_providers"):
+            search.search_detailed(tenant_id="tenant-a", query="",
+                embedding=[0.1]*384, model_id="model-v1", cloud_providers=bad)
+    assert not aws.calls

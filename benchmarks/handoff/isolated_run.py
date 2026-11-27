@@ -257,7 +257,14 @@ def agent_b(handoff_id: str, subject_id: str, provider_url: str, *,
         # Progress checkpoints can advance independently after an Effect is
         # requested. Read the immutable checkpoint bound to this effect key
         # and exact payload, not the last unrelated task progress update.
-        bound = api.get_task_effect_intent(pack["task_id"], effect_key)
+        from agent_memory_core.sdk import MemoryAPIError
+        try:
+            bound = api.get_task_effect_intent(pack["task_id"], effect_key)
+        except MemoryAPIError as exc:
+            if exc.status_code == 404:
+                raise RuntimeError(
+                    "AMC_EFFECT_INTENT_MISSING_OR_CONFLICT; dispatch denied") from exc
+            raise
         intent = bound.get("checkpoint") or {}
         if (bound.get("effect_request") != expected_request
                 or intent.get("phase") != "effect-intent-registered"
